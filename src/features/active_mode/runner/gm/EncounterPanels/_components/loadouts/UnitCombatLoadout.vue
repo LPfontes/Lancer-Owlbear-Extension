@@ -12,7 +12,11 @@
     <v-col cols="auto">
       <v-tooltip
         location="top"
-        :text="hidePassives ? $t('active.unitLoadout.hidingPassiveFeatures') : $t('active.unitLoadout.showingPassiveFeatures')"
+        :text="
+          hidePassives
+            ? $t('active.unitLoadout.hidingPassiveFeatures')
+            : $t('active.unitLoadout.showingPassiveFeatures')
+        "
       >
         <template #activator="{ props }">
           <v-btn
@@ -104,6 +108,7 @@
                     tile
                     block
                     :color="result ? 'panel' : 'primary'"
+                    :disabled="!canRollRecharge"
                     @click="roll"
                   >
                     {{ result ? $t('active.unitLoadout.reroll') : $t('common.roll_verb') }}
@@ -157,7 +162,8 @@
   import UnitFeatureCard from './_unitFeatureCard.vue'
   import * as _ from 'lodash-es'
   import { UserStore } from '@/stores'
-import { useLayoutOptions } from '@/features/active_mode/layoutOptions'
+  import { useLayoutOptions } from '@/features/active_mode/layoutOptions'
+  import { DiceRoller } from '@/classes/dice/DiceRoller'
 
   defineOptions({ name: 'MechCombatLoadout' })
 
@@ -209,8 +215,12 @@ import { useLayoutOptions } from '@/features/active_mode/layoutOptions'
     )
   })
 
+  const canRollRecharge = computed(() => props.unit.CombatController.CanRollRecharge)
+
   function roll() {
-    result.value = Math.floor(Math.random() * 6) + 1
+    if (!canRollRecharge.value) return
+    result.value = DiceRoller.rollDie(6)
+    props.unit.CombatController.RechargeRolledRound = props.unit.CombatController.Round
   }
   function applyAndClose(isActive: { value: boolean }) {
     apply()
@@ -218,10 +228,8 @@ import { useLayoutOptions } from '@/features/active_mode/layoutOptions'
   }
 
   function apply() {
-    features.value.forEach(feature => {
-      if (result.value >= feature.Recharge) {
-        feature.Used = false
-      }
+    rechargedFeatures.value.forEach(feature => {
+      feature.Used = false
     })
     result.value = 0
   }

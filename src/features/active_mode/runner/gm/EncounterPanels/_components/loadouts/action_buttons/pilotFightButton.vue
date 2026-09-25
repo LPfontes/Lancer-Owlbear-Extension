@@ -11,6 +11,10 @@
         class="text-cc-overline text-disabled pl-3 py-2"
       >
         {{ $t('active.fight.selectWeapon') }}
+        <unavailable-toggle
+          v-model="useState.showUnavailable"
+          :count="hiddenWeapons"
+        />
       </div>
       <v-row
         dense
@@ -73,6 +77,10 @@
           :weapon="<PilotWeapon>event.Weapon"
         />
       </div>
+      <cc-flow-request
+        :request="result?.request"
+        class="px-4 pb-2"
+      />
       <v-slide-y-transition>
         <staged-panel
           v-if="event && event.BaseEvent.Staged"
@@ -80,8 +88,12 @@
         />
       </v-slide-y-transition>
 
+      <confirm-kill-bar
+        v-if="event"
+        :event="<ActiveEffectEvent>event.BaseEvent"
+      />
       <v-divider />
-      <div class="pa-4">
+      <div class="pb-4 px-4">
         <apply-button
           v-if="event"
           :owner="owner"
@@ -91,7 +103,7 @@
           :close="close"
           :action="action"
           :action-id="selectedWeapon ? selectedWeapon.InstanceID : ''"
-          :activation-override="selectedWeapon?.IsSidearm ? 'quick' : 'full'"
+          :activation-override="fightActivation"
           @reset="reset($event)"
           @apply="apply"
         />
@@ -104,15 +116,17 @@
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { useEncounterContext } from '../../../encounterContext'
   import type { Action } from '@/classes/Action'
-  import { computed, ref } from 'vue'
+  import { computed } from 'vue'
   import { WeaponAttackEvent } from '@/classes/components/feature/active_effects/WeaponAttackEvent'
   import { ActiveEffectEvent } from '@/classes/components/feature/active_effects/ActiveEffectEvent'
-  import { CombatantData } from '@/classes/encounter/Encounter'
   import { PilotWeapon } from '@/classes/pilot/components/Loadout/equipment/PilotWeapon'
   import CombatActionButton from './CombatActionButton.vue'
   import ApplyButton from '@/ui/components/chips/_activeeffect/ApplyButton.vue'
+  import ConfirmKillBar from '@/ui/components/chips/_activeeffect/_shared/ConfirmKillBar.vue'
   import StagedPanel from './_stagedPanel.vue'
   import PilotWeaponAttack from './_pilotWeaponAttack.vue'
+  import { useWeaponUse } from './useWeaponUse'
+  import UnavailableToggle from './_unavailableToggle.vue'
 
   const { owner, encounterInstance } = useEncounterContext()
 
@@ -121,70 +135,36 @@
     presetWeapon?: PilotWeapon
   }>()
 
-  const event = ref(null as WeaponAttackEvent | null)
-  const selectedWeapon = ref(null as PilotWeapon | null)
-
-  reset()
-
-  const controller = computed(() => {
-    return owner.value.actor.CombatController.ActiveActor.CombatController
-  })
-  const fightIcon = computed(() => {
-    if (props.presetWeapon && props.presetWeapon.IsSidearm) return 'mdi-hexagon-slice-3'
-    if (selectedWeapon.value && selectedWeapon.value.IsSidearm) return 'mdi-hexagon-slice-3'
-    return 'mdi-hexagon-slice-6'
-  })
-  const fightColor = computed(() => {
-    if (props.presetWeapon && props.presetWeapon.IsSidearm) return 'action--quick'
-    if (selectedWeapon.value && selectedWeapon.value.IsSidearm) return 'action--quick'
-    return 'action--full'
-  })
-  const ordnanceWarning = computed(() => {
-    if (!selectedWeapon.value) return false
-    if (selectedWeapon.value.Tags.find(t => t.ID.toLowerCase() === 'tg_ordnance')) {
-      return owner.value.actor.CombatController.CanActivate('ordnance') === false
-    }
-    return false
-  })
-  const fightWeapons = computed(() => {
-    const pilot = controller.value.RootActor
-    let arr = pilot.Loadout.Weapons
-    if (props.presetWeapon) {
-      arr = arr.filter(w => w.InstanceID === props.presetWeapon!.InstanceID)
-    }
-    return arr
-  })
-  const eventArray = computed(() => {
-    return event.value ? [event.value] : []
+  const {
+    useState,
+    result,
+    reset,
+    apply,
+    selected: selectedWeapon,
+    weapons: fightWeapons,
+    hiddenWeapons,
+    eventArray,
+  } = useWeaponUse({
+    mode: 'fight',
+    carry: true,
+    actionId: () => props.action.ID,
+    presetWeapon: () => props.presetWeapon,
+    makeEvent: (self, weapon, label) =>
+      new WeaponAttackEvent(weapon as PilotWeapon, self, encounterInstance.value, label),
   })
 
-  function reset(clearAction = false) {
-    if (clearAction)
-      owner.value.actor.CombatController.ActiveActor.CombatController.ClearActionUsed(
-        props.action.ID
-      )
-    const self = encounterInstance.value.Combatants.find(
-      (c: CombatantData) =>
-        c.actor.CombatController.RootActor.ID === owner.value.actor.CombatController.RootActor.ID
-    )
-    if (!self) throw new Error('Owner combatant not found in encounterInstance')
-    if (!selectedWeapon.value && props.presetWeapon) selectedWeapon.value = props.presetWeapon
-    if (!selectedWeapon.value) return
-    event.value = new WeaponAttackEvent(
-      selectedWeapon.value as PilotWeapon,
-      self,
-      encounterInstance.value,
-      'Skirmish'
-    )
-  }
-  function apply() {
-    const actor = owner.value.actor.CombatController.ActiveActor.CombatController
-    actor.MarkActionUsed(selectedWeapon.value!.InstanceID)
-    if (selectedWeapon.value!.IsLoading) selectedWeapon.value!.Used = true
-    reset()
-  }
   function onWeaponChanged(weapon: PilotWeapon) {
     selectedWeapon.value = weapon
     reset()
   }
+
+  const fightWeapon = computed(() => props.presetWeapon || selectedWeapon.value)
+  const fightActivation = computed(() => fightWeapon.value?.FightActivation || 'full')
+  const fightIcon = computed(() =>
+    fightActivation.value === 'quick' ? 'mdi-hexagon-slice-3' : 'mdi-hexagon-slice-6'
+  )
+  const fightColor = computed(() =>
+    fightActivation.value === 'quick' ? 'action--quick' : 'action--full'
+  )
+  const event = computed(() => (useState.value.entries[0]?.event as WeaponAttackEvent) ?? null)
 </script>

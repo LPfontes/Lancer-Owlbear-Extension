@@ -11,6 +11,10 @@
         :action="action"
         @activate="activate($event)"
       />
+      <targeted-action-button
+        v-else-if="action && controller.NeedsTarget(action.ID)"
+        :action="action"
+      />
       <basic-action-button
         v-else
         :action="action"
@@ -21,21 +25,19 @@
 </template>
 
 <script setup lang="ts">
-  import type { CombatantData } from '@/classes/encounter/Encounter'
   import { useEncounterContext } from '../encounterContext'
-  import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { computed } from 'vue'
-  import { CompendiumStore } from '@/stores'
   import { notify } from '@/util/notify'
   import { useI18n } from 'vue-i18n'
   const { t } = useI18n()
   import BaseActionsPanel from './BaseActionsPanel.vue'
   import BasicActionButton from './loadouts/action_buttons/basicActionButton.vue'
   import InvadeButton from './loadouts/action_buttons/invadeButton.vue'
+  import TargetedActionButton from './loadouts/action_buttons/targetedActionButton.vue'
 
-  const { owner, encounterInstance } = useEncounterContext()
+  const { owner } = useEncounterContext()
 
-  const emit = defineEmits<{ deploy: [event: any] }>()
+  defineEmits<{ deploy: [event: any] }>()
 
   const quickNpcActions = [
     'act_boost',
@@ -51,54 +53,28 @@
 
   const controller = computed(() => owner.value.actor.CombatController)
 
-  function activate(event: string) {
-    controller.value.MarkActionUsed(event)
+  const NOTICES: Record<string, { ok: [string, string]; fail?: [string, string] }> = {
+    act_prepare: { ok: ['active.npcActions.npcPreparedTitle', 'active.common.preparedText'] },
+    act_stabilize_npc: {
+      ok: ['active.npcActions.npcStabilizedTitle', 'active.npcActions.npcStabilizedText'],
+    },
+    act_hide: { ok: ['active.npcActions.npcHiddenTitle', 'active.common.hiddenText'] },
+    act_disengage: {
+      ok: ['active.npcActions.npcDisengagedTitle', 'active.common.disengagedText'],
+      fail: ['active.common.disengageFailed', 'active.common.disengageFailedText'],
+    },
+  }
 
-    switch (event) {
-      case 'act_prepare':
-        controller.value.Prepared = true
-        notify({
-          type: 'success',
-          title: t('active.npcActions.npcPreparedTitle'),
-          text: t('active.common.preparedText', { name: controller.value.CombatName }),
-        })
-        break
-      case 'act_stabilize_npc':
-        controller.value.Stabilize('npc')
-        notify({
-          type: 'success',
-          title: t('active.npcActions.npcStabilizedTitle'),
-          text: t('active.npcActions.npcStabilizedText', { name: controller.value.CombatName }),
-        })
-        break
-      case 'act_hide':
-        controller.value.AddStatus('hidden')
-        notify({
-          type: 'success',
-          title: t('active.npcActions.npcHiddenTitle'),
-          text: t('active.common.hiddenText', { name: controller.value.CombatName }),
-        })
-        break
-      case 'act_disengage':
-        if (!controller.value.HasStatus('engaged')) {
-          notify({
-            type: 'warning',
-            title: t('active.common.disengageFailed'),
-            text: t('active.common.disengageFailedText', { name: controller.value.CombatName }),
-          })
-          controller.value.ResetActivation('full')
-          controller.value.ClearActionUsed('act_disengage')
-        } else {
-          controller.value.RemoveStatus('engaged')
-          notify({
-            type: 'success',
-            title: t('active.npcActions.npcDisengagedTitle'),
-            text: t('active.common.disengagedText', { name: controller.value.CombatName }),
-          })
-        }
-        break
-      default:
-        break
-    }
+  function activate(event: string) {
+    const ok = controller.value.RunAction(event)
+    const notice = NOTICES[event]
+    if (!notice) return
+    if (!ok && !notice.fail) return
+    const [title, text] = ok ? notice.ok : notice.fail!
+    notify({
+      type: ok ? 'success' : 'warning',
+      title: t(title),
+      text: t(text, { name: controller.value.CombatName }),
+    })
   }
 </script>

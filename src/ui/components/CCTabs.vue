@@ -1,5 +1,6 @@
 <template>
-  <v-tabs v-model="tab"
+  <v-tabs
+    v-model="tab"
     class="px-2"
     :class="`tabs ${fixed ? 'fixed' : 'sticky'} ${portrait ? 'portrait' : mobile ? 'mobile' : 'desktop'}`"
     :bg-color="color"
@@ -10,15 +11,22 @@
     :fixed-tabs="fixedTabs"
     show-arrows
     style="margin-top: -1px"
-    :style="modal && 'left: 1px; width: calc(100% - 2px);'">
-    <slot name="tabs"
-      v-bind="{ setTab }" />
+    :style="modal && 'left: 1px; width: calc(100% - 2px);'"
+  >
+    <slot
+      name="tabs"
+      v-bind="{ setTab }"
+    />
   </v-tabs>
-  <div v-if="fixed"
+  <div
+    v-if="fixed"
     style="position: fixed; top: 0; left: 0; right: 0; height: 45px"
-    :class="`bg-${color}`" />
-  <div v-if="fixed"
-    :class="mobile ? 'mt-4' : 'mt-6'" />
+    :class="`bg-${color}`"
+  />
+  <div
+    v-if="fixed"
+    :class="mobile ? 'mt-4' : 'mt-6'"
+  />
 
   <v-window v-model="tab">
     <slot v-bind="{ setTab }" />
@@ -53,7 +61,7 @@ const emit = defineEmits<{ changed: [tab: number] }>()
 
 const tab = ref<string | number>(0)
 
-watch(tab, (newTab) => {
+  watch(tab, newTab => {
   emit('changed', newTab as number)
 })
 

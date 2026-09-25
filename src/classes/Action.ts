@@ -25,6 +25,7 @@ import {
 import { EffectStatus } from './components/feature/active_effects/effect_subtype/EffectStatus'
 import { BonusDamage, IBonusDamageData } from './components/feature/active_effects/BonusDamage'
 import { Frequency, ActivePeriod } from './Frequency'
+import logger from '@/user/logger'
 
 interface IActionData {
   id?: string
@@ -140,7 +141,12 @@ class Action {
     // heat cost override
     if (data.heat_cost || data.heat_cost === 0)
       this.HeatCost = isNumber(data.heat_cost) ? data.heat_cost : 0
-    this.Frequency = new Frequency(data.frequency || '')
+    try {
+      this.Frequency = new Frequency(data.frequency || '')
+    } catch (e) {
+      logger.warn(`Action ${data.id}: ${(e as Error).message} — treating as unlimited`)
+      this.Frequency = new Frequency('')
+    }
     this.Init = data.init || ''
     this._trigger = data.trigger || ''
     this.Damage = data.damage ? data.damage.map(x => new Damage(x)) : []
@@ -194,7 +200,8 @@ class Action {
       if (!deployableName && this.Deployable) {
         const dLkey = keyPrefixes.get(this.Deployable as object)
         if (dLkey) deployableName = localize(dLkey, 'name', '')
-        if (!deployableName && this.Deployable.id) deployableName = localize(this.Deployable.id, 'name', '')
+        if (!deployableName && this.Deployable.id)
+          deployableName = localize(this.Deployable.id, 'name', '')
         if (!deployableName && this.Deployable.name) deployableName = this.Deployable.name
       }
 
@@ -208,8 +215,12 @@ class Action {
 
     return localize(this._lk, 'name', this._name)
   }
-  public get Terse(): string { return localize(this._lk, 'terse', this._terse) }
-  public get Trigger(): string { return localize(this._lk, 'trigger', this._trigger) }
+  public get Terse(): string {
+    return localize(this._lk, 'terse', this._terse)
+  }
+  public get Trigger(): string {
+    return localize(this._lk, 'trigger', this._trigger)
+  }
 
   public get Detail(): string {
     return ByTier(localize(this._lk, 'detail', this._detail))

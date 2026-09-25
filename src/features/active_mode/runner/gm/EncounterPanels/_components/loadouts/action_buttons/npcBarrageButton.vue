@@ -19,6 +19,10 @@
           class="text-cc-overline text-disabled pl-3 py-2"
         >
           {{ $t('active.barrage.selectWeapon') }}
+          <unavailable-toggle
+            v-model="useState.showUnavailable"
+            :count="hiddenWeapons"
+          />
         </div>
         <v-row
           dense
@@ -32,7 +36,7 @@
           <v-col v-if="!presetWeapon || idx > 0">
             <cc-select
               v-model="selectedWeapons[idx]"
-              :items="barrageWeapons"
+              :items="weaponsForSlot(idx)"
               bg-color="background"
               color="primary"
               return-object
@@ -115,6 +119,10 @@
         </div>
       </div>
 
+      <cc-flow-request
+        :request="result?.request"
+        class="px-4 pb-2"
+      />
       <v-slide-y-transition>
         <staged-panel
           v-if="allEventsStaged"
@@ -122,8 +130,12 @@
         />
       </v-slide-y-transition>
 
+      <confirm-kill-bar
+        v-if="events.length"
+        :event="<ActiveEffectEvent[]>events.map(e => e.weaponEvent.BaseEvent)"
+      />
       <v-divider />
-      <div class="pa-4">
+      <div class="pb-4 px-4">
         <apply-button
           v-if="events.length"
           :owner="owner"
@@ -132,7 +144,7 @@
           :weapon-event="<WeaponAttackEvent[]>events.map(e => e.weaponEvent)"
           :close="close"
           :action="action"
-          :action-id="selectedWeapons.length ? selectedWeapons.map(w => w.InstanceID) : []"
+          :action-id="selectedWeapons.filter(Boolean).map(w => w.InstanceID)"
           activation-override="full"
           @reset="reset($event)"
           @apply="apply"
@@ -146,119 +158,50 @@
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { useEncounterContext } from '../../../encounterContext'
   import type { Action } from '@/classes/Action'
-  import { computed, ref } from 'vue'
+  import { computed, ref, shallowRef } from 'vue'
   import MenuInput from '@/ui/components/chips/_activeeffect/_ae_menu_input.vue'
   import { CombatantData } from '@/classes/encounter/Encounter'
   import { WeaponAttackEvent } from '@/classes/components/feature/active_effects/WeaponAttackEvent'
   import NpcWeaponAttack from './_npcWeaponAttack.vue'
   import ApplyButton from '@/ui/components/chips/_activeeffect/ApplyButton.vue'
+  import ConfirmKillBar from '@/ui/components/chips/_activeeffect/_shared/ConfirmKillBar.vue'
   import StagedPanel from './_stagedPanel.vue'
   import { ActiveEffectEvent } from '@/classes/components/feature/active_effects/ActiveEffectEvent'
   import { NpcWeapon } from '@/classes/npc/feature/NpcItem/NpcWeapon'
   import { NpcFeatureType } from '@/classes/npc/feature/NpcFeature'
   import CombatActionButton from './CombatActionButton.vue'
+  import { useWeaponUse } from './useWeaponUse'
+  import UnavailableToggle from './_unavailableToggle.vue'
 
-  const { owner, encounterInstance } = useEncounterContext()
+  const { owner, encounterInstance, ownerController } = useEncounterContext()
 
   const props = defineProps<{
     action: Action
     presetWeapon?: NpcWeapon
   }>()
 
-  const events = ref(
-    [] as {
-      weaponEvent: WeaponAttackEvent
-    }[]
+  const {
+    controller,
+    useState,
+    result,
+    reset,
+    apply,
+    setSelected,
+    selectedWeapons,
+    weaponsForSlot,
+    hiddenWeapons,
+    eventArray,
+    allEventsStaged,
+  } = useWeaponUse({
+    mode: 'barrage',
+    actionId: () => props.action.ID,
+    presetWeapon: () => props.presetWeapon,
+    makeEvent: (self, weapon, label) =>
+      new WeaponAttackEvent(weapon as NpcWeapon, self, encounterInstance.value, label),
+  })
+
+  const events = computed(() =>
+    useState.value.entries.map(e => ({ weaponEvent: e.event as WeaponAttackEvent }))
   )
-  const selectedWeapons = ref([] as NpcWeapon[])
-
-  reset()
-
-  reset()
-
-  const controller = computed(() => {
-    return owner.value.actor.CombatController.ActiveActor.CombatController
-  })
-  const barrageWeapons = computed(() => {
-    const npc = controller.value.ActiveActor
-
-    let arr = (npc.NpcFeatureController?.Features || []).filter(
-      x => x.FeatureType === NpcFeatureType.Weapon
-    )
-
-    if (props.presetWeapon) {
-      arr = arr.filter(w => w.InstanceID !== props.presetWeapon!.InstanceID)
-    }
-
-    return arr
-  })
-  const eventArray = computed(() => {
-    const out = [] as any[]
-    for (let i = 0; i < selectedWeapons.value.length; i++) {
-      const ev = events.value[i]
-      if (ev && ev.weaponEvent) {
-        out.push(ev.weaponEvent)
-      }
-    }
-    return out
-  })
-  const allEventsStaged = computed(() => {
-    if (!eventArray.value.length) return false
-    return eventArray.value.every(e => e.BaseEvent.Staged)
-  })
-  const tier = computed(() => {
-    return owner.value.actor.CombatController.Tier
-  })
-
-  function reset(clearAction = false) {
-    if (clearAction)
-      owner.value.actor.CombatController.ActiveActor.CombatController.ClearActionUsed(
-        props.action.ID
-      )
-    selectedWeapons.value = new Array(2)
-    events.value = new Array(2)
-    if (!selectedWeapons.value[0] && props.presetWeapon) {
-      setSelected(0, props.presetWeapon)
-    }
-  }
-  function apply() {
-    const actor = owner.value.actor.CombatController.ActiveActor.CombatController
-    selectedWeapons.value.forEach(w => {
-      actor.MarkActionUsed(w.InstanceID)
-      if (w.IsLoading) w.Used = true
-    })
-    reset()
-  }
-  function ordnanceWarning(selectedWeapon) {
-    if (!selectedWeapon) return false
-    if (selectedWeapon.ActiveTags.find(t => t.ID.toLowerCase() === 'tg_ordnance')) {
-      return owner.value.actor.CombatController.CanActivate('ordnance') === false
-    }
-    return false
-  }
-  function setSelected(index: number, weapon: NpcWeapon) {
-    if (!weapon) return
-
-    const self = encounterInstance.value.Combatants.find(
-      (c: CombatantData) =>
-        c.actor.CombatController.RootActor.ID === owner.value.actor.CombatController.RootActor.ID
-    )
-    if (!self) {
-      throw new Error('Owner combatant not found in encounterInstance')
-    }
-
-    selectedWeapons.value[index] = weapon
-
-    events.value[index] = {
-      weaponEvent: new WeaponAttackEvent(weapon, self, encounterInstance.value, 'Barrage'),
-    }
-
-    if (weapon.IsSuperheavy) {
-      selectedWeapons.value = [weapon]
-      events.value = [events.value[index]]
-    } else if (selectedWeapons.value.length === 1) {
-      selectedWeapons.value.push(undefined as any)
-      events.value.push(undefined as any)
-    }
-  }
+  const tier = computed(() => ownerController.value.Tier)
 </script>

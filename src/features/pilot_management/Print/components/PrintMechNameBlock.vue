@@ -6,7 +6,7 @@
         align="center"
       >
         <v-col cols="auto">
-          <div class="text-overline mb-n4 text-primary">{{ $t('common.mech') }}</div>
+          <div class="text-cc-overline text-primary">{{ $t('common.mech') }}</div>
           <blank-line
             v-if="blank"
             :height="46"
@@ -21,7 +21,7 @@
           </div>
           <div
             v-if="!blank"
-            class="heading h3 my-n2"
+            class="heading h3"
             style="opacity: 0.7"
           >
             <v-icon

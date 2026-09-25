@@ -38,7 +38,7 @@ provide<CompendiumDataProvider>(CompendiumDataKey, {
   get ContentPacks() {
     return CompendiumStore().ContentPacks
   },
-  getItemCollection: (itemType) => CompendiumStore().getItemCollection(itemType),
+    getItemCollection: itemType => CompendiumStore().getItemCollection(itemType),
   referenceLink: (item, internal) => CompendiumStore().referenceLink(item, internal),
 })
 
@@ -61,7 +61,7 @@ provide<UserDataProvider>(UserDataKey, {
   get CloudStorageFull() {
     return UserStore().CloudStorageFull
   },
-  downloadLcp: (pack) => UserStore().downloadLcp(pack),
+    downloadLcp: pack => UserStore().downloadLcp(pack),
   refreshDbData: () => UserStore().refreshDbData(),
 })
 

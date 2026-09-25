@@ -7,7 +7,7 @@
       <legend class="caption font-weight-bold text-primary px-1 text-uppercase">{{ label }}</legend>
       <div
         v-if="!blank && value !== null"
-        class="heading ph2 text-center mt-n2"
+        class="heading ph2 text-center"
       >
         {{ value }}
       </div>

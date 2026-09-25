@@ -13,17 +13,20 @@
       </v-chip>
     </v-progress-linear>
     <div class="text-center flavor-text">
-      {{ $t("mainMenu.dataUsage.title") }}
+      {{ $t('mainMenu.dataUsage.title') }}
       <cc-slashes />
       {{ (cloudUseMb >= 1 ? cloudUseMb : cloudUseKb).toFixed(2) }}
-      {{ cloudUseMb >= 1 ? $t("ui.image.mb") : $t("mainMenu.unit.kb") }} {{ $t("mainMenu.dataUsage.ofMaxMb", { max: cloudMaxMb.toFixed(2) }) }}
-      <cc-button size="small"
+      {{ cloudUseMb >= 1 ? $t('ui.image.mb') : $t('mainMenu.unit.kb') }}
+      {{ $t('mainMenu.dataUsage.ofMaxMb', { max: cloudMaxMb.toFixed(2) }) }}
+      <v-btn color="exotic"
+        size="x-small"
+        tile
         variant="tonal"
-        color="info"
         prepend-icon="mdi-star"
-        class="my-1">
-        {{ $t("mainMenu.ui.upgrade") }}
-      </cc-button>
+        href="https://www.patreon.com/compcon/join"
+        target="_blank">
+        {{ $t('mainMenu.ui.upgrade') }}
+      </v-btn>
     </div>
     <br />
     <sync-settings />
@@ -35,7 +38,9 @@
     <div class="my-8 text-right">
       <cc-button color="primary"
         :loading="resetting"
-        @click="resetMigration()">{{ $t("mainMenu.dataUsage.resetMigrationTool") }}</cc-button>
+        @click="resetMigration()">
+        {{ $t('mainMenu.dataUsage.resetMigrationTool') }}
+      </cc-button>
     </div>
   </v-container>
 </template>
@@ -43,39 +48,39 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { UserStore } from '@/stores';
-import CloudArchive from './_components/cloudArchive.vue';
-import CloudDataViewer from './_components/cloudDataViewer.vue';
-import SyncSettings from './_components/syncSettings.vue';
+import { UserStore } from '@/stores'
+import CloudArchive from './_components/cloudArchive.vue'
+import CloudDataViewer from './_components/cloudDataViewer.vue'
+import SyncSettings from './_components/syncSettings.vue'
 
 const _display = useDisplay()
 
 defineOptions({ name: 'CloudAccountData' })
 
 const emit = defineEmits<{
-  'reset': []
+  reset: []
 }>()
 
 const resetting = ref(false)
 
 const cloudUseKb = computed(() => {
-      return UserStore().CloudStorageUsed / 1024;
-    })
+  return UserStore().CloudStorageUsed / 1024
+})
 const cloudUseMb = computed(() => {
-      return UserStore().CloudStorageUsed / 1024 / 1024;
-    })
+  return UserStore().CloudStorageUsed / 1024 / 1024
+})
 const cloudMaxMb = computed(() => {
-      return UserStore().MaxCloudStorage / 1024 / 1024;
-    })
+  return UserStore().MaxCloudStorage / 1024 / 1024
+})
 const mobile = computed(() => {
-      return _display.mdAndDown.value;
-    })
+  return _display.mdAndDown.value
+})
 
 async function resetMigration() {
-      resetting.value = true;
-      await UserStore().resetV2CloudMigration();
-      await UserStore().checkV2CloudMigration()
-      resetting.value = false;
-      emit('reset')
-    }
+  resetting.value = true
+  await UserStore().resetV2CloudMigration()
+  await UserStore().checkV2CloudMigration()
+  resetting.value = false
+  emit('reset')
+}
 </script>

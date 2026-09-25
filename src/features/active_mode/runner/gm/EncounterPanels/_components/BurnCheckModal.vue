@@ -97,11 +97,13 @@
   import { DiceRoller } from '@/classes/dice/DiceRoller'
   import AccuracyDifficultyRow from '@/ui/components/chips/_activeeffect/_shared/AccuracyDifficultyRow.vue'
   import { StatKey } from '@/classes/components/combat/stats/Stats'
-  import { DamageType } from '@/classes/enums'
   import type { CombatController } from '@/classes/components/combat/CombatController'
 
   const props = defineProps<{ modelValue: boolean; cc: CombatController }>()
-  const emit = defineEmits<{ 'update:modelValue': [boolean]; resolved: [] }>()
+  const emit = defineEmits<{
+    'update:modelValue': [boolean]
+    resolved: [answer: { success?: boolean; skip?: boolean; rolled?: number }]
+  }>()
 
   const open = computed({
     get: () => props.modelValue,
@@ -114,17 +116,20 @@
   const acc = ref(0)
   const detail = ref('')
   const outcome = ref<'success' | 'fail' | undefined>(undefined)
+  const rolled = ref<number | undefined>(undefined)
 
   function seed() {
     bonus.value = props.cc.getCheckBonus('Eng')
     acc.value = 0
     detail.value = ''
     outcome.value = undefined
+    rolled.value = undefined
   }
 
   function roll() {
     const r = DiceRoller.rollSkillCheck(Number(bonus.value) || 0, acc.value || 0)
     detail.value = r.toString()
+    rolled.value = r.total
     outcome.value = r.total >= 10 ? 'success' : 'fail'
   }
 
@@ -142,19 +147,12 @@
 
   function ignore() {
     open.value = false
-    emit('resolved')
+    emit('resolved', { skip: true })
   }
 
   function apply() {
     if (!outcome.value) return
-    if (outcome.value === 'success') {
-      props.cc.StatController.setCurrentStat(StatKey.BURN, 0)
-      props.cc.log('Burn check passed: cleared all burn')
-    } else {
-      props.cc.TakeDamage(DamageType.AppliedBurn, burn.value)
-      props.cc.log(`Burn check failed: took ${burn.value} burn damage`)
-    }
     open.value = false
-    emit('resolved')
+    emit('resolved', { success: outcome.value === 'success', rolled: rolled.value })
   }
 </script>

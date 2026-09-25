@@ -122,16 +122,16 @@
   }>()
 
   const llFilter = ref([] as number[])
-  const sp = ref(0)
+  const sp = ref<number | string>(0)
   const spType = ref('')
 
   function decrementSp() {
-    if (sp.value > 0) sp.value--
+    sp.value = Math.max(0, Number(sp.value) - 1)
     emitFilters()
   }
 
   function incrementSp() {
-    sp.value++
+    sp.value = Number(sp.value) + 1
     emitFilters()
   }
 
@@ -148,7 +148,9 @@
   }
   function emitFilters() {
     const fObj: any = {}
-    if (spType.value && !Number.isNaN(sp.value)) fObj[`SP_${spType.value}`] = sp.value
+    const spNum = Number(sp.value)
+    if (spType.value && sp.value !== '' && sp.value !== null && !Number.isNaN(spNum))
+      fObj[`SP_${spType.value}`] = spNum
     if (llFilter.value && llFilter.value.length)
       fObj.LicenseLevel = llFilter.value.map(x => Number(x))
     emit('sp-ll-change', fObj)

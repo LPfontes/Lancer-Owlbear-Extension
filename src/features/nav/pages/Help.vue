@@ -80,12 +80,6 @@
         </cc-button>
       </v-col>
     </v-row>
-    <!-- <h3 class="heading text-accent">Tutorial Mode</h3>
-    <p class="panel py-3 text-center text-disabled">
-      <v-icon color="grey">mdi-lock</v-icon>
-      <br />
-      // FEATURE IN DEVELOPMENT //
-    </p> -->
     <cc-heading
       is-title
       :text="$t('nav.help.quickFaq')"
@@ -193,13 +187,6 @@
         </template>
       </i18n-t>
     </p>
-
-    <!-- <h3 class="heading text-accent">Video Guide</h3>
-    <p class="panel py-3 text-center text-disabled">
-      <v-icon color="grey">mdi-lock</v-icon>
-      <br />
-      // FEATURE IN DEVELOPMENT //
-    </p> -->
   </v-container>
 </template>
 

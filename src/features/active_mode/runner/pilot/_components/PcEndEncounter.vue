@@ -1,35 +1,49 @@
 <template>
   <end-encounter-panel
-    :action-report="actionReport"
-    confirm-message="Ending this encounter will close the active sheet instance and send a copy to the archive. Are you sure you want to continue?"
-    @end="end" />
+    :combatants="[sheet.Combatant]"
+    :build-stream="() => sheet.Stream"
+    :focus-actor-id="sheet.PilotID"
+    :confirm-message="$t('active.pcEndEncounter.confirm')"
+    @end="end"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import PilotSheet from '@/features/pilot_management/store/PilotSheet';
-import { PilotSheetStore } from '@/stores';
-import EndEncounterPanel from '@/features/active_mode/_components/EndEncounterPanel.vue';
-const router = useRouter()
+  import { useRouter } from 'vue-router'
+  import PilotSheet from '@/features/pilot_management/store/PilotSheet'
+  import { PilotSheetStore, PilotStore } from '@/stores'
+  import EndEncounterPanel from '@/features/active_mode/_components/EndEncounterPanel.vue'
+  import logger from '@/user/logger'
+  import { commitOutcome } from '@/classes/components/combat/log/outcome'
+  import type { IOutcome } from '@/classes/components/combat/log/outcome'
+  import { bypassLeaveGuard } from '../../_shared/useRunnerOptions'
 
-defineOptions({ name: 'DamageMenu' })
+  const router = useRouter()
 
-const props = defineProps<{
-  sheet: PilotSheet
-}>()
+  defineOptions({ name: 'PcEndEncounter' })
 
-const actionReport = ref([] as any[])
+  const props = defineProps<{
+    sheet: PilotSheet
+  }>()
 
-function end() {
-      props.sheet.Pilot.CombatController.EndEncounter();
-      props.sheet.Archive();
-      PilotSheetStore().SetActiveSheet('');
-      router.replace('/active-mode/sheet-manager');
+  async function end(result: string, outcomes: Record<string, IOutcome>) {
+    const outcome = outcomes[props.sheet.Combatant.id]
+    if (outcome) commitOutcome(props.sheet.Combatant, outcome)
+    props.sheet.Pilot.CombatController.EndEncounter()
+    props.sheet.Pilot.CombatController.Record('encounter.end', {
+      result,
+      rounds: props.sheet.Round,
+    })
+    // the player's own record of their own fight, marked `source: 'self'`. A GM log for the same
+    // encounter, imported later, replaces it wholesale (D3)
+    try {
+      await PilotStore().RecordStream(props.sheet.Stream, props.sheet.PilotID, props.sheet.PilotID)
+    } catch (err) {
+      logger.error('Failed to record encounter log to pilot logbook', props.sheet, err)
     }
-
-onMounted(() => {
-const actor = props.sheet.Pilot.CombatController.RootActor;
-    actionReport.value = [{ id: actor.ID, actor }];
-})
+    props.sheet.Archive()
+    PilotSheetStore().SetActiveSheet('')
+    bypassLeaveGuard()
+    router.replace('/active-mode/sheet-manager')
+  }
 </script>

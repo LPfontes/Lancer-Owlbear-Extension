@@ -23,6 +23,18 @@
           </div>
         </cc-alert>
 
+        <cc-alert
+          v-if="remainingMovement"
+          color="warning"
+          icon="mdi-run-fast"
+          variant="outlined"
+          :title="$t('active.pcEndRound.movementRemainingTitle')"
+        >
+          <div class="heading text-center">
+            {{ $t('active.pcEndRound.movementRemaining', { n: remainingMovement }) }}
+          </div>
+        </cc-alert>
+
         <div v-if="nextRoundAlerts">
           <v-divider class="my-4" />
 
@@ -130,7 +142,7 @@
               </cc-button>
               <cc-button
                 variant="text"
-                @click="markBurnHandled"
+                @click="markBurnHandled({ skip: true })"
               >
                 {{ $t('active.burnCheck.ignore') }}
               </cc-button>
@@ -202,7 +214,10 @@
   )
   const hasBurn = computed(() => currentBurn.value > 0)
 
-  function markBurnHandled() {
+  function markBurnHandled(answer?: { success?: boolean; skip?: boolean; rolled?: number }) {
+    if (answer && !answer.skip && typeof answer.success === 'boolean') {
+      mechController.value?.ResolveBurn(answer.success, answer.rolled)
+    }
     burnHandledRound.value = props.sheet.Round
   }
   function cleanSvg(svg: string) {
@@ -212,10 +227,13 @@
     return braced.value || getTimeoutStatuses().length || getTimeoutStatuses(true).length
   })
   const controller = computed(() => {
-    return props.sheet.Pilot.CombatController
+    return props.sheet.Pilot.CombatController.ActiveActor.CombatController
   })
   const hasRemainingActions = computed(() => {
     return controller.value.HasRemainingActions
+  })
+  const remainingMovement = computed(() => {
+    return controller.value.StatController.getCurrent(StatKey.SPEED) || 0
   })
 
   const braced = computed(() => {

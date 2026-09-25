@@ -94,6 +94,40 @@
       v-else
       cols="auto"
     >
+      <v-select
+        v-if="isSelfDestruct(t)"
+        :model-value="t.Round"
+        :items="selfDestructWindow"
+        density="compact"
+        hide-details
+        variant="outlined"
+        class="mx-2"
+        style="max-width: 110px"
+        @update:model-value="setDetonation"
+      />
+
+      <v-tooltip
+        v-if="isMeltdown(t)"
+        location="top"
+        :text="$t('active.timedEffect.retryMeltdown')"
+      >
+        <template #activator="{ props }">
+          <v-btn
+            icon
+            v-bind="props"
+            size="small"
+            class="mx-2"
+            color="accent"
+            @click="retryMeltdown()"
+          >
+            <v-icon
+              size="x-large"
+              icon="mdi-wrench-clock"
+            />
+          </v-btn>
+        </template>
+      </v-tooltip>
+
       <v-tooltip
         location="top"
         :text="$t('active.tooltips.apply')"
@@ -125,6 +159,7 @@
             v-bind="props"
             size="small"
             color="error"
+            class="rounded-e-xl"
             @click="dismiss(idx)"
           >
             <v-icon
@@ -139,11 +174,13 @@
 </template>
 
 <script setup lang="ts">
+  import { computed } from 'vue'
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { useEncounterContext } from '../encounterContext'
   import { EffectSpecial } from '@/classes/components/feature/active_effects/effect_subtype/EffectSpecial'
   import type { ICombatant } from '@/classes/components/combat/ICombatant'
   import { TimedEffect } from '@/classes/components/feature/active_effects/TimedEffect'
+  import { roundsRemaining } from '@/classes/components/combat/Duration'
 
   const { encounterInstance } = useEncounterContext()
 
@@ -152,7 +189,7 @@
   }>()
 
   function getRoundsRemaining(effect: TimedEffect) {
-    return Math.max(effect.Round - encounterInstance.value.Round, 0)
+    return roundsRemaining(effect, encounterInstance.value.Round)
   }
 
   function apply(effect: TimedEffect, index: number) {
@@ -175,6 +212,7 @@
       if (e.resist)
         e.resist.forEach((r: any) => props.item.CombatController.AddResist(r.type, r.value))
       if (e.other === 'self_destruct') props.item.CombatController.CommitSelfDestruct()
+      if (e.other === 'reactor_meltdown') props.item.CombatController.CommitReactorMeltdown()
     }
     const r = effect.Remove
     if (r) {
@@ -184,6 +222,24 @@
         r.special.forEach((s: any) => props.item.CombatController.RemoveCustomStatus(s.attribute))
     }
     dismiss(index)
+  }
+
+  const selfDestructWindow = computed(() => props.item.CombatController.SelfDestructWindow)
+
+  function isSelfDestruct(effect: TimedEffect) {
+    return effect.Apply?.other === 'self_destruct'
+  }
+
+  function setDetonation(round: number) {
+    props.item.CombatController.SetSelfDestructRound(Number(round))
+  }
+
+  function isMeltdown(effect: TimedEffect) {
+    return effect.Apply?.other === 'reactor_meltdown'
+  }
+
+  function retryMeltdown() {
+    props.item.CombatController.RetryMeltdownCheck(true)
   }
 
   function dismiss(index: number) {

@@ -92,7 +92,7 @@
 
     <v-col class="text-center">
       <fieldset>
-        <legend class="font-weight-bold caption text-primary px-2 text-center">
+        <legend class="font-weight-bold caption text-primary px-2 text-center text-uppercase">
           {{ $t('active.trackable.corePower') }}
         </legend>
 

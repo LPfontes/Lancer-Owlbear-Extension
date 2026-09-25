@@ -9,13 +9,20 @@ import {
   ISaveable,
   SaveController,
 } from '../components'
-import { CombatantData, Encounter, IEncounterData } from './Encounter'
+import { CombatantData, Encounter, IEncounterData, isOutOfCombat, makeCombatant } from './Encounter'
 import { Deployable } from '../components/feature/deployable/Deployable'
+import type { ICombatant } from '../components/combat/ICombatant'
 import { ItemType } from '../enums'
 import { Pilot, PilotData } from '../pilot/Pilot'
 import { Placeholder } from './Placeholder'
-import { DeployableInstance } from '../components/feature/deployable/DeployableInstance'
+import { deployToCombatant } from '../components/feature/deployable/DeployableInstance'
 import { Eidolon } from '../npc/eidolon/Eidolon'
+import { combatantRef } from '../components/combat/log/refs'
+import { buildStream } from '../components/combat/log/stream'
+import { eventsFor } from '../components/combat/log/CombatLogRecorder'
+import { commitOutcome } from '../components/combat/log/outcome'
+import type { IOutcome } from '../components/combat/log/outcome'
+import type { ILogStream } from '../components/combat/log/events'
 
 interface IEncounterInstanceData {
   itemType: 'EncounterInstance'
@@ -31,6 +38,12 @@ interface IEncounterInstanceData {
   force_complex_tickbars?: boolean
   layout_columns?: boolean
   max_masonry_columns?: number
+}
+
+function hasPendingMeltdown(c: CombatantData): boolean {
+  return [c.actor?.CombatController, c.actor?.ActiveMech?.CombatController].some(
+    cc => !!cc?.TimedEffectController.Pending('self_destruct', 'reactor_meltdown')
+  )
 }
 
 class EncounterInstance implements ISaveable, ICloudSyncable {
@@ -100,33 +113,36 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
           pData.mechs = [pData.mechs[0]]
           const actor = Pilot.Deserialize(pData)
 
-          return {
+          return makeCombatant(actor, 'pilot', {
             id: p.ID,
             index: -1,
             number: -1,
             side: 'ally',
-            type: 'pilot',
-            actor,
-            deployables: [],
-          } as unknown as CombatantData
+            status: undefined,
+            pilotStatus: undefined,
+            mechStatus: undefined,
+          })
         }),
-        ...placeholders.map(ph => {
-          return {
+        ...placeholders.map(ph =>
+          makeCombatant(ph, 'placeholder', {
             id: ph.ID,
             index: -1,
             number: -1,
-            type: 'placeholder',
             side: ph.Side,
-            actor: ph,
-            deployables: [],
-          } as unknown as CombatantData
-        }),
+            status: undefined,
+            pilotStatus: undefined,
+            mechStatus: undefined,
+          })
+        ),
       ]
 
       this.Combatants.sort((a, b) => a.index - b.index)
 
       const playerCount = pilots.length + placeholders.length
       this.Combatants = this.Combatants.filter(c => !c.playerCount || c.playerCount <= playerCount)
+
+      this.StampLogContext()
+      this.ApplyPassiveResistances()
 
       this.Combatants.forEach((combatant, index) => {
         combatant.index = index
@@ -204,25 +220,99 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
   }
 
   public Deploy(deployable: Deployable, combatant: CombatantData): void {
-    const deployableInstance = new DeployableInstance(deployable.ItemData, combatant)
-    deployableInstance.SetStats()
-    combatant.deployables.push(deployableInstance)
-    combatant.actor.CombatController.toggleCombatAction(deployable.DeployAction.Activation)
+    deployToCombatant(deployable, combatant)
   }
 
-  public EndEncounter(): void {
+  public ApplyPassiveResistances(): void {
+    for (const c of this.Combatants) {
+      for (const cc of [c.actor?.CombatController, c.actor?.ActiveMech?.CombatController]) {
+        if (!cc) continue
+        for (const effect of cc.ActiveEffects ?? []) {
+          if (!effect.IsAutoSelfResist) continue
+          effect.AddResist.forEach((r: any) => cc.SetResistance(r.ResistType, r.Resist))
+        }
+      }
+    }
+  }
+
+  public RenewID(): void {
+    this._id = crypto.randomUUID()
+    this.CloudController.ResetIdentity()
+    this.SaveController.RemoteCode = ''
+    this.SaveController.RemoteAuthor = ''
+    this.SaveController.RemoteCollection = ''
+    this.StampLogContext()
+  }
+
+  public StampLogContext(source: 'gm' | 'self' = 'gm'): void {
+    for (const c of this.Combatants) {
+      const recorders = [c.actor?.CombatController, c.actor?.ActiveMech?.CombatController]
+      for (const cc of recorders) {
+        if (!cc?.CombatLog) continue
+        cc.CombatLog.EncounterId = this.ID
+        cc.CombatLog.Source = source
+        cc.CombatLog.CampaignId = (this as any).Campaign || undefined
+        cc.CombatLog.Side = c.side
+      }
+    }
+  }
+
+  public RecordEncounterStart(): void {
+    for (const c of this.Combatants) {
+      c.actor.CombatController.Record('encounter.start', { name: this.Name })
+    }
+  }
+
+  public get Stream(): ILogStream {
+    const events = this.Combatants.flatMap(c => eventsFor(c.actor))
+    const tagged = events.find(e => e.campaignId || e.missionId)
+    return buildStream(
+      {
+        encounterId: this.ID,
+        encounterName: this.Encounter.Name,
+        campaignId: tagged?.campaignId,
+        missionId: tagged?.missionId,
+        start: this.Created,
+        rounds: this.Round,
+      },
+      this.Combatants.map(combatantRef),
+      events
+    )
+  }
+
+  public EndEncounter(result = '', outcomes: Record<string, IOutcome> = {}): void {
+    for (const c of this.Combatants) if (outcomes[c.id]) commitOutcome(c, outcomes[c.id])
     for (const c of this.Combatants) {
       c.actor.CombatController.EndEncounter()
       if (c.actor.ActiveMech) c.actor.ActiveMech.CombatController.EndEncounter()
+      c.actor.CombatController.Record('encounter.end', { result, rounds: this.Round })
     }
   }
 
+  public static AlternateSides(
+    combatants: { side: string }[],
+    previousSide?: string
+  ): { side: string }[] {
+    const allies = combatants.filter(c => c.side !== 'enemy')
+    const enemies = combatants.filter(c => c.side === 'enemy')
+    const startWithEnemies = previousSide !== undefined && previousSide !== 'enemy'
+
+    const first = startWithEnemies ? enemies : allies
+    const second = startWithEnemies ? allies : enemies
+
+    const longer = first.length >= second.length ? first : second
+    return longer.flatMap((_, i) => [first[i], second[i]]).filter(Boolean)
+  }
+
+  private _lastSide?: string
+
   public async EndRound(): Promise<void> {
-    await new Promise<void>(r => setTimeout(r, 100))
     for (const c of this.Combatants) {
+      if (isOutOfCombat(c) && !hasPendingMeltdown(c)) continue
       c.actor.CombatController.EndRound(this)
-      if (c.actor.ActiveMech) c.actor.ActiveMech.CombatController.EndRound(this)
+      if (c.actor.ActiveMech) c.actor.ActiveMech.CombatController.EndRound(this, true)
     }
+    this._lastSide = EncounterInstance.AlternateSides(this.Combatants, this._lastSide).at(-1)?.side
     this._round += 1
     if (this.Autosave) {
       await this.Save()
@@ -271,15 +361,17 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
       allTargets.push(combatant)
 
       combatant.deployables.forEach(deployable => {
-        allTargets.push({
-          id: deployable.ID,
-          index: -1,
-          number: -1,
-          type: 'placeholder',
-          side: combatant.side, // Inherit parent's side
-          deployables: [],
-          actor: deployable,
-        } as CombatantData)
+        allTargets.push(
+          makeCombatant(deployable as unknown as ICombatant, 'placeholder', {
+            id: deployable.ID,
+            index: -1,
+            number: -1,
+            side: combatant.side, // Inherit parent's side
+            status: undefined,
+            pilotStatus: undefined,
+            mechStatus: undefined,
+          })
+        )
       })
     })
 

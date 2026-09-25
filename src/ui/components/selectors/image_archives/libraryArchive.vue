@@ -38,8 +38,13 @@
             outlined
             class="pa-1"
             tile>
-            <i18n-t keypath="ui.image.artworkBy" tag="div" class="text-caption text-center" scope="global">
-              <template #artist><b>{{ image.artist }}</b></template>
+            <i18n-t keypath="ui.image.artworkBy"
+              tag="div"
+              class="text-caption text-center"
+              scope="global">
+              <template #artist>
+                <b>{{ image.artist }}</b>
+              </template>
             </i18n-t>
             <div class="text-center mt-n2">
               <v-btn v-if="image.website"
@@ -51,14 +56,14 @@
                 class="mx-2">
                 <v-icon>mdi-web</v-icon>
               </v-btn>
-              <v-btn v-if="image.twitter"
+              <v-btn v-if="image.bluesky"
                 size="small"
                 icon
                 variant="plain"
-                :href="`https://twitter.com/${image.twitter}`"
+                :href="`https://bsky.app/profile/${image.bluesky}`"
                 target="_blank"
                 class="mx-2">
-                <v-icon>mdi-twitter</v-icon>
+                <v-icon>mdi-butterfly</v-icon>
               </v-btn>
             </div>
           </v-card>
@@ -74,8 +79,8 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import * as _ from 'lodash-es';
-import artistMap from '@/assets/artistmap.json';
+import * as _ from 'lodash-es'
+import artistMap from '@/io/assets/artistmap.json'
 
 defineOptions({ name: 'LibraryImageArchive' })
 
@@ -89,98 +94,49 @@ const emit = defineEmits<{
   'set-staged': [payload: any]
 }>()
 
-const currentUserPage = ref(1)
 const currentArtistPage = ref(1)
 const itemsPerPage = ref(12)
 const selectedImage = ref(null as unknown as any)
-const loading = ref(false)
-const imageSelectTab = ref(0)
-const userStorageData = ref(null as unknown as any)
-const stagedImage = ref(null as unknown as any)
-const imageUrl = ref('')
+
 const selectedTags = ref([] as string[])
 
-selectedTags.value = [props.type];
+selectedTags.value = props.type === 'mech' ? ['frame', 'mech'] : [props.type]
 
-selectedTags.value = [props.type];
-
-const displayedUserImages = computed(() => {
-      const startIndex = (currentUserPage.value - 1) * itemsPerPage.value;
-      const endIndex = startIndex + itemsPerPage.value;
-      return userImages.value.slice(startIndex, endIndex);
-    })
-const totalUserPages = computed(() => {
-      return Math.ceil(userImages.value.length / itemsPerPage.value);
-    })
 const displayedArtistImages = computed(() => {
-      const startIndex = (currentArtistPage.value - 1) * itemsPerPage.value;
-      const endIndex = startIndex + itemsPerPage.value;
-      return artistImages.value.slice(startIndex, endIndex);
-    })
+  const startIndex = (currentArtistPage.value - 1) * itemsPerPage.value
+  const endIndex = startIndex + itemsPerPage.value
+  return artistImages.value.slice(startIndex, endIndex)
+})
 const totalArtistPages = computed(() => {
-      return Math.ceil(artistImages.value.length / itemsPerPage.value);
-    })
-const displayImage = computed(() => {
-      if (selectedImage.value) return selectedImage.value.url;
-      if (props.item.Portrait) return props.item.Portrait;
-      else return 'https://via.placeholder.com/550';
-    })
-const isAuthed = computed(() => {
-      return false;
-      // return getModule(UserStore, _store).IsLoggedIn;
-    })
-const isOverCapacity = computed(() => {
-      return (
-        isAuthed.value &&
-        userStorageData.value &&
-        userStorageData.value.totalSize >= userStorageData.value.max
-      );
-    })
-const userImages = computed(() => {
-      if (!userStorageData.value || userStorageData.value.contents.length === 0) return [];
-      const contents = userStorageData.value.contents
-        .flatMap((x) => x.objects)
-        .map((x) => ({
-          url: `https://d1nurxym97qk9o.cloudfront.net/${x.Key}`,
-          filename: x.Key.split('/').pop(),
-          tag: x.Key.split('/').slice(-2, -1)[0],
-          size: x.Size / 1000000,
-          key: x.Key,
-        }));
-      return contents;
-    })
-const imageTags = computed(() => {
-      return _.uniq([...artistMap.flatMap((x) => Object.keys(x.images))]);
-    })
-const artistImages = computed(() => {
-      const out = [] as any[];
+  return Math.ceil(artistImages.value.length / itemsPerPage.value)
+})
 
-      artistMap.forEach((artist) => {
-        selectedTags.value.forEach((t) => {
-          if (artist.images[t])
-            artist.images[t].forEach((image) => {
-              out.push({
-                url: image.img,
-                filename: image.name,
-                tag: props.type,
-                artist: artist.artist,
-                website: artist.website || '',
-                twitter: artist.twitter || '',
-              });
-            });
-        });
-      });
-      return out;
-    })
+const imageTags = computed(() => {
+  return _.uniq(artistMap.flatMap(x => x.images.map(i => i.tag)))
+})
+const artistImages = computed(() => {
+  return _.sortBy(artistMap, a => a.artist.toLowerCase()).flatMap(artist =>
+    artist.images
+      .filter(image => selectedTags.value.includes(image.tag))
+      .map(image => ({
+        url: `https://d2c79xe1p61csc.cloudfront.net/${image.tag === 'pilot' ? 'pilots' : 'frames'}/${image.img}`,
+        filename: image.name,
+        tag: image.tag,
+        artist: artist.artist,
+        website: artist.website || '',
+        bluesky: artist.bluesky || '',
+      }))
+  )
+})
 const selectedImageUrl = computed(() => {
-      return selectedImage.value ? selectedImage.value.url : '';
-    })
+  return selectedImage.value ? selectedImage.value.url : ''
+})
 
 function isSelected(url) {
-      return selectedImageUrl.value === url;
-    }
+  return selectedImageUrl.value === url
+}
 function stage(image) {
-      selectedImage.value = image;
-      emit('set-staged', image);
-    }
+  selectedImage.value = image
+  emit('set-staged', image)
+}
 </script>

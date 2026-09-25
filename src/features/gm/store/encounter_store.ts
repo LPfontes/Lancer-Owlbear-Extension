@@ -11,6 +11,7 @@ import logger from '@/user/logger'
 import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
 import { EncounterArchive } from '@/classes/encounter/EncounterArchive'
 import { clearUndoStack } from '@/classes/encounter/EncounterUndoStack'
+import { PilotStore } from '@/features/pilot_management/store'
 
 export const EncounterStore = defineStore('encounter', {
   state: () => ({
@@ -130,7 +131,7 @@ export const EncounterStore = defineStore('encounter', {
       } else {
         this.ActiveEncounters.push(payload)
       }
-      this.SaveActiveEncounterData()
+      await SetItem('active_encounters', toRaw(payload).Serialize())
     },
 
     ReplaceActiveEncounter(payload: EncounterInstance): void {
@@ -143,7 +144,7 @@ export const EncounterStore = defineStore('encounter', {
       this.ActiveEncounters.forEach(x => (x.IsActive = false))
       const id = payload.ID || (payload as any)._id
       const idx = this.ActiveEncounters.findIndex(x => x.ID === id)
-      if (idx >= -1) {
+      if (idx !== -1) {
         this.ActiveEncounters.splice(idx, 1)
         await RemoveItem('active_encounters', id)
         this.SaveActiveEncounterData()
@@ -158,10 +159,28 @@ export const EncounterStore = defineStore('encounter', {
     ): Promise<void> {
       const archive = EncounterArchive.FromInstance(payload, report, result)
       await this.AddEncounterArchive(archive)
+      await this.RouteArchiveToLogbooks(archive)
       await this.RemoveEncounterInstance(payload)
       if (this.CurrentActiveID === payload.ID) {
         this.CurrentActiveID = ''
         await SetValue('current_active_encounter_id', '')
+      }
+    },
+
+    // the common case is a GM running local-roster pilots, which needs no share code and no import
+    // screen: the archive goes straight to each participant's logbook
+    async RouteArchiveToLogbooks(archive: EncounterArchive): Promise<void> {
+      const pilots = PilotStore()
+      const logbooks = PilotStore()
+      for (const participant of archive.History.participants) {
+        if (participant.type !== 'pilot') continue
+        const pilot = pilots.getPilotByID(participant.originId || participant.id)
+        if (!pilot) continue
+        try {
+          await logbooks.RecordStream(archive.StreamFor(participant.id), pilot.ID, participant.id)
+        } catch (err) {
+          logger.error(`Failed to record encounter log for pilot ${pilot.ID}`, this, err)
+        }
       }
     },
 
@@ -182,7 +201,7 @@ export const EncounterStore = defineStore('encounter', {
     async RemoveEncounterArchive(payload: EncounterArchive): Promise<void> {
       const id = payload.ID || (payload as any)._id
       const idx = this.ArchivedEncounters.findIndex(x => x.ID === id)
-      if (idx >= -1) {
+      if (idx !== -1) {
         this.ArchivedEncounters.splice(idx, 1)
         await RemoveItem('encounter_archives', id)
       }
@@ -207,7 +226,7 @@ export const EncounterStore = defineStore('encounter', {
     async DeleteEncounterPermanent(payload: Encounter): Promise<void> {
       const id = payload.ID || (payload as any)._id
       const idx = this.Encounters.findIndex(x => x.ID === id)
-      if (idx >= -1) this.Encounters.splice(idx, 1)
+      if (idx !== -1) this.Encounters.splice(idx, 1)
       NavStore().removeEncounterEntry(id)
       await RemoveItem('Encounters', id)
       this.SaveEncounterData()
@@ -221,7 +240,12 @@ export const EncounterStore = defineStore('encounter', {
     },
 
     async SaveActiveEncounterData(): Promise<void> {
-      await saveAll('active_encounters', this.ActiveEncounters, y => toRaw(y).Serialize(), 'Active Encounter data')
+      await saveAll(
+        'active_encounters',
+        this.ActiveEncounters,
+        y => toRaw(y).Serialize(),
+        'Active Encounter data'
+      )
     },
   },
 })

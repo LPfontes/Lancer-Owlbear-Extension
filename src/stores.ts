@@ -1,5 +1,9 @@
 import { UserStore } from './user/store'
-import { CompendiumStore, ContentPackStore, ContentCollectionStore } from './features/compendium/store'
+import {
+  CompendiumStore,
+  ContentPackStore,
+  ContentCollectionStore,
+} from './features/compendium/store'
 import { PilotStore, PilotSheetStore, PilotGroupStore } from './features/pilot_management/store'
 import { NpcStore } from './features/gm/store/npc_store'
 import { EncounterStore } from './features/gm/store/encounter_store'

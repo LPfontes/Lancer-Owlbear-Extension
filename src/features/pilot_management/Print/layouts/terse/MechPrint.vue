@@ -11,7 +11,7 @@
             />
           </v-col>
           <v-col cols="auto">
-            <div class="text-overline mt-n4 mb-n2 text-primary">
+            <div class="text-cc-overline text-primary">
               {{ $t('active.fields.mechName') }}
             </div>
             <blank-line
@@ -28,11 +28,11 @@
         <div class="text-overline my-n2 text-primary">
           {{ mech.Frame.Source }} {{ mech.Frame.Name }}
         </div>
-        <div class="heading ph2 mt-n4 font-weight-bolder">{{ mech.Name }}</div>
+        <div class="heading ph2 font-weight-bolder">{{ mech.Name }}</div>
       </v-col>
       <v-col
         cols="auto"
-        class="ml-auto mr-2 text-center caption"
+        class="ml-auto mr-2 mb-1 text-center caption"
       >
         <div class="text-overline text-primary my-n2">{{ $t('common.overcharge') }}</div>
         <v-chip
@@ -586,6 +586,7 @@
       <v-col :cols="hasMechOption('mechImage') ? (landscape ? 9 : 8) : 12">
         <v-row
           dense
+          class="text-uppercase"
           :class="blank ? 'mt-n3' : ''"
         >
           <v-col
@@ -598,7 +599,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ signed(mech.AttackBonus) }}
               </div>
@@ -614,7 +615,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ signed(mech.TechAttack) }}
               </div>
@@ -630,7 +631,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ mech.SaveTarget }}
               </div>
@@ -646,7 +647,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ mech.Speed }}
               </div>
@@ -662,7 +663,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ mech.EDefense }}
               </div>
@@ -678,7 +679,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ mech.Evasion }}
               </div>
@@ -694,7 +695,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ mech.SensorRange }}
               </div>
@@ -710,7 +711,7 @@
               </legend>
               <div
                 v-if="!blank"
-                class="heading ph2 text-center mt-n2"
+                class="heading ph2 text-center"
               >
                 {{ signed(mech.LimitedBonus) }}
               </div>

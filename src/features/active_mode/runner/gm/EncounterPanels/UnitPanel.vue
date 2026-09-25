@@ -64,7 +64,7 @@
     encounterInstance: computed(() => props.encounterInstance),
   })
 
-  const emit = defineEmits<{
+  defineEmits<{
     deselect: []
   }>()
 
@@ -83,7 +83,9 @@
         key: 'overwatch',
         label: t('active.actions.overwatch'),
         active: cc.Overwatch,
-        toggle: () => (cc.Overwatch = !cc.Overwatch),
+        reason: cc.BlockedReasonFor('overwatch'),
+        toggle: () => cc.SetOverwatch(!cc.Overwatch),
+        forceToggle: () => cc.SetOverwatch(!cc.Overwatch, true),
       },
       {
         key: 'prepared',

@@ -29,11 +29,15 @@
         class="text-cc-overline text-disabled pl-3 py-2"
       >
         {{ $t('active.skirmish.selectWeapon') }}
+        <unavailable-toggle
+          v-model="useState.showUnavailable"
+          :count="hiddenWeapons"
+        />
       </div>
       <v-row
         dense
         align="center"
-        class="bg-panel heading h3 px-3"
+        class="bg-panel heading h3 mb-1 pt-1"
       >
         <v-col v-if="!presetWeapon">
           <cc-select
@@ -93,7 +97,7 @@
         </v-col>
       </v-row>
 
-      <div :class="mobile ? 'px-1' : 'px-6'">
+      <div :class="mobile ? 'px-1' : 'px-6 py-1'">
         <cc-synergy-display
           v-if="selectedWeapon"
           :item="selectedWeapon"
@@ -175,6 +179,10 @@
           </div>
         </div>
       </div>
+      <cc-flow-request
+        :request="result?.request"
+        class="px-4 pb-2"
+      />
       <v-slide-y-transition>
         <staged-panel
           v-if="event && event.BaseEvent.Staged"
@@ -182,8 +190,12 @@
         />
       </v-slide-y-transition>
 
+      <confirm-kill-bar
+        v-if="event"
+        :event="<ActiveEffectEvent>event.BaseEvent"
+      />
       <v-divider />
-      <div class="pa-4">
+      <div class="pb-4 px-4">
         <apply-button
           v-if="event"
           :owner="owner"
@@ -206,123 +218,71 @@
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { useEncounterContext } from '../../../encounterContext'
   import type { Action } from '@/classes/Action'
-  import { computed, ref, watch } from 'vue'
+  import { computed } from 'vue'
   import { useDisplay } from 'vuetify'
   import MenuInput from '@/ui/components/chips/_activeeffect/_ae_menu_input.vue'
   import MechMountBonusCard from '../_mechMountBonusCard.vue'
   import { MechWeapon } from '@/classes/mech/components/equipment/MechWeapon'
   import type { Mech } from '@/classes/mech/Mech'
-  import { CombatantData } from '@/classes/encounter/Encounter'
   import { WeaponAttackEvent } from '@/classes/components/feature/active_effects/WeaponAttackEvent'
   import { WeaponProfile } from '@/classes/mech/components/equipment/MechWeapon'
   import MechWeaponAttack from './_mechWeaponAttack.vue'
+  import { useWeaponUse } from './useWeaponUse'
   import ApplyButton from '@/ui/components/chips/_activeeffect/ApplyButton.vue'
+  import ConfirmKillBar from '@/ui/components/chips/_activeeffect/_shared/ConfirmKillBar.vue'
   import { ActiveEffectEvent } from '@/classes/components/feature/active_effects/ActiveEffectEvent'
   import StagedPanel from './_stagedPanel.vue'
+  import UnavailableToggle from './_unavailableToggle.vue'
   import CombatActionButton from './CombatActionButton.vue'
 
   const _display = useDisplay()
 
-  const { owner, encounterInstance } = useEncounterContext()
+  const { owner, encounterInstance, ownerController } = useEncounterContext()
 
   const props = defineProps<{
     action: Action
     presetWeapon?: MechWeapon
   }>()
 
-  const event = ref(null as WeaponAttackEvent | null)
-  const auxEvents = ref([] as WeaponAttackEvent[])
-  const selectedWeapon = ref(null as MechWeapon | null)
-  const include = ref([] as boolean[])
-
   const mobile = computed(() => {
     return _display.mdAndDown.value
   })
-  const controller = computed(() => {
-    return owner.value.actor.CombatController.ActiveActor.CombatController
+  const {
+    controller,
+    useState,
+    result,
+    reset,
+    apply,
+    selected: selectedWeapon,
+    weapons: skirmishWeapons,
+    hiddenWeapons,
+    eventArray,
+  } = useWeaponUse({
+    mode: 'skirmish',
+    carry: true,
+    actionId: () => props.action.ID,
+    presetWeapon: () => props.presetWeapon,
+    makeEvent: (self, weapon, label) =>
+      new WeaponAttackEvent(
+        weapon.SelectedProfile as WeaponProfile,
+        self,
+        encounterInstance.value,
+        label
+      ),
   })
+
+  const event = computed(() => (useState.value.entries[0]?.event as WeaponAttackEvent) ?? null)
+  const auxEvents = computed(
+    () => (useState.value.entries[0]?.auxEvents as WeaponAttackEvent[]) ?? []
+  )
+  const include = computed(() => useState.value.entries[0]?.include ?? [])
   const selectedMount = computed(() => {
     if (!selectedWeapon.value) return null
-    const aa = owner.value.actor.CombatController.RootActor
+    const aa = ownerController.value.RootActor
     if (!aa.ActiveMech) return null
 
     return aa.ActiveMech.MechLoadoutController.ActiveLoadout.Mounts.find(m =>
       m.Weapons.some(w => w.InstanceID === selectedWeapon.value!.InstanceID)
     )
   })
-  const ordnanceWarning = computed(() => {
-    if (!selectedWeapon.value) return false
-    if (selectedWeapon.value.ActiveTags.find(t => t.ID.toLowerCase() === 'tg_ordnance')) {
-      return owner.value.actor.CombatController.CanActivate('ordnance') === false
-    }
-    return false
-  })
-  const skirmishWeapons = computed(() => {
-    const mech = controller.value.ActiveActor
-    if (!mech || !mech.MechLoadoutController) return []
-    let arr = mech.MechLoadoutController.ActiveLoadout.Weapons.filter(x => x.Skirmish)
-    if (props.presetWeapon) {
-      arr = arr.filter(w => w.InstanceID === props.presetWeapon!.InstanceID)
-    }
-    return arr
-  })
-  const eventArray = computed(() => {
-    const enabledAuxes = auxEvents.value.filter((x, idx) => include.value[idx])
-    return event.value ? [event.value, ...enabledAuxes] : enabledAuxes
-  })
-
-  function reset(clearAction = false) {
-    if (clearAction)
-      owner.value.actor.CombatController.ActiveActor.CombatController.ClearActionUsed(
-        props.action.ID
-      )
-    const self = encounterInstance.value.Combatants.find(
-      (c: CombatantData) =>
-        c.actor.CombatController.RootActor.ID === owner.value.actor.CombatController.RootActor.ID
-    )
-    if (!self) {
-      throw new Error('Owner combatant not found in encounterInstance')
-    }
-    if (!selectedWeapon.value && props.presetWeapon) {
-      selectedWeapon.value = props.presetWeapon
-    }
-
-    if (!selectedWeapon.value) return
-
-    event.value = new WeaponAttackEvent(
-      selectedWeapon.value?.SelectedProfile as WeaponProfile,
-      self,
-      encounterInstance.value,
-      'Skirmish'
-    )
-    const auxes =
-      selectedMount.value?.Weapons.filter(
-        x =>
-          x.InstanceID !== selectedWeapon.value!.InstanceID && x.Size.toLowerCase() === 'auxiliary'
-      ) ?? []
-
-    auxEvents.value = auxes.map(
-      x =>
-        new WeaponAttackEvent(
-          x.SelectedProfile as WeaponProfile,
-          owner.value as CombatantData,
-          encounterInstance.value,
-          'Additional Aux Attack'
-        )
-    )
-
-    include.value = auxEvents.value.map(() => true)
-  }
-  function apply() {
-    const actor = owner.value.actor.CombatController.ActiveActor.CombatController
-    actor.MarkActionUsed(selectedWeapon.value!.InstanceID)
-    if (selectedWeapon.value!.IsLoading) selectedWeapon.value!.Used = true
-    reset()
-  }
-  function onWeaponChanged(weapon: MechWeapon) {
-    selectedWeapon.value = weapon
-    reset()
-  }
-
-  reset()
 </script>

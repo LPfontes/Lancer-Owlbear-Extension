@@ -401,7 +401,7 @@
         <v-row
           dense
           justify="space-between"
-          class="mt-n3"
+          class="mt-n3 text-uppercase"
         >
           <v-col cols="auto">
             <span

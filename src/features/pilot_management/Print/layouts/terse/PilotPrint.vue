@@ -9,7 +9,7 @@
         class="mr-4"
         cols="auto"
       >
-        <div class="text-caption text-primary mb-n3">{{ $t('common.callsign') }}</div>
+        <div class="text-caption text-primary">{{ $t('common.callsign') }}</div>
         <div
           v-if="blank"
           style="min-width: 250px"
@@ -22,10 +22,7 @@
         >
           {{ pilot.Callsign }}
         </div>
-        <div
-          v-if="!blank"
-          class="my-n2"
-        >
+        <div v-if="!blank">
           <div class="text-caption">
             {{ pilot.Name }}{{ $t('pm.common.commaLl') }}
             <b>{{ pilot.Level }}</b>

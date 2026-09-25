@@ -60,13 +60,15 @@
         :key="tier"
         class="mb-6">
         <cc-title small
-          class="my-2">{{ $t('nav.credits.tier', { patreonTierName: tier.toUpperCase() })
-          }}</cc-title>
+          class="my-2">
+          {{ $t('nav.credits.tier', { patreonTierName: tier.toUpperCase() }) }}
+        </cc-title>
         <v-row align="center"
           justify="space-around"
           dense>
-          <v-col
-            v-for="(p, pIdx) in patrons.filter((x) => x.tier.toLowerCase().includes(tier.toLowerCase())).sort((a, b) => getSortOrder(a, b))"
+          <v-col v-for="(p, pIdx) in patrons
+            .filter(x => x.tier.toLowerCase().includes(tier.toLowerCase()))
+            .sort((a, b) => getSortOrder(a, b))"
             :key="`patron-${pIdx}`"
             :cols="getCols(tier)">
             <component :is="getComponent(p)"
@@ -153,29 +155,41 @@ function cleanName(patron: any) {
 
   if (name.includes(' ')) {
     const arr = name.split(' ')
-    return arr.map((x: string, i: number) => i === arr.length - 1 ? x.substring(0, 1) + '.' : x).join(' ')
+    return arr
+      .map((x: string, i: number) => (i === arr.length - 1 ? x.substring(0, 1) + '.' : x))
+      .join(' ')
   }
   return name
 }
 
 function getColor(tier: string) {
   switch (tier) {
-    case 'MONIST': return 'exotic'
-    case 'NHP': return 'secondary'
-    case 'Lancer': return 'primary'
-    case 'Cosmopolitan': return 'info'
-    case 'Diasporan': return 'success'
-    default: return 'grey'
+    case 'MONIST':
+      return 'exotic'
+    case 'NHP':
+      return 'secondary'
+    case 'Lancer':
+      return 'primary'
+    case 'Cosmopolitan':
+      return 'info'
+    case 'Diasporan':
+      return 'success'
+    default:
+      return 'grey'
   }
 }
 
 function getCols(tier: string) {
   switch (tier) {
-    case 'MONIST': return 12
+    case 'MONIST':
+      return 12
     case 'NHP':
-    case 'Lancer': return 6
-    case 'Cosmopolitan': return 4
-    default: return 4
+    case 'Lancer':
+      return 6
+    case 'Cosmopolitan':
+      return 4
+    default:
+      return 4
   }
 }
 </script>

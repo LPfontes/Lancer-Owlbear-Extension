@@ -2,7 +2,7 @@
   <v-row
     justify="space-around"
     align="center"
-    class="mt-n4 mb-1"
+    class="mt-n6 mb-1 text-uppercase"
   >
     <v-col
       cols="auto"

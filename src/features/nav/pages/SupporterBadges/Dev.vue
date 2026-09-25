@@ -31,7 +31,9 @@
               <span>{{ $t('common.website') }}</span>
             </a>
             <span v-if="info.twitter && info.website"
-              class="mx-3">|</span>
+              class="mx-3">
+              |
+            </span>
             <a v-if="info.twitter"
               target="_blank"
               :href="`https://twitter.com/${info.twitter}`">
@@ -46,7 +48,7 @@
               <v-icon class="ml-4 mr-1"
                 color="primary"
                 icon="mdi-butterfly" />
-              <span>@{{ info.bsky }}</span>
+              <span>{{ info.bsky }}</span>
             </a>
 
             <a v-if="info.github"
