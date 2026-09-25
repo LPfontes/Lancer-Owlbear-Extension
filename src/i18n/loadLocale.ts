@@ -8,7 +8,7 @@ import {
 import { setContentLocale } from './loadContent'
 import vuetify from '@/ui/style'
 
-const loaded = new Set<string>([DEFAULT_LOCALE])
+const loaded = new Set<string>([DEFAULT_LOCALE, 'en'])
 
 async function ensureMessages(code: LocaleCode): Promise<void> {
   if (loaded.has(code)) return

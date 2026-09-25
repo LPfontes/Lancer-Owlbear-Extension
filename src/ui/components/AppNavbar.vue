@@ -15,9 +15,9 @@
       fluid
       class="d-flex align-center py-0 px-2 justify-space-between fill-height window-drag-handle cursor-grab"
       style="user-select: none;"
-      @pointerdown="(e) => windowManager.handlePointerDown(e)"
-      @pointermove="(e) => windowManager.handlePointerMove(e)"
-      @pointerup="(e) => windowManager.handlePointerUp(e)"
+      @pointerdown="(e: PointerEvent) => windowManager.handlePointerDown(e)"
+      @pointermove="(e: PointerEvent) => windowManager.handlePointerMove(e)"
+      @pointerup="(e: PointerEvent) => windowManager.handlePointerUp(e)"
     >
       <div class="d-flex align-center ga-2">
         <v-icon icon="mdi-drag-vertical" color="accent" size="small" />
@@ -49,38 +49,38 @@
               variant="text"
               size="x-small"
               color="grey-lighten-1"
-              title="Posicionar Janela nos Cantos"
+              :title="$t('ow.snapToCorners')"
             />
           </template>
           <v-list density="compact" class="bg-grey-darken-4 border-accent pa-1" elevation="6">
-            <v-list-subheader class="text-cc-overline text-accent">Encaixar Janela</v-list-subheader>
+            <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.dockWindow') }}</v-list-subheader>
             <v-list-item
               prepend-icon="mdi-arrow-top-right-bold-box-outline"
-              title="Superior Direito"
+              :title="$t('ow.topRight')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('top-right')"
             />
             <v-list-item
               prepend-icon="mdi-arrow-top-left-bold-box-outline"
-              title="Superior Esquerdo"
+              :title="$t('ow.topLeft')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('top-left')"
             />
             <v-list-item
               prepend-icon="mdi-arrow-bottom-right-bold-box-outline"
-              title="Inferior Direito"
+              :title="$t('ow.bottomRight')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('bottom-right')"
             />
             <v-list-item
               prepend-icon="mdi-arrow-bottom-left-bold-box-outline"
-              title="Inferior Esquerdo"
+              :title="$t('ow.bottomLeft')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('bottom-left')"
             />
             <v-list-item
               prepend-icon="mdi-image-filter-center-focus"
-              title="Centralizar"
+              :title="$t('ow.center')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('center')"
             />
@@ -93,7 +93,7 @@
           variant="text"
           size="x-small"
           color="accent"
-          title="Restaurar Janela"
+          :title="$t('ow.restoreWindow')"
           @click="windowManager.restore()"
         />
 
@@ -103,7 +103,7 @@
           variant="text"
           size="x-small"
           color="grey-lighten-1"
-          title="Fechar Janela"
+          :title="$t('ow.closeWindow')"
           @click="windowManager.closeWindow()"
         />
       </div>
@@ -135,7 +135,7 @@
         color="grey-lighten-1"
         size="small"
         class="mr-2"
-        title="Voltar"
+        :title="$t('ow.back')"
         @click="goBack"
       />
 
@@ -149,7 +149,7 @@
           class="nav-btn font-weight-bold rounded-0"
           prepend-icon="mdi-home"
         >
-          Início
+          {{ $t('ow.home') }}
         </v-btn>
 
         <v-btn
@@ -159,7 +159,7 @@
           class="nav-btn font-weight-bold rounded-0"
           prepend-icon="mdi-account-plus"
         >
-          Criar Piloto
+          {{ $t('ow.createPilot') }}
         </v-btn>
 
         <v-btn
@@ -169,7 +169,7 @@
           class="nav-btn font-weight-bold rounded-0"
           prepend-icon="cc:pilot"
         >
-          Hangar
+          {{ $t('ow.hangar') }}
         </v-btn>
 
         <v-btn
@@ -179,7 +179,7 @@
           class="nav-btn font-weight-bold rounded-0"
           prepend-icon="mdi-card-account-details-outline"
         >
-          Modo Ativo
+          {{ $t('ow.activeMode') }}
           <v-badge
             v-if="activeSheetsCount > 0"
             :content="activeSheetsCount"
@@ -196,7 +196,7 @@
           class="nav-btn font-weight-bold rounded-0"
           prepend-icon="cc:encounter"
         >
-          Encontros (GM)
+          {{ $t('ow.encountersGm') }}
           <v-badge
             v-if="encountersCount > 0"
             :content="encountersCount"
@@ -213,7 +213,7 @@
           class="nav-btn font-weight-bold rounded-0"
           prepend-icon="cc:npc"
         >
-          NPCs
+          {{ $t('ow.npcs') }}
           <v-badge
             v-if="npcsCount > 0"
             :content="npcsCount"
@@ -265,7 +265,7 @@
         prepend-icon="mdi-cog"
         @click="openOptions('lcps')"
       >
-        <span v-if="!mobile">Opções</span>
+        <span v-if="!mobile">{{ $t('ow.options') }}</span>
       </v-btn>
 
       <!-- Quick Action: Criar / Importar Menu -->
@@ -279,64 +279,64 @@
             class="font-weight-bold rounded-0 elevation-2 mr-2"
             prepend-icon="mdi-plus"
           >
-            <span v-if="!mobile">Ações</span>
+            <span v-if="!mobile">{{ $t('ow.actions') }}</span>
             <v-icon icon="mdi-chevron-down" end size="small" />
           </v-btn>
         </template>
 
         <v-list density="compact" class="bg-grey-darken-4 border-accent pa-1" elevation="6">
-          <v-list-subheader class="text-cc-overline text-accent">Personagem & Piloto</v-list-subheader>
+          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.characterAndPilot') }}</v-list-subheader>
           <v-list-item
             to="/new/no_group"
             prepend-icon="mdi-account-plus"
-            title="Criar Novo Piloto (Ficha)"
+            :title="$t('ow.createPilotSheet')"
             class="my-1 rounded-0 text-accent font-weight-bold"
           />
           <v-list-item
             to="/pilot_management"
             prepend-icon="cc:pilot"
-            title="Hangar de Pilotos (Roster)"
+            :title="$t('ow.pilotRoster')"
             class="my-1 rounded-0"
           />
           <v-list-item
             to="/active-mode/new-sheet"
             prepend-icon="mdi-sword"
-            title="Iniciar Ficha Ativa (Combate)"
+            :title="$t('ow.startActiveSheet')"
             class="my-1 rounded-0"
           />
           <v-divider class="my-1 border-grey-darken-3" />
-          <v-list-subheader class="text-cc-overline text-accent">Mestre (GM)</v-list-subheader>
+          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.gmSection') }}</v-list-subheader>
           <v-list-item
             to="/active-mode/new-encounter"
             prepend-icon="mdi-sword-cross"
-            title="Novo Encontro (GM)"
+            :title="$t('ow.newEncounter')"
             class="my-1 rounded-0"
           />
           <v-list-item
             to="/active-mode/npcs"
             prepend-icon="cc:npc"
-            title="Roster de NPCs"
+            :title="$t('ow.npcRoster')"
             class="my-1 rounded-0"
           />
           <v-divider class="my-1 border-grey-darken-3" />
-          <v-list-subheader class="text-cc-overline text-accent">Importação</v-list-subheader>
+          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.importSection') }}</v-list-subheader>
           <v-list-item
             prepend-icon="mdi-file-import-outline"
-            title="Importar (ShareCode / JSON)"
+            :title="$t('ow.importShareCodeJson')"
             class="my-1 rounded-0 text-accent font-weight-bold"
             @click="showImportDialog = true"
           />
           <v-divider class="my-1 border-grey-darken-3" />
-          <v-list-subheader class="text-cc-overline text-accent">Configurações & LCPs</v-list-subheader>
+          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.settingsAndLcps') }}</v-list-subheader>
           <v-list-item
             prepend-icon="mdi-package-down"
-            title="Instalar LCPs (.lcp / .llp)"
+            :title="$t('ow.installLcpsFull')"
             class="my-1 rounded-0"
             @click="openOptions('lcps')"
           />
           <v-list-item
             prepend-icon="mdi-translate"
-            title="Selecionar Tradução / Idioma"
+            :title="$t('ow.selectLanguage')"
             class="my-1 rounded-0"
             @click="openOptions('language')"
           />
@@ -348,13 +348,13 @@
         <!-- Drag Handle for repositioning -->
         <div
           class="window-drag-handle d-flex align-center px-2 py-1 rounded cursor-grab"
-          title="Segure e arraste para mover a janela pelo Owlbear Rodeo"
-          @pointerdown="(e) => windowManager.handlePointerDown(e)"
-          @pointermove="(e) => windowManager.handlePointerMove(e)"
-          @pointerup="(e) => windowManager.handlePointerUp(e)"
+          :title="$t('ow.dragWindowHelp')"
+          @pointerdown="(e: PointerEvent) => windowManager.handlePointerDown(e)"
+          @pointermove="(e: PointerEvent) => windowManager.handlePointerMove(e)"
+          @pointerup="(e: PointerEvent) => windowManager.handlePointerUp(e)"
         >
           <v-icon icon="mdi-drag-vertical" size="small" color="accent" />
-          <span class="text-caption font-weight-bold text-accent d-none d-lg-inline ml-1" style="font-size: 0.7rem !important; letter-spacing: 0.5px;">MOVER</span>
+          <span class="text-caption font-weight-bold text-accent d-none d-lg-inline ml-1" style="font-size: 0.7rem !important; letter-spacing: 0.5px;">{{ $t('ow.move') }}</span>
         </div>
 
         <!-- Snap to Corners Menu -->
@@ -366,51 +366,51 @@
               variant="text"
               size="small"
               color="grey-lighten-2"
-              title="Encaixar janela nos cantos da tela"
+              :title="$t('ow.snapToCorners')"
             />
           </template>
           <v-list density="compact" class="bg-grey-darken-4 border-accent pa-1" elevation="6">
-            <v-list-subheader class="text-cc-overline text-accent">Posicionar nos Cantos</v-list-subheader>
+            <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.snapToCorners') }}</v-list-subheader>
             <v-list-item
               prepend-icon="mdi-arrow-top-right-bold-box-outline"
-              title="Superior Direito"
-              subtitle="Canto superior direito"
+              :title="$t('ow.topRight')"
+              :subtitle="$t('ow.topRightDesc')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('top-right')"
             />
             <v-list-item
               prepend-icon="mdi-arrow-top-left-bold-box-outline"
-              title="Superior Esquerdo"
-              subtitle="Canto superior esquerdo"
+              :title="$t('ow.topLeft')"
+              :subtitle="$t('ow.topLeftDesc')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('top-left')"
             />
             <v-list-item
               prepend-icon="mdi-arrow-bottom-right-bold-box-outline"
-              title="Inferior Direito"
-              subtitle="Canto inferior direito"
+              :title="$t('ow.bottomRight')"
+              :subtitle="$t('ow.bottomRightDesc')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('bottom-right')"
             />
             <v-list-item
               prepend-icon="mdi-arrow-bottom-left-bold-box-outline"
-              title="Inferior Esquerdo"
-              subtitle="Canto inferior esquerdo"
+              :title="$t('ow.bottomLeft')"
+              :subtitle="$t('ow.bottomLeftDesc')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('bottom-left')"
             />
             <v-list-item
               prepend-icon="mdi-image-filter-center-focus"
-              title="Centralizar na Tela"
-              subtitle="Centro do mapa"
+              :title="$t('ow.centerOnScreen')"
+              :subtitle="$t('ow.centerOnScreenDesc')"
               class="my-1 rounded-0"
               @click="windowManager.snapTo('center')"
             />
             <v-divider class="my-1 border-grey-darken-3" />
             <v-list-item
               prepend-icon="mdi-open-in-new"
-              title="Desprender como Janela Livre"
-              subtitle="Transformar em popover flutuante"
+              :title="$t('ow.detachFloating')"
+              :subtitle="$t('ow.detachFloatingSubtitle')"
               class="my-1 rounded-0 text-accent font-weight-bold"
               @click="windowManager.syncWithObr()"
             />
@@ -423,7 +423,7 @@
           variant="text"
           size="small"
           :color="windowManager.isCompact.value ? 'accent' : 'grey-lighten-2'"
-          :title="windowManager.isCompact.value ? 'Expandir para Modo Amplo (1120px)' : 'Modo Compacto / Lateral (520px)'"
+          :title="windowManager.isCompact.value ? $t('ow.expandWideMode') : $t('ow.compactSideMode')"
           @click="windowManager.toggleCompact()"
         >
           <v-icon :icon="windowManager.isCompact.value ? 'mdi-arrow-expand-horizontal' : 'mdi-arrow-collapse-horizontal'" size="small" />
@@ -435,7 +435,7 @@
           variant="text"
           size="small"
           color="grey-lighten-2"
-          title="Minimizar para barra compacta (48px)"
+          :title="$t('ow.minimizeCompactBar')"
           @click="windowManager.minimize()"
         />
 
@@ -445,7 +445,7 @@
           variant="text"
           size="small"
           color="grey-lighten-1"
-          title="Fechar Janela"
+          :title="$t('ow.closeWindow')"
           @click="windowManager.closeWindow()"
         />
       </div>
@@ -469,7 +469,7 @@
           Active<span class="text-accent">Mode</span>
         </div>
         <div class="text-caption text-grey text-uppercase" style="font-size: 0.6rem !important;">
-          Menu Principal
+          {{ $t('ow.mainMenuTitle') }}
         </div>
       </div>
     </div>
@@ -478,7 +478,7 @@
       <v-list-item
         to="/active-mode"
         prepend-icon="mdi-home"
-        title="Início"
+        :title="$t('ow.home')"
         class="my-1 rounded-0"
         :active="isRouteActive('/active-mode', true)"
         color="accent"
@@ -488,7 +488,7 @@
       <v-list-item
         to="/new/no_group"
         prepend-icon="mdi-account-plus"
-        title="Criar Novo Piloto"
+        :title="$t('ow.createPilot')"
         class="my-1 rounded-0 text-accent font-weight-bold"
         :active="isRouteActive('/new')"
         color="accent"
@@ -498,7 +498,7 @@
       <v-list-item
         to="/pilot_management"
         prepend-icon="cc:pilot"
-        title="Hangar de Pilotos"
+        :title="$t('ow.hangar')"
         class="my-1 rounded-0"
         :active="isRouteActive('/pilot_management') || isRouteActive('/pilot/')"
         color="accent"
@@ -508,7 +508,7 @@
       <v-list-item
         to="/active-mode/sheet-manager"
         prepend-icon="mdi-card-account-details-outline"
-        title="Fichas de Combate (Ativas)"
+        :title="$t('ow.activeSheets')"
         class="my-1 rounded-0"
         :active="isRouteActive('/active-mode/sheet-manager')"
         color="accent"
@@ -522,7 +522,7 @@
       <v-list-item
         to="/active-mode/manage-encounters"
         prepend-icon="cc:encounter"
-        title="Encontros (GM)"
+        :title="$t('ow.encountersGm')"
         class="my-1 rounded-0"
         :active="isRouteActive('/active-mode/manage-encounters')"
         color="accent"
@@ -536,7 +536,7 @@
       <v-list-item
         to="/active-mode/npcs"
         prepend-icon="cc:npc"
-        title="NPCs"
+        :title="$t('ow.npcs')"
         class="my-1 rounded-0"
         :active="isRouteActive('/active-mode/npcs')"
         color="accent"
@@ -549,12 +549,12 @@
 
       <v-divider class="my-3 border-grey-darken-3" />
 
-      <v-list-subheader class="text-cc-overline text-accent">Ações Rápidas</v-list-subheader>
+      <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.quickActions') }}</v-list-subheader>
 
       <v-list-item
         to="/active-mode/new-sheet"
         prepend-icon="mdi-account-plus"
-        title="Nova Ficha"
+        :title="$t('ow.newSheet')"
         class="my-1 rounded-0"
         @click="drawer = false"
       />
@@ -562,35 +562,35 @@
       <v-list-item
         to="/active-mode/new-encounter"
         prepend-icon="mdi-sword-cross"
-        title="Novo Encontro"
+        :title="$t('ow.newEncounter')"
         class="my-1 rounded-0"
         @click="drawer = false"
       />
 
       <v-list-item
         prepend-icon="mdi-file-import-outline"
-        title="Importar (ShareCode / JSON)"
+        :title="$t('ow.importShareCodeJson')"
         class="my-1 rounded-0 text-accent font-weight-bold"
         @click="drawer = false; showImportDialog = true"
       />
 
       <v-divider class="my-3 border-grey-darken-3" />
-      <v-list-subheader class="text-cc-overline text-accent">Configurações & LCPs</v-list-subheader>
+      <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.settingsAndLcps') }}</v-list-subheader>
       <v-list-item
         prepend-icon="mdi-package-down"
-        title="Instalar LCPs"
+        :title="$t('ow.installLcps')"
         class="my-1 rounded-0"
         @click="drawer = false; openOptions('lcps')"
       />
       <v-list-item
         prepend-icon="mdi-translate"
-        title="Tradução & Idioma"
+        :title="$t('ow.translationAndLanguage')"
         class="my-1 rounded-0"
         @click="drawer = false; openOptions('language')"
       />
       <v-list-item
         prepend-icon="mdi-palette"
-        title="Aparência & Tema"
+        :title="$t('ow.appearanceAndTheme')"
         class="my-1 rounded-0"
         @click="drawer = false; openOptions('settings')"
       />
@@ -598,13 +598,13 @@
       <!-- Active Sessions (Mobile) -->
       <template v-if="activePilotSheet || activeEncounter">
         <v-divider class="my-3 border-grey-darken-3" />
-        <v-list-subheader class="text-cc-overline text-accent">Sessões Ativas</v-list-subheader>
+        <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.activeSessions') }}</v-list-subheader>
 
         <v-list-item
           v-if="activePilotSheet"
           prepend-icon="mdi-restart"
-          :title="`Piloto: ${activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name}`"
-          subtitle="Retomar turno"
+          :title="`${$t('ow.pilotPrefix')}: ${activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name}`"
+          :subtitle="$t('ow.resumeTurn')"
           class="my-1 text-accent rounded-0"
           @click="drawer = false; resumePilot()"
         />
@@ -612,8 +612,8 @@
         <v-list-item
           v-if="activeEncounter"
           prepend-icon="cc:encounter"
-          :title="`Encontro: ${activeEncounter.Encounter.Name}`"
-          subtitle="Retomar rodada"
+          :title="`${$t('ow.encounterPrefix')}: ${activeEncounter.Encounter.Name}`"
+          :subtitle="$t('ow.resumeRound')"
           class="my-1 text-primary rounded-0"
           @click="drawer = false; resumeEncounter()"
         />

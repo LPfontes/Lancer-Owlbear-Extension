@@ -15,10 +15,10 @@
           </v-avatar>
           <div>
             <span class="text-subtitle-1 font-weight-bold text-accent text-uppercase" style="letter-spacing: 1px;">
-              Opções & Gerenciamento
+              {{ $t('ow.optionsTitle') }}
             </span>
             <div class="text-caption text-grey-lighten-1" style="margin-top: -4px;">
-              Instalação de LCPs, Idioma / Tradução e Preferências
+              {{ $t('ow.optionsSubtitle') }}
             </div>
           </div>
         </div>
@@ -34,13 +34,13 @@
           show-arrows
         >
           <v-tab value="lcps" prepend-icon="mdi-package-down" class="font-weight-bold text-uppercase">
-            Instalar LCPs
+            {{ $t('ow.tabLcps') }}
           </v-tab>
           <v-tab value="language" prepend-icon="mdi-translate" class="font-weight-bold text-uppercase">
-            Tradução & Idioma
+            {{ $t('ow.tabLanguage') }}
           </v-tab>
           <v-tab value="settings" prepend-icon="mdi-palette" class="font-weight-bold text-uppercase">
-            Aparência & Sistema
+            {{ $t('ow.tabAppearance') }}
           </v-tab>
         </v-tabs>
       </div>
@@ -60,21 +60,21 @@
                 variant="outlined"
               >
                 <v-btn value="install" prepend-icon="mdi-download">
-                  Instalar (.lcp / .llp)
+                  {{ $t('ow.subtabInstall') }}
                 </v-btn>
                 <v-btn value="list" prepend-icon="mdi-format-list-bulleted">
-                  Pacotes Instalados
+                  {{ $t('ow.subtabList') }}
                 </v-btn>
                 <v-btn value="directory" prepend-icon="mdi-web">
-                  Diretório da Comunidade
+                  {{ $t('ow.subtabDirectory') }}
                 </v-btn>
                 <v-btn value="config" prepend-icon="mdi-tune">
-                  Configurações
+                  {{ $t('ow.subtabConfig') }}
                 </v-btn>
               </v-btn-toggle>
 
               <v-chip size="small" color="accent" variant="outlined" prepend-icon="mdi-information-outline">
-                Suporta .lcp (Conteúdo) e .llp (Tradução de Pacote)
+                {{ $t('ow.supportLcpLlp') }}
               </v-chip>
             </div>
 
@@ -109,7 +109,7 @@
                   </div>
 
                   <p class="text-body-2 text-grey-lighten-1 mb-4">
-                    Altere o idioma de exibição do COMP/CON Active Mode. A tradução será aplicada imediatamente na interface.
+                    {{ $t('ow.languageDescription') }}
                   </p>
 
                   <v-select
@@ -121,7 +121,7 @@
                     density="comfortable"
                     color="accent"
                     prepend-inner-icon="mdi-web"
-                    label="Idioma Selecionado"
+                    :label="$t('ow.selectedLanguage')"
                     class="mb-2"
                   >
                     <template #item="{ props: itemProps, item }">
@@ -156,7 +156,7 @@
                     icon="mdi-check-circle"
                     class="mt-2"
                   >
-                    Português ativado! A maior parte do sistema base e termos de combate estão traduzidos.
+                    {{ $t('ow.ptActivated') }}
                   </v-alert>
 
                   <v-alert
@@ -167,7 +167,7 @@
                     icon="mdi-information"
                     class="mt-2"
                   >
-                    Traduções da comunidade podem ter termos em inglês onde a tradução ainda não estiver concluída.
+                    {{ $t('ow.communityWarning') }}
                   </v-alert>
                 </v-card>
 
@@ -176,11 +176,11 @@
                   <div class="d-flex align-center ga-2 mb-2">
                     <v-icon icon="mdi-file-document-edit-outline" color="accent" />
                     <div class="text-subtitle-2 font-weight-bold text-accent">
-                      Lancer Language Patches (.llp)
+                      {{ $t('ow.llpTitle') }}
                     </div>
                   </div>
                   <div class="text-caption text-grey-lighten-1">
-                    Você pode traduzir pacotes LCP de terceiros instalando arquivos <code>.llp</code> (Lancer Language Patch) diretamente na aba <strong>Instalar LCPs</strong>.
+                    {{ $t('ow.llpDesc') }}
                   </div>
                 </v-card>
               </v-col>
@@ -191,7 +191,7 @@
                   <div class="d-flex align-center justify-space-between mb-3">
                     <div class="text-subtitle-1 font-weight-bold text-white d-flex align-center ga-2">
                       <v-icon icon="mdi-chart-bar" color="accent" />
-                      Status da Tradução ({{ currentLanguage.toUpperCase() }})
+                      {{ $t('ow.translationStatus', { lang: currentLanguage.toUpperCase() }) }}
                     </div>
                   </div>
 
@@ -222,7 +222,7 @@
                   <v-divider class="my-4 border-grey-darken-3" />
 
                   <div class="text-caption text-grey">
-                    * Os dados de tradução do Lancer são sincronizados conforme atualizações da comunidade do COMP/CON.
+                    {{ $t('ow.translationNote') }}
                   </div>
                 </v-card>
               </v-col>
@@ -249,7 +249,7 @@
                     variant="outlined"
                     density="comfortable"
                     color="accent"
-                    label="Tema Visual"
+                    :label="$t('ow.themeVisual')"
                     class="mb-3"
                   />
 
@@ -268,7 +268,7 @@
                     variant="outlined"
                     density="comfortable"
                     color="accent"
-                    label="Tipografia"
+                    :label="$t('ow.typography')"
                   />
                 </v-card>
               </v-col>
@@ -278,7 +278,7 @@
                   <div class="d-flex align-center ga-2 mb-3">
                     <v-icon icon="mdi-tune-vertical" color="accent" />
                     <div class="text-subtitle-1 font-weight-bold text-white">
-                      Preferências de Exibição
+                      {{ $t('ow.displayPreferences') }}
                     </div>
                   </div>
 
@@ -286,7 +286,7 @@
                     v-model="userViewExotics"
                     color="accent"
                     density="compact"
-                    label="Exibir Conteúdo Exótico / Raro"
+                    :label="$t('ow.showExoticContent')"
                     class="mb-2"
                   />
 
@@ -294,7 +294,7 @@
                     v-model="userDesktopTables"
                     color="accent"
                     density="compact"
-                    label="Tabelas em Formato Desktop Expandido"
+                    :label="$t('ow.desktopTables')"
                   />
                 </v-card>
               </v-col>
@@ -315,7 +315,7 @@
           prepend-icon="mdi-check"
           @click="close"
         >
-          Concluir
+          {{ $t('ow.finish') }}
         </v-btn>
       </v-card-actions>
     </v-card>

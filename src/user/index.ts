@@ -83,7 +83,7 @@ class UserProfile {
   private _readMessages: string[]
   private _theme: string
   private _font: string
-  private _language: string = 'en'
+  private _language: string = 'pt'
   private _achievement_unlocks: AchievementSaveData[]
   private _options: IUserOptions
   private _logLevel: 'debug' | 'info' | 'warn' | 'error' = 'warn'
@@ -352,7 +352,7 @@ class UserProfile {
     this.localSave('theme', this._theme)
     this._font = 'inter'
     this.localSave('font', this._font)
-    this._language = 'en'
+    this._language = 'pt'
     this.localSave('language', this._language)
     this._readMessages = []
     this._options = defaultOptions()
@@ -386,7 +386,7 @@ class UserProfile {
     profile._readMessages = data.read_messages || []
     profile._theme = data.theme || 'gms_dark'
     profile._font = data.font || 'inter'
-    profile._language = data.language ?? 'en'
+    profile._language = data.language ?? 'pt'
     profile._achievement_unlocks = data.achievement_unlocks || []
     profile._options = data.options ? data.options : defaultOptions()
     const rawLevel = (data.logLevel || 'warn') as string

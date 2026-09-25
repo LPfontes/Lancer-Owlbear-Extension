@@ -24,7 +24,7 @@ export type IndexItem = {
 export const NavStore = defineStore('nav', {
   state: () => ({
     _srdTab: 0,
-    _language: 'en',
+    _language: 'pt',
     _searchHistory: [] as IndexItem[],
     _staticIndex: [] as IndexItem[],
     _compendiumIndex: [] as IndexItem[],

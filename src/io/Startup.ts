@@ -32,7 +32,7 @@ export default async function (skipSync = false): Promise<void> {
   await UserStore().loadUser()
 
   const savedLanguage = UserStore().User?.Language
-  NavStore().setLanguage(savedLanguage || navigator.language.split('-')[0] || 'en', false)
+  NavStore().setLanguage(savedLanguage || 'pt', false)
 
   let migrationResult: any = null
   await Promise.all([
