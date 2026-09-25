@@ -27,7 +27,7 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
     },
     async AddPilotSheet(pilot: Pilot, campaign?: string): Promise<void> {
       const newSheet = PilotSheet.FromPilot(pilot, campaign)
-      newSheet.Combatants[0].actor.CombatController.Reset()
+      newSheet.Combatant.actor.CombatController.Reset()
       this.PilotSheets.push(newSheet)
       await SetItem('pilot_sheets', PilotSheet.Serialize(newSheet))
       await this.SetActiveSheet(newSheet.ID)
@@ -46,7 +46,7 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
     async RemovePilotSheet(pilotSheet: PilotSheet): Promise<void> {
       const idx = this.PilotSheets.findIndex(ps => ps.ID === pilotSheet.ID)
       if (idx === -1) return
-      this.PilotSheets.splice(idx)
+      this.PilotSheets.splice(idx, 1)
       await RemoveItem('pilot_sheets', pilotSheet.ID)
       if (this.CurrentActiveID === pilotSheet.ID) {
         await this.SetActiveSheet('')

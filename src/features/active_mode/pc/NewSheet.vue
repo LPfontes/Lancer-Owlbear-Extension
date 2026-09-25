@@ -105,7 +105,20 @@
               </template>
             </v-hover>
           </div>
-          <div v-if="!selectedPilot"
+          <div v-if="pilots.length === 0" class="text-center py-8">
+            <v-icon icon="cc:pilot" size="56" class="text-disabled mb-2" />
+            <div class="heading h3 text-grey-lighten-1 mb-1">Nenhum piloto cadastrado</div>
+            <p class="text-caption text-grey mb-4">Crie sua ficha de personagem com o assistente de criação oficial para começar.</p>
+            <cc-button
+              color="accent"
+              size="default"
+              prepend-icon="mdi-account-plus"
+              @click="$router.push({ name: 'new', params: { groupID: 'no_group' } })"
+            >
+              {{ $t('pm.roster.createNewPilot') }}
+            </cc-button>
+          </div>
+          <div v-if="!selectedPilot && pilots.length > 0"
             class="d-flex justify-end mt-2">
             <cc-button size="small"
               variant="outlined"

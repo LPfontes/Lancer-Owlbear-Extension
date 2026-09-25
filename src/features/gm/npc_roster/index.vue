@@ -19,8 +19,7 @@
     </v-tab>
   </v-tabs>
 
-  <v-window v-model="tab"
-    class="cc-fill cc-fill-window">
+  <v-window v-model="tab">
     <v-window-item>
       <npc-index :id="id"
         @open-import="importModal = true"

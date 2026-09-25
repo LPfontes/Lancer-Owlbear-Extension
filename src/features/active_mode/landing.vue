@@ -1,11 +1,12 @@
 <template>
   <v-container fluid>
     <v-row
-      justify="space-around"
+      justify="space-between"
       align="center"
+      class="my-2"
     >
       <v-col><v-divider /></v-col>
-      <v-col cols="auto">
+      <v-col cols="auto" class="text-center">
         <div
           class="font-weight-light text-center my-n2"
           style="letter-spacing: calc(5px + 2cqw); font-size: calc(20px + 2cqw)"
@@ -15,6 +16,7 @@
       </v-col>
       <v-col><v-divider /></v-col>
     </v-row>
+
     <v-row
       class="mt-1"
       :class="!mobile && 'px-5'"
@@ -24,7 +26,7 @@
         v-for="(list, i) in lists"
         :key="`list-${i}`"
         cols="12"
-        lg=""
+        md="6"
       >
         <v-card
           variant="tonal"
@@ -155,7 +157,22 @@
 
   const _display = useDisplay()
 
-  const headers = ref([
+  interface HeaderItem {
+    icon: string
+    title: string
+    subtitle?: string
+  }
+  interface ListItem {
+    title?: string
+    subtitle?: string
+    icon: string
+    to?: string
+    id?: string
+    small?: boolean
+    disabled?: boolean
+  }
+
+  const headers = ref<HeaderItem[]>([
     {
       icon: 'cc:lancer',
       title: t('common.gameName'),
@@ -164,18 +181,25 @@
       icon: 'cc:nhp',
       title: t('active.titles.gameMaster'),
     },
-    {
-      icon: 'cc:diasporan',
-      title: t('active.titles.observer'),
-      subtitle: t('active.subtitles.inDevelopmentReleaseV32'),
-    },
   ])
-  const lists = ref([
+  const lists = ref<ListItem[][]>([
     [
+      {
+        title: 'Criar Personagem (Piloto)',
+        subtitle: 'Assistente completo de criação de piloto e ficha técnica',
+        icon: 'mdi-account-plus',
+        to: '/new/no_group',
+      },
+      {
+        title: 'Hangar de Pilotos (Roster)',
+        subtitle: 'Gerencie pilotos cadastrados, mechs, talentos e licenças',
+        icon: 'cc:pilot',
+        to: '/pilot_management',
+      },
       {
         title: t('active.titles.activeCharacterSheets'),
         subtitle: t('active.subtitles.createManageAndRunActivePlayer'),
-        icon: 'cc:pilot',
+        icon: 'mdi-card-account-details-outline',
         to: '/active-mode/sheet-manager',
       },
       {
@@ -183,13 +207,6 @@
         small: true,
         subtitle: t('active.subtitles.resumeLast'),
         icon: 'mdi-restart',
-        to: '',
-      },
-      {
-        title: t('active.titles.joinAnOnlineTable'),
-        subtitle: t('active.subtitles.featureInDevelopmentV32'),
-        disabled: true,
-        icon: 'cc:squad',
         to: '',
       },
     ],
@@ -201,46 +218,16 @@
         to: '/active-mode/manage-encounters',
       },
       {
+        title: t('gm.titles.npcRoster'),
+        subtitle: t('gm.subtitles.manageNonPlayerCombatUnits'),
+        icon: 'cc:npc',
+        to: '/active-mode/npcs',
+      },
+      {
         id: 'last-local',
         small: true,
         subtitle: t('active.subtitles.resumeLast'),
         icon: 'mdi-restart',
-        to: '',
-      },
-      {
-        title: t('active.titles.localCampaigns'),
-        subtitle: t('active.subtitles.featureInDevelopmentV31'),
-        disabled: true,
-        icon: 'cc:campaign',
-        to: '',
-      },
-      {
-        title: t('active.titles.hostAnOnlineTable'),
-        subtitle: t('active.subtitles.featureInDevelopmentV32'),
-        disabled: true,
-        icon: 'mdi-lan',
-        to: '',
-      },
-    ],
-    [
-      {
-        title: t('active.titles.spectatorMode'),
-        subtitle: t('active.subtitles.featureInDevelopmentV32'),
-        disabled: true,
-        icon: 'mdi-monitor-share',
-        to: '',
-      },
-      {
-        small: true,
-        subtitle: t('active.subtitles.resumeLast'),
-        icon: 'mdi-restart',
-        to: '',
-      },
-      {
-        title: t('active.titles.campaignDisplay'),
-        subtitle: t('active.subtitles.featureInDevelopmentV32'),
-        disabled: true,
-        icon: 'mdi-monitor-dashboard',
         to: '',
       },
     ],
@@ -258,12 +245,12 @@
 
   function loadLastLocalEncounter() {
     if (lastLocalEncounter.value) {
-      router.push(`active-mode/gm-encounter-runner/${lastLocalEncounter.value.ID}`)
+      router.push(`/active-mode/gm-encounter-runner/${lastLocalEncounter.value.ID}`)
     }
   }
   function loadLastLocalSheet() {
     if (lastLocalSheet.value) {
-      router.push(`active-mode/pilot-runner/${lastLocalSheet.value.ID}`)
+      router.push(`/active-mode/pilot-runner/${lastLocalSheet.value.ID}`)
     }
   }
 </script>

@@ -1,0 +1,15 @@
+{
+  "manifest_version": 1,
+  "name": "COMP/CON Official Active Mode",
+  "version": "3.0.8",
+  "description": "COMP/CON Official LANCER RPG Digital Assistant - Owlbear Rodeo Integration",
+  "author": "Massif Press & LANCER Community",
+  "icon": "/icon.svg",
+  "action": {
+    "title": "COMP/CON Active Mode",
+    "icon": "/icon.svg",
+    "popover": "/launcher.html",
+    "height": 1,
+    "width": 1
+  }
+}

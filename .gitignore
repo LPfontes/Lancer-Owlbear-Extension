@@ -1,44 +1,27 @@
-# Logs
-logs
-*.log
+# Node dependencies
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
-coverage
-reports
 
-node_modules
-dist
-dist-ssr
-coverage
-reports
-.stryker-tmp
-*.local
-.todos
-.todos/*
+# Production build output
+dist/
+dist-ssr/
 
-/.yarn
-.yarn
-.yarn/*
-
-# env
+# Environment variables
 .env
-.env.*
+.env.local
+.env.*.local
 
-# Editor directories and files
-.vscode/*
-.vscode
+# IDE and Editor files
+.vscode/
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-# Sentry Config File
-.env.sentry-build-plugin
-build-lcp.mjs
+.DS_Store
+Thumbs.db

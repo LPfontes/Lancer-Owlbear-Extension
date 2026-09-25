@@ -706,8 +706,7 @@
     },
     "optionsPage": {
       "tabStorage": "Archiviazione",
-      "tabLog": "Log",
-      "tabSettings": "@:{'common.settings'}"
+      "tabLog": "Log"
     },
     "alt": {
       "netlifyStatus": "Stato Netlify",
@@ -1963,8 +1962,7 @@
       "onTurn": "Al Turno",
       "onTurnHelp": "Questo PNG verrà contrassegnato come partecipante allo scontro al turno specificato. Lasciando vuoto questo campo, il PNG potrà essere usato come rinforzo a discrezione del GM.",
       "addToRoster": "Copia nella Lista",
-      "addToRosterTooltip": "Aggiungi una copia di questo PNG alla tua Lista e collega questa istanza alla nuova voce della Lista.",
-      "notLinkedSource": "Questa istanza PNG non è collegata a una sorgente valida nella tua Lista PNG"
+      "addToRosterTooltip": "Aggiungi una copia di questo PNG alla tua Lista e collega questa istanza alla nuova voce della Lista."
     },
     "encounterEditor": {
       "editorHeading": "Editor scontro",
@@ -2606,11 +2604,7 @@
     },
     "trackable": {
       "corePower": "Riserva Primaria",
-      "unavailable": "Non Disponibile",
-      "ready": "Pronta",
-      "clearMechCore": "Azzerare la",
-      "restoreMechCore": "Ripristinare la",
-      "corePowerQ": "riserva primaria di questo mech?"
+      "unavailable": "Non Disponibile"
     },
     "customStat": {
       "editStats": "Modifica Statistiche",

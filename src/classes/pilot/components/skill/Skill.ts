@@ -10,15 +10,19 @@ interface ISkillData extends ICompendiumItemData {
 }
 
 class Skill extends CompendiumItem {
-  public readonly Detail: string
+  private _detail: string = ''
   public readonly Family: SkillFamily
 
   public constructor(data: ISkillData, pack?: ContentPack) {
     super(data, pack)
 
-    this.Detail = data.detail
-    this.Family = SkillFamily[data.family] as SkillFamily
+    this._detail = data.detail || ''
+    this.Family = SkillFamily[data.family as keyof typeof SkillFamily] as SkillFamily
     this.ItemType = ItemType.Skill
+  }
+
+  public get Detail(): string {
+    return localize(this.ID, 'detail', this._detail)
   }
 
   public get Trigger(): string {

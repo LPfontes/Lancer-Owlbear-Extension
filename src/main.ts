@@ -1,3 +1,5 @@
+import './polyfill'
+
 import { version } from '../package.json'
 
 import { QuillEditor, loadQuill } from '@vueup/vue-quill'
@@ -161,6 +163,9 @@ compcon.config.globalProperties.$enum = enumLabel
 if (import.meta.env.DEV) {
   compcon.config.performance = true
 }
+
+import { obrBridge } from '@/services/obrBridge'
+void obrBridge.init()
 
 compcon.mount('#app')
 reportWebVitals()

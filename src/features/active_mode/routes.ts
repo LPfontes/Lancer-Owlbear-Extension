@@ -11,6 +11,7 @@ const SheetManager = () => import('./pc/SheetManager.vue')
 const GMEncounterRunner = () => import('./runner/gm/GMEncounterRunner.vue')
 const JoinTable = () => import('./runner/pilot/JoinTable.vue')
 const PilotRunner = () => import('./runner/pilot/PilotRunner.vue')
+const NpcRoster = () => import('../gm/npc_roster/index.vue')
 
 const routes = [
   {
@@ -67,6 +68,12 @@ const routes = [
         path: 'gm-encounter-runner/:id?',
         name: 'active-gm-encounter-runner',
         component: GMEncounterRunner,
+        props: true,
+      },
+      {
+        path: 'npcs/:type?/:id?',
+        name: 'active-npcs',
+        component: NpcRoster,
         props: true,
       },
     ],

@@ -621,8 +621,7 @@
     },
     "optionsPage": {
       "tabLog": "Log",
-      "tabStorage": "Armazenamento",
-      "tabSettings": "@:{'common.settings'}"
+      "tabStorage": "Armazenamento"
     },
     "packsList": {
       "toggleSuccessText": "Pacote {action} com sucesso.",
@@ -774,8 +773,7 @@
       "lists": "Listas",
       "npcClasses": "Classes PNJ",
       "npcFeatures": "Características PNJ",
-      "npcTemplates": "Modelo PNJ",
-      "downtimeactions": "AçõesDeTempoDeInatividade"
+      "npcTemplates": "Modelo PNJ"
     },
     "nav": {
       "systemReference": "Referência do Sistema"
@@ -1507,8 +1505,7 @@
       "onTurn": "No Turno",
       "onTurnHelp": "Este PNJ será marcado como entrando no encontro no turno especificado. Deixar isso em branco indicará que este PNJ pode ser usado como um reforço a critério do Mestre.",
       "addToRoster": "Copiar para a Lista",
-      "addToRosterTooltip": "Adicione uma cópia deste PNJ à sua lista e vincule esta instância à nova entrada da lista.",
-      "notLinkedSource": "Esta instância de PNJ não está vinculada a uma origem válida na sua lista de PNJs"
+      "addToRosterTooltip": "Adicione uma cópia deste PNJ à sua lista e vincule esta instância à nova entrada da lista."
     },
     "encounterEditor": {
       "editorHeading": "Editor de encontro",
@@ -2287,11 +2284,7 @@
       "applyClose": "Aplicar e Fechar"
     },
     "trackable": {
-      "corePower": "Poder de Núcleo",
-      "ready": "Pronto",
-      "clearMechCore": "Limpar deste mecha a",
-      "restoreMechCore": "Restaurar deste mecha a",
-      "corePowerQ": "Poder de Núcleo?"
+      "corePower": "Poder de Núcleo"
     },
     "customStat": {
       "editStats": "Editar Atributos",

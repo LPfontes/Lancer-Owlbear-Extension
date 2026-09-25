@@ -19,6 +19,7 @@ const routes = [
         name: 'pilot_roster',
         component: Roster,
         meta: { title: 'common.pilotRoster' },
+        alias: ['/pilots', '/active-mode/pilots'],
       },
       {
         path: '/print/:presetPilot/:presetMech?',
@@ -31,6 +32,7 @@ const routes = [
         component: Sheet,
         props: true,
         meta: { title: 'pm.titles.pilot' },
+        alias: ['/pilot_management/pilot/:pilotID'],
       },
       {
         path: '/pilot/:pilotID/mech/:mechID',
@@ -46,13 +48,15 @@ const routes = [
         props: true,
         component: Level,
         meta: { title: 'pm.titles.levelUp' },
+        alias: ['/level/:pilotID', '/pilot_management/level/:pilotID'],
       },
       {
-        path: '/new/:groupID',
+        path: '/new/:groupID?',
         name: 'new',
         props: true,
         component: New,
         meta: { title: 'pm.titles.newPilotWizard' },
+        alias: ['/pilot_management/new/:groupID?', '/active-mode/create-pilot/:groupID?'],
       },
     ],
   },

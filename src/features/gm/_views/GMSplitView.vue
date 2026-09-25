@@ -1,5 +1,5 @@
 <template>
-  <v-layout style="height: 100%; flex: 1 1 auto; min-height: 0">
+  <v-layout :style="`height: calc(100vh - ${mobile ? '42px' : '68px'})`">
     <div
       style="position: absolute; z-index: 999"
       :style="`left: ${showNav ? (mobile ? '615' : '354') : '3'}px; top: 6px`"
@@ -162,13 +162,11 @@
         </div>
       </div>
     </v-navigation-drawer>
-    <v-main class="cc-fill">
+    <v-main>
       <div
-        tabindex="0"
         style="
-          flex: 1 1 auto;
-          min-height: 0;
-          overflow-y: auto;
+          height: calc(100vh - 65px) !important;
+          overflow-y: scroll;
           padding-bottom: 100px;
           overflow-x: hidden;
         "

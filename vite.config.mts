@@ -1,15 +1,28 @@
-import { sentryVitePlugin } from '@sentry/vite-plugin'
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import VueI18nPlugin from '@intlify/unplugin-vue-i18n/vite'
-import { fileURLToPath, URL } from 'url'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath, URL } from 'url'
 import pkg from './package.json' with { type: 'json' }
 
-// https://vitejs.dev/config/
 export default defineConfig({
   server: {
+    port: 5173,
+    cors: true,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    },
+    proxy: {
+      '/compcon-api': {
+        target: 'https://api.compcon.app',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/compcon-api/, ''),
+      },
+    },
     watch: {
       usePolling: true,
     },
@@ -17,81 +30,31 @@ export default defineConfig({
       overlay: true,
     },
   },
+  build: {
+    target: 'esnext',
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        launcher: fileURLToPath(new URL('./launcher.html', import.meta.url)),
+      },
+    },
+  },
   plugins: [
+    {
+      name: 'compcon-proxy-server',
+      configureServer(server) {
+        server.middlewares.use(async (req, res, next) => {
+          if (req.url && req.url.startsWith('/api/share')) {
+            const { handleProxyRequest } = await import('./server/proxy.mjs')
+            await handleProxyRequest(req, res)
+            return
+          }
+          next()
+        })
+      },
+    },
     VitePWA({
-      disable: process.env.NODE_ENV === 'development',
-      registerType: 'autoUpdate',
-      manifest: {
-        name: 'COMP/CON',
-        short_name: 'COMP/CON',
-        description: 'Digital tools for the LANCER TTRPG',
-        theme_color: '#991E2A',
-        background_color: '#991E2A',
-        display: 'standalone',
-        scope: '/',
-        start_url: '/',
-        orientation: 'natural',
-        categories: ['games', 'utilities'],
-        icons: [
-          {
-            src: '/icons/icon-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: '/icons/icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-          {
-            src: '/icons/icon-512x512-maskable.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
-      workbox: {
-        maximumFileSizeToCacheInBytes: 8 * 1024 ** 2,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api/],
-        runtimeCaching: [
-          {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'images',
-              expiration: {
-                maxEntries: 200,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
-              },
-            },
-          },
-          {
-            urlPattern: /\.(?:woff|woff2|ttf|eot)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'fonts',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 365 * 24 * 60 * 60, // 1 year
-              },
-            },
-          },
-          {
-            urlPattern: /\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 24 * 60 * 60, // 1 day
-              },
-            },
-          },
-        ],
-      },
+      disable: true,
     }),
     vue(),
     vuetify({ autoImport: true }),
@@ -100,38 +63,7 @@ export default defineConfig({
       runtimeOnly: true,
       strictMessage: false,
     }),
-    {
-      name: 'strip-legacy-fonts',
-      generateBundle(_options, bundle) {
-        for (const key of Object.keys(bundle)) {
-          if (/materialdesignicons.*\.(eot|ttf|woff)$/.test(key)) {
-            delete bundle[key]
-          }
-        }
-      },
-    },
-    !process.env.VITEST &&
-      sentryVitePlugin({
-        org: 'massif-press',
-        project: 'compcon',
-      }),
   ],
-  build: {
-    target: 'esnext',
-    sourcemap: process.env.NODE_ENV !== 'production',
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules/vuetify')) return 'vuetify'
-          if (id.includes('node_modules/@massif/lancer-data')) return 'lancer-data'
-          if (id.includes('node_modules/aws-amplify') || id.includes('node_modules/@aws-amplify'))
-            return 'aws'
-          if (id.includes('node_modules/@sentry')) return 'sentry'
-          if (id.includes('node_modules/')) return 'vendor'
-        },
-      },
-    },
-  },
   resolve: {
     alias: [
       {
@@ -147,53 +79,6 @@ export default defineConfig({
   },
   define: {
     APP_VERSION: JSON.stringify(pkg.version),
-  },
-  test: {
-    globals: true,
-    server: {
-      deps: { inline: ['vuetify'] },
-    },
-    projects: [
-      {
-        extends: true,
-        test: {
-          name: 'domain',
-          environment: 'happy-dom',
-          include: ['src/**/*.spec.ts'],
-          exclude: ['src/ui/**', 'src/features/**'],
-          setupFiles: ['src/__tests__/setup.ts'],
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: 'component',
-          environment: 'happy-dom',
-          include: ['src/{ui,features}/**/*.spec.ts'],
-          setupFiles: ['src/__tests__/setup.ts', 'src/__tests__/setup.component.ts'],
-        },
-      },
-    ],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'lcov', 'html'],
-      include: [
-        'src/classes/**/*.ts',
-        'src/io/**/*.ts',
-        'src/util/**/*.ts',
-        'src/composables/**/*.ts',
-      ],
-      exclude: [
-        'src/**/*.spec.ts',
-        'src/__tests__/**',
-        'src/**/*.d.ts',
-        'src/**/enums.ts',
-        'src/**/*_dictionary.ts',
-      ],
-      thresholds: {
-        'src/io/**': { functions: 62 },
-        'src/classes/**': { functions: 46 },
-      },
-    },
+    'import.meta.env.VITE_ACHIEVEMENT_KEY': JSON.stringify('gumbodog'),
   },
 })

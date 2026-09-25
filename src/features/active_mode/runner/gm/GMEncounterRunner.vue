@@ -7,11 +7,9 @@
       class="my-5" />
     <div class="text-center text-cc-overline">{{ $t('active.gmRunner.loading') }}</div>
   </div>
-  <div v-else
-    class="cc-fill cc-fill-root">
-    <div class="cc-fill"
-      style="overflow: hidden">
-      <v-layout style="height: 100%; flex: 1 1 auto; min-height: 0">
+  <div v-else>
+    <div style="overflow-y: hidden">
+      <v-layout :style="`height: calc(100vh - ${xs ? '23px' : '41px'})`">
         <cc-panel-toggle v-model="showLeft"
           side="left"
           :open-offset="419"
@@ -20,15 +18,24 @@
         <div location="left"
           class="bg-background border-sm"
           :style="`width: ${showLeft ? '420' : '92'}px;`"
-          style="position: absolute; z-index: 3; height: calc(100% - 35px); overflow-y: auto">
+          style="
+          position:
+          absolute;
+          z-index:
+          3;
+          height:
+          calc(100vh
+          -
+          76px);
+          overflow-y:
+          auto">
           <gm-initiative-panel :encounter-instance="instance"
             :selected="selected"
             :expanded="showLeft"
             @select="selectActor($event)" />
         </div>
 
-        <v-main tabindex="0"
-          style="overflow-y: auto"
+        <v-main style="overflow-y: scroll"
           :style="`padding-left:${mainLeftOffset}`">
           <div class="d-flex align-center justify-center bg-panel pa-1">
             <cc-button icon="mdi-undo"
@@ -201,7 +208,7 @@ const typeMap: Record<string, any> = {
 
 const props = withDefaults(defineProps<{ id?: string | null }>(), { id: null });
 
-const { mdAndDown: mobile } = useDisplay();
+const { mdAndDown: mobile, xs } = useDisplay();
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();

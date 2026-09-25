@@ -496,8 +496,7 @@
     },
     "optionsPage": {
       "tabStorage": "Хранилище",
-      "tabLog": "Лог",
-      "tabSettings": "@:{'common.settings'}"
+      "tabLog": "Лог"
     },
     "packInfo": {
       "dependencies": "Зависимости",
@@ -1129,11 +1128,7 @@
     },
     "trackable": {
       "unavailable": "Недоступно",
-      "corePower": "Заряд ядра",
-      "ready": "Готов",
-      "clearMechCore": "Пометить использование для этого меха",
-      "restoreMechCore": "Восстановить для этого меха",
-      "corePowerQ": "заряд ключевой способности?"
+      "corePower": "Заряд ядра"
     },
     "dmgCond": {
       "resistance": "Сопротивление",
@@ -3006,8 +3001,7 @@
       "referenceCombat": "Справочник: боевая часть игры",
       "referenceNarrativePlay": "Справочник: нарративная часть игры",
       "referenceErrata": "Справочник: исправления",
-      "referenceGlossary": "Справочник: словарь",
-      "downtimeactions": "Действия простоя"
+      "referenceGlossary": "Справочник: словарь"
     },
     "search": {
       "resultCount": "{count} результат | {count} результатов"

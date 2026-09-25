@@ -1,5 +1,5 @@
 <template>
-  <div class="wrapper cc-fill cc-fill-root">
+  <div class="wrapper">
     <router-view />
   </div>
 </template>

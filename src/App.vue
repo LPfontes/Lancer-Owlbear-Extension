@@ -1,26 +1,18 @@
 <template>
-  <v-app id="app"
-    :style="`--cc-app-offset: ${heightOffset}`">
-    <a href="#main-content"
-      class="skip-link">{{ $t('common.skipToMainContent') }}</a>
-    <pwa-update-prompt />
+  <v-app id="app" theme="dark" :class="{ 'app-minimized': windowManager.isMinimized.value }">
     <cc-notify />
-    <navbar :aria-label="$t('common.a11y.mainNavigation')" />
-    <div :style="`height: ${heightOffset}; flex: 0 0 auto`"
-      class="no-print" />
-    <main id="main-content"
-      tabindex="-1">
+    <AppNavbar />
+    <v-main id="main-content" v-show="!windowManager.isMinimized.value">
       <router-view :key="$route.fullPath" />
-    </main>
+    </v-main>
   </v-app>
 </template>
 
 <script setup lang="ts">
-import { computed, provide } from 'vue'
-import { useDisplay } from 'vuetify'
+import { provide } from 'vue'
 import CcNotify from '@/ui/notification/CCNotify.vue'
-import Navbar from './features/nav/index.vue'
-import PwaUpdatePrompt from '@/ui/components/PWAUpdatePrompt.vue'
+import AppNavbar from '@/ui/components/AppNavbar.vue'
+import { windowManager } from '@/services/windowManager'
 import { UserStore, CompendiumStore } from './stores'
 import type { UserProfile } from '@/user'
 import {
@@ -29,8 +21,6 @@ import {
   type CompendiumDataProvider,
   type UserDataProvider,
 } from '@/ui/providers'
-
-const _display = useDisplay()
 
 provide<CompendiumDataProvider>(CompendiumDataKey, {
   get Statuses() {
@@ -51,6 +41,7 @@ provide<CompendiumDataProvider>(CompendiumDataKey, {
   getItemCollection: (itemType) => CompendiumStore().getItemCollection(itemType),
   referenceLink: (item, internal) => CompendiumStore().referenceLink(item, internal),
 })
+
 provide<UserDataProvider>(UserDataKey, {
   get User() {
     return UserStore().User as UserProfile
@@ -75,14 +66,31 @@ provide<UserDataProvider>(UserDataKey, {
 })
 
 document.documentElement.setAttribute('data-font', 'inter')
-window.addEventListener('beforeunload', UserStore().OnUnload)
-
-const heightOffset = computed(() => {
-  if (_display.xs.value) {
-    return '24px'
-  } else {
-    return '41px'
-  }
-})
-
 </script>
+
+<style>
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+html:has(.app-minimized),
+body:has(.app-minimized) {
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+.app-minimized {
+  min-height: 48px !important;
+  height: 48px !important;
+  overflow: hidden !important;
+  background: transparent !important;
+}
+
+.app-minimized .v-application__wrap {
+  min-height: 48px !important;
+  height: 48px !important;
+  overflow: hidden !important;
+  background: transparent !important;
+}
+</style>

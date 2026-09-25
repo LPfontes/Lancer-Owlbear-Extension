@@ -90,6 +90,6 @@ defineExpose({ setTab })
 }
 
 .desktop {
-  top: 42px !important;
+  top: 60px !important;
 }
 </style>

@@ -1,28 +1,38 @@
-function decrypt(encryptedText) {
-  encryptedText = decodeURIComponent(encryptedText);
-  let decrypted = '';
+const DEFAULT_KEY = 'gumbodog'
+
+function getKey(): string {
+  return import.meta.env?.VITE_ACHIEVEMENT_KEY || DEFAULT_KEY
+}
+
+function decrypt(encryptedText?: string): string {
+  if (!encryptedText) return ''
+  try {
+    encryptedText = decodeURIComponent(encryptedText)
+  } catch {
+    // If not URI-encoded, keep original string
+  }
+  const key = getKey()
+  let decrypted = ''
   for (let i = 0; i < encryptedText.length; i++) {
     const charCode =
       encryptedText.charCodeAt(i) ^
-      import.meta.env.VITE_ACHIEVEMENT_KEY.charCodeAt(
-        i % import.meta.env.VITE_ACHIEVEMENT_KEY.length
-      );
-    decrypted += String.fromCharCode(charCode);
+      key.charCodeAt(i % key.length)
+    decrypted += String.fromCharCode(charCode)
   }
-  return decrypted;
+  return decrypted
 }
 
-function encrypt(text) {
-  let encrypted = '';
+function encrypt(text?: string): string {
+  if (!text) return ''
+  const key = getKey()
+  let encrypted = ''
   for (let i = 0; i < text.length; i++) {
     const charCode =
       text.charCodeAt(i) ^
-      import.meta.env.VITE_ACHIEVEMENT_KEY.charCodeAt(
-        i % import.meta.env.VITE_ACHIEVEMENT_KEY.length
-      );
-    encrypted += String.fromCharCode(charCode);
+      key.charCodeAt(i % key.length)
+    encrypted += String.fromCharCode(charCode)
   }
-  return encodeURIComponent(encrypted);
+  return encodeURIComponent(encrypted)
 }
 
-export { decrypt, encrypt };
+export { decrypt, encrypt }

@@ -367,8 +367,7 @@
       "clickToEdit": "Cliquez pour modifier",
       "atPcCountHelp": "Ce PNJ sera marqué comme faisant parti de la rencontre seulement il y a au moins autant de personnages joueurs qu'indiqué. Laissez cette section vide indiquera qu'il fera parti de la rencontre quelque soit le nombre de PJs.",
       "addToRoster": "Copier vers le roster",
-      "addToRosterTooltip": "Ajouter une copie de ce PNJ à votre roster et lier cette instance à cette nouvelle entrée du roster.",
-      "notLinkedSource": "Cette instance de PNJ n'est pas lié à une source valide dans votre roster de PNJ"
+      "addToRosterTooltip": "Ajouter une copie de ce PNJ à votre roster et lier cette instance à cette nouvelle entrée du roster."
     },
     "encounterEditor": {
       "editorHeading": "Éditeur de rencontre",
@@ -877,8 +876,7 @@
     },
     "optionsPage": {
       "tabStorage": "Stockage",
-      "tabLog": "Journal",
-      "tabSettings": "@:{'common.settings'}"
+      "tabLog": "Journal"
     },
     "packsList": {
       "activated": "activé",

@@ -15,7 +15,7 @@ class AchievementManager {
       x.id = decrypt(x.id)
       x.name = decrypt(x.name)
       x.description = decrypt(x.description)
-      const userAch = UserStore().User.AchievementUnlocks.find(y => y.id === x.id)
+      const userAch = UserStore().User?.AchievementUnlocks?.find(y => y.id === x.id)
       return new Achievement(
         x as AchievementData,
         this.getEventType(x.id),
