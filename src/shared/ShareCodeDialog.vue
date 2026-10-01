@@ -96,22 +96,36 @@
 
   async function downloadAsCopy(remote = false) {
     dlLoading.value = true
-    const itemData = await DownloadViaCode(queryResult.value.code)
-    const itemType = queryResult.value.sortkey.split('_')[1]
-    const item = await CloudController.NewByType(itemType, itemData)
-    if (remote) {
-      const codeToTrack = shareCode.value || queryResult.value.code
-      item.CloudController.setRemoteMetadata(queryResult.value)
-      item.SaveController.RemoteCode = codeToTrack
-      if (UserStore().IsLoggedIn) UserStore().addRemoteItem(codeToTrack)
-    } else {
-      item.CloudController.GenerateMetadata()
-      item.SaveController.ClearRemote()
-    }
-    await CloudController.AddByType(itemType, item)
+    try {
+      const itemData = queryResult.value?._payload || (await DownloadViaCode(queryResult.value.code))
+      const itemType = (queryResult.value.sortkey || 'item_pilot').split('_')[1]
+      const item = await CloudController.NewByType(itemType, itemData)
+      if (remote) {
+        const codeToTrack = shareCode.value || queryResult.value.code
+        item.CloudController.setRemoteMetadata(queryResult.value)
+        item.SaveController.RemoteCode = codeToTrack
+        if (UserStore().IsLoggedIn) UserStore().addRemoteItem(codeToTrack)
+      } else {
+        item.CloudController.GenerateMetadata()
+        item.SaveController.ClearRemote()
+      }
+      await CloudController.AddByType(itemType, item)
 
-    dlLoading.value = false
-    importer.value?.reset()
-    importer.value?.close()
+      try {
+        const { obrBridge } = await import('@/services/obrBridge')
+        if (itemType === 'pilot') {
+          await obrBridge.savePilotToRoom(item, true)
+        } else if (itemType === 'npc') {
+          await obrBridge.saveNpcToRoom(item, true)
+        }
+      } catch {}
+
+      importer.value?.reset()
+      importer.value?.close()
+    } catch (err: any) {
+      console.error('Erro ao adicionar cópia da ficha:', err)
+    } finally {
+      dlLoading.value = false
+    }
   }
 </script>
