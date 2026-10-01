@@ -316,9 +316,14 @@ class Logger {
         this.log(`Uncaught: ${e.message}`, 'error', null, e.error)
       })
       window.addEventListener('unhandledrejection', e => {
+        if (e.defaultPrevented) return
         const reason = e.reason
+        const formattedReason =
+          reason?.message ||
+          (reason?.error?.message ? reason.error.message : '') ||
+          (typeof reason === 'object' ? JSON.stringify(reason) : String(reason))
         this.log(
-          `Unhandled rejection: ${reason?.message || reason}`,
+          `Unhandled rejection: ${formattedReason}`,
           'error',
           null,
           reason instanceof Error ? reason : null

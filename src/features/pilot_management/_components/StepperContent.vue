@@ -1,5 +1,5 @@
 <template>
-  <div :style="mobile ? 'padding-bottom: 44px; margin-left: -16px' : ''">
+  <div :style="mobile ? 'padding-bottom: 44px;' : ''">
     <slot />
   </div>
   <v-footer

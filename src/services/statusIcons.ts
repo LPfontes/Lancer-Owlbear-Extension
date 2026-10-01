@@ -1,0 +1,248 @@
+/**
+ * Catálogo e gerador de ícones SVG de Estados e Condições para tokens no Owlbear Rodeo
+ */
+
+export interface StatusDefinition {
+  id: string
+  aliases: string[]
+  label: string
+  color: string
+  accentColor: string
+  path: string
+}
+
+export const STATUS_DEFINITIONS: StatusDefinition[] = [
+  {
+    id: 'lockon',
+    aliases: ['lock_on', 'lock-on', 'lock on'],
+    label: 'Trava de Mira',
+    color: '#D32F2F', // Vermelho
+    accentColor: '#FF5252',
+    path: `M-0.41,802.5v-7.27l0.91-0.91l0.91,0.91v7.27H-0.41L-0.41,802.5z M-5.86,798.86v-3.64h1.82v1.82h1.82v1.82H-5.86
+	L-5.86,798.86z M3.23,798.86v-1.82h1.82v-1.82h1.82v3.64H3.23L3.23,798.86z M-2.23,793.41l-7.27,0v-1.81h7.27l0.91,0.91
+	L-2.23,793.41L-2.23,793.41z M3.23,793.41l-0.91-0.91l0.91-0.91h7.27v1.81L3.23,793.41L3.23,793.41z M0.5,790.68l-0.91-0.91v-7.27
+	h1.82v7.27L0.5,790.68L0.5,790.68z M-5.86,789.77v-3.64h3.64v1.82h-1.82v1.82H-5.86L-5.86,789.77z M5.05,789.77v-1.82H3.23v-1.82
+	h3.64v3.64H5.05L5.05,789.77z`,
+  },
+  {
+    id: 'impaired',
+    aliases: ['impaired', 'debilitado'],
+    label: 'Debilitado',
+    color: '#E65100', // Laranja Escuro
+    accentColor: '#FF9800',
+    path: `M0.5,802.5l-8.66-5v-10l8.66-5l8.66,5v10L0.5,802.5z M0.5,800.19l6.66-3.84v-7.69l-6.66-3.85l-6.66,3.85v7.69L0.5,800.19z
+	 M5.5,791.5h-10v2h10V791.5z`,
+  },
+  {
+    id: 'slow',
+    aliases: ['slowed', 'slow', 'lentificado'],
+    label: 'Lentificado',
+    color: '#F57F17', // Âmbar
+    accentColor: '#FFD54F',
+    path: `M0.5,802.5c-0.48,0-0.95-0.48-1.9-1.43l-6.67-6.67c-1.9-1.91-1.9-1.91,0-3.81l6.67-6.67c1.9-1.91,1.9-1.91,3.81,0l6.67,6.67
+	c1.9,1.9,1.9,1.9,0,3.81l-6.67,6.67C1.45,802.02,0.98,802.5,0.5,802.5L0.5,802.5z M2.74,795.36c1.17,0,2.04-0.71,2.67-1.38
+	s1.11-1.39,1.48-1.76l-1.34-1.35c-0.59,0.59-1.05,1.3-1.53,1.82c-0.48,0.52-0.87,0.77-1.27,0.77c-0.01,0-0.19-0.05-0.48-0.33
+	c-0.29-0.28-0.64-0.72-1-1.2c-0.37-0.48-0.75-0.98-1.2-1.41c-0.45-0.43-1.02-0.87-1.8-0.87c-1.17,0-2.04,0.71-2.67,1.38
+	c-0.63,0.67-1.12,1.39-1.48,1.76l1.35,1.35c0.59-0.59,1.05-1.3,1.53-1.81c0.48-0.52,0.88-0.77,1.27-0.77c0.01,0,0.19,0.05,0.48,0.33
+	c0.29,0.28,0.64,0.73,1,1.2c0.36,0.48,0.74,0.99,1.2,1.42C1.39,794.93,1.96,795.36,2.74,795.36L2.74,795.36z`,
+  },
+  {
+    id: 'immobilized',
+    aliases: ['immobilized', 'imobilizado'],
+    label: 'Imobilizado',
+    color: '#BF360C', // Ferrugem / Laranja Queimado
+    accentColor: '#FF7043',
+    path: `M-3.642,782.5l-5.858,5.858v8.283l5.858,5.858h8.284l5.858-5.858v-8.283L4.642,782.5H-3.642z M-3.828,788.17h8.655v8.661
+	h-8.655V788.17z`,
+  },
+  {
+    id: 'jammed',
+    aliases: ['jammed', 'interferido', 'congestionado'],
+    label: 'Interferido',
+    color: '#6A1B9A', // Roxo
+    accentColor: '#BA68C8',
+    path: `M3.23,792.5l-2.73,1.82v8.18l-2.73-10l2.73-1.82v-8.18L3.23,792.5z M-8.71,786.05l4.25,5.71l-1.46,1.98l1.87,5.13
+	l-4.25-5.71l1.46-1.98L-8.71,786.05L-8.71,786.05z M9.3,793.16l-2.39,0.58l-1.87,5.13l0.41-7.11l2.39-0.58l1.87-5.13L9.3,793.16z`,
+  },
+  {
+    id: 'shredded',
+    aliases: ['shredded', 'estracalhado', 'estraçalhado', 'fragmentado'],
+    label: 'Estraçalhado',
+    color: '#B71C1C', // Carmim Escuro
+    accentColor: '#EF5350',
+    path: `M2.41,782.5c1.74,0.83,4.38,1.87,6.68,1.87c0,0-0.28,5.16-0.95,7.63c-0.63,2.34-1.4,4.75-2.86,6.68
+	c-1.23,1.62-2.86,2.86-4.77,3.82c-1.91-0.96-3.54-2.2-4.77-3.82c-1.47-1.93-2.23-4.34-2.86-6.68c-0.67-2.48-0.95-7.63-0.95-7.63
+	c2.3,0,4.94-1.04,6.68-1.87v2.82l1.91,2.86l-4.77,2.86l5.73,3.82l-3.82,2.86l2.86,2.86l-0.95-2.86l4.77-2.86l-4.77-3.82l5.73-2.86
+	l-2.86-2.86V782.5z`,
+  },
+  {
+    id: 'stunned',
+    aliases: ['stunned', 'atordoado'],
+    label: 'Atordoado',
+    color: '#FBC02D', // Amarelo Dourado
+    accentColor: '#FFF176',
+    path: `M0.5,802.5c-5.51,0-9.99-4.49-9.99-10c0-5.51,4.48-10,9.99-10s10,4.49,10,10C10.5,798.01,6.01,802.5,0.5,802.5z M0.5,800.5
+	c4.43,0,8-3.57,8-8c0-4.43-3.57-8-8-8s-7.99,3.57-7.99,8C-7.5,796.93-3.93,800.5,0.5,800.5z M-2.08,797.91
+	c-1.24-0.6-2.22-1.59-2.81-2.79l-0.02-0.04l2.58-2.58l-2.58-2.58c0.6-1.24,1.58-2.22,2.79-2.81l0.04-0.02l2.58,2.58l2.58-2.58
+	c1.24,0.6,2.22,1.58,2.81,2.79l0.02,0.04l-2.58,2.58l2.58,2.58c-0.6,1.24-1.58,2.22-2.79,2.81l-0.04,0.02l-2.58-2.58L-2.08,797.91
+	L-2.08,797.91z`,
+  },
+  {
+    id: 'hidden',
+    aliases: ['hidden', 'oculto'],
+    label: 'Oculto',
+    color: '#00838F', // Ciano Profundo
+    accentColor: '#26C6DA',
+    path: `M-8.14,802.5v-20h5.45v20H-8.14z M0.95,800.68l-1.82-1.82v-2.73l1.82,1.82l5.45-5.45l-5.45-5.45l-1.82,1.82v-2.73l1.82-1.82
+	l8.18,8.18L0.95,800.68z`,
+  },
+  {
+    id: 'invisible',
+    aliases: ['invisible', 'invisivel', 'invisível'],
+    label: 'Invisível',
+    color: '#283593', // Azul Marinho Índigo
+    accentColor: '#5C6BC0',
+    path: `M0.5,802.5l-2.73-2.73h5.45L0.5,802.5z M-4.05,797.95l-1.82-1.82h2.73l1.82,1.82H-4.05z M2.32,797.95l1.82-1.82h2.73
+	l-1.82,1.82H2.32z M-7.68,794.32l-1.82-1.82l1.82-1.82h2.73l-1.82,1.82l1.82,1.82H-7.68z M5.95,794.32l1.82-1.82l-1.82-1.82h2.73
+	l1.82,1.82l-1.82,1.82H5.95z M-5.86,788.86l1.82-1.82h2.73l-1.82,1.82H-5.86z M4.14,788.86l-1.82-1.82h2.73l1.82,1.82H4.14z
+	 M-2.23,785.23l2.73-2.73l2.73,2.73H0.5H-2.23z`,
+  },
+  {
+    id: 'prone',
+    aliases: ['prone', 'caido', 'caído'],
+    label: 'Caído',
+    color: '#4E342E', // Marrom
+    accentColor: '#8D6E63',
+    path: `M4.4,783.54l1.29,1.29l-5.19,5.19l-5.19-5.19l1.28-1.29l3.9,3.91L4.4,783.54L4.4,783.54z M4.4,789.91l1.29,1.28l-5.19,5.19
+	l-5.19-5.19l1.28-1.28l3.9,3.9L4.4,789.91L4.4,789.91z M8.68,798.73l1.82,2.73h-20l1.82-2.73H8.68L8.68,798.73z`,
+  },
+  {
+    id: 'shutdown',
+    aliases: ['shut-down', 'shutdown', 'desligado'],
+    label: 'Desligado',
+    color: '#37474F', // Cinza Chumbo
+    accentColor: '#78909C',
+    path: `M-9.5,787.95l10-2.73l10,2.73v9.09l-10,2.73l-10-2.73V787.95z M1.41,787.05h-1.82v5.45h1.82V787.05z M2.32,788.34v2.13
+	c0.55,0.5,0.91,1.21,0.91,2.03c0,1.52-1.21,2.73-2.73,2.73c-1.52,0-2.73-1.21-2.73-2.73c0-0.81,0.35-1.53,0.91-2.02v-2.13
+	c-1.6,0.71-2.73,2.3-2.73,4.16c0,2.5,2.05,4.55,4.55,4.55c2.5,0,4.54-2.05,4.54-4.55C5.05,790.64,3.92,789.05,2.32,788.34z`,
+  },
+  {
+    id: 'exposed',
+    aliases: ['exposed', 'exposto'],
+    label: 'Exposto',
+    color: '#C2185B', // Rosa Choque / Magenta
+    accentColor: '#FF4081',
+    path: `M0.4,802.5l-1.71-0.86l2.06-4.12l-0.58-0.29l-6.81,2.27l-0.6-1.82l4.37-1.45l-0.21-0.62l-6.42-3.21l0.86-1.71l4.12,2.06
+	l0.29-0.58l-2.27-6.8l1.82-0.6l1.45,4.37l0.62-0.21l3.21-6.42l1.71,0.86l-2.06,4.12l0.58,0.29l6.81-2.27l0.6,1.82l-4.37,1.45
+	l0.21,0.62l6.42,3.21l-0.86,1.71l-4.12-2.06l-0.29,0.58l2.27,6.8l-1.82,0.6l-1.45-4.37l-0.62,0.21L0.4,802.5z M0.5,794.41
+	c1.06,0,1.91-0.86,1.91-1.91l0,0l0,0c0-1.06-0.86-1.91-1.91-1.91l0,0c-1.06,0-1.91,0.86-1.91,1.91l0,0l0,0
+	C-1.41,793.56-0.56,794.41,0.5,794.41L0.5,794.41L0.5,794.41z`,
+  },
+  {
+    id: 'dangerzone',
+    aliases: ['dangerzone', 'danger_zone', 'danger zone', 'zona de perigo'],
+    label: 'Zona de Perigo',
+    color: '#E64A19', // Fogo Vivo
+    accentColor: '#FF5722',
+    path: `M-3.67,782.5c1.38,0,2.5,1.12,2.5,2.5v10.01c1.05,0.79,1.67,2.02,1.67,3.33c0,2.3-1.87,4.17-4.17,4.17s-4.17-1.87-4.17-4.17
+	c0-1.31,0.62-2.54,1.67-3.33V785C-6.17,783.62-5.05,782.5-3.67,782.5L-3.67,782.5z M2.17,788.33l6.67-1.67L3,790.83l4.17,1.67h-5
+	l1.67,2.5l-3.33-1.67v-5.83l3.33-2.5L2.17,788.33z M-4.5,795.98c-1,0.35-1.67,1.3-1.67,2.35c0,1.38,1.12,2.5,2.5,2.5
+	c1.38,0,2.5-1.12,2.5-2.5c0-1.06-0.67-2-1.67-2.35v-7.65H-4.5V795.98z`,
+  },
+  {
+    id: 'engaged',
+    aliases: ['engaged', 'engajado'],
+    label: 'Engajado',
+    color: '#00695C', // Verde Petróleo
+    accentColor: '#26A69A',
+    path: `M-8.18,802.5l-1.32-1.32l4.94-4.94h-2.42v-1.87h5.6v5.6h-1.87v-2.41L-8.18,802.5L-8.18,802.5z M5.44,798.76l-11.21-11.21
+	l1.32-1.32l11.21,11.2L5.44,798.76L5.44,798.76z M7.97,790.63h-5.6v-5.6h1.87v2.41l4.94-4.94l1.32,1.32l-4.94,4.94h2.42V790.63
+	L7.97,790.63z`,
+  },
+  {
+    id: 'downandout',
+    aliases: ['downandout', 'down and out', 'fora de combate'],
+    label: 'Fora de Combate',
+    color: '#212121', // Preto Grafite
+    accentColor: '#757575',
+    path: `M0.5,802.5l-8.66-5v-10l8.66-5l8.66,5v10L0.5,802.5z M-5.5,792.5h12v-2h-12V792.5z`,
+  },
+]
+
+/**
+ * Normaliza um ID ou alias de status para a chave canônica
+ */
+export function normalizeStatusId(input: string): string | null {
+  if (!input) return null
+  const cleaned = input.trim().toLowerCase().replace(/[\s_-]/g, '')
+  for (const def of STATUS_DEFINITIONS) {
+    if (def.id.replace(/[\s_-]/g, '') === cleaned) return def.id
+    for (const alias of def.aliases) {
+      if (alias.replace(/[\s_-]/g, '') === cleaned) return def.id
+    }
+  }
+  return null
+}
+
+/**
+ * Obtém a definição do status
+ */
+export function getStatusDefinition(statusIdOrAlias: string): StatusDefinition | null {
+  const norm = normalizeStatusId(statusIdOrAlias)
+  if (!norm) return null
+  return STATUS_DEFINITIONS.find(d => d.id === norm) || null
+}
+
+/**
+ * Cache de data URIs gerados para evitar recomputações
+ */
+const badgeUriCache = new Map<string, string>()
+
+/**
+ * Converte string SVG para Base64 de forma segura em navegadores e NodeJS
+ */
+function svgToBase64(str: string): string {
+  if (typeof btoa !== 'undefined') {
+    return btoa(unescape(encodeURIComponent(str)))
+  }
+  return Buffer.from(str).toString('base64')
+}
+
+/**
+ * Gera um Data URI com o SVG do badge de status
+ */
+export function generateStatusBadgeDataUri(statusIdOrAlias: string): string {
+  const norm = normalizeStatusId(statusIdOrAlias) || statusIdOrAlias
+  if (badgeUriCache.has(norm)) {
+    return badgeUriCache.get(norm)!
+  }
+
+  const def = getStatusDefinition(norm)
+  const color = def?.color || '#37474F'
+  const accentColor = def?.accentColor || '#78909C'
+  const path = def?.path || 'M-5,790h10v5h-10z'
+
+  // Badge circular de 100x100 com alto contraste e sem dependência de filtros externos
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <circle cx="50" cy="50" r="49" fill="#000000" fill-opacity="0.9"/>
+  <circle cx="50" cy="50" r="45" fill="${color}" stroke="${accentColor}" stroke-width="3"/>
+  <circle cx="50" cy="50" r="36" fill="#11141A" fill-opacity="0.92"/>
+  <g transform="translate(50, 50) scale(2.4) translate(-0.5, -792.5)">
+    <path d="${path}" fill="#FFFFFF"/>
+  </g>
+</svg>`
+
+  const uri = `data:image/svg+xml;base64,${svgToBase64(svg)}`
+  badgeUriCache.set(norm, uri)
+  return uri
+}
+
+/**
+ * Retorna a URL pública HTTP/HTTPS estática do ícone SVG para ser carregada pelo Owlbear Rodeo
+ */
+export function getStatusBadgeUrl(statusIdOrAlias: string): string {
+  const norm = normalizeStatusId(statusIdOrAlias) || statusIdOrAlias
+  const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+  return `${origin}/status-icons/${norm}.svg`
+}
+

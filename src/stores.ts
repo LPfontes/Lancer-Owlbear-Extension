@@ -22,6 +22,7 @@ export { RemoteItemStore } from './user/store/RemoteItemStore'
 export { CollectionStore } from './user/store/CollectionStore'
 export { BackupStore } from './user/store/BackupStore'
 export { SyncStore } from './user/store/SyncStore'
+export { useTableActionStore } from './stores/tableActionStore'
 
 export {
   UserStore,

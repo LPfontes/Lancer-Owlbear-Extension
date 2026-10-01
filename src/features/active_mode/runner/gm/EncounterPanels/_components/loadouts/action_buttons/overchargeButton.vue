@@ -15,86 +15,58 @@
         <div class="text-center text-cc-overline text-disabled my-2">
           {{ $t('active.overcharge.cost') }}
         </div>
-        <v-row no-gutters>
-          <v-col
+        <div class="d-flex align-stretch justify-space-between position-relative mt-6 mb-8 px-1">
+          <div
             v-for="(t, n) in controller.OverchargeTrack"
             :key="`overcharge-${n}`"
-            class="text-center mx-n4"
+            class="d-flex flex-column align-center justify-center position-relative"
+            style="z-index: 2; flex: 1;"
           >
+
+
             <v-card
-              flat
-              color="overcharge"
-              class="py-2"
-              style="
-                corner-shape: bevel;
-                border-bottom-left-radius: 60px;
-                border-top-left-radius: 0px;
-                border-top-right-radius: 60px;
-                border-bottom-right-radius: 0px;
-              "
-              :style="currentOvercharge > n ? 'opacity: 0.4 ' : ''"
-              :variant="currentOvercharge >= n ? 'flat' : 'outlined'"
+              @click="roll(Number(n))"
+              :variant="Number(currentOvercharge) > Number(n) ? 'flat' : (Number(currentOvercharge) === Number(n) ? 'elevated' : 'outlined')"
+              :color="Number(currentOvercharge) >= Number(n) ? 'overcharge' : 'grey-darken-2'"
+              class="d-flex flex-column align-center justify-center py-2 w-100 mx-1 bg-panel cursor-pointer"
+              style="transform: skewX(-15deg); border-radius: 4px; transition: all 0.3s ease; position: relative; overflow: visible;"
+              :style="Number(currentOvercharge) === Number(n) ? 'box-shadow: 0 0 15px rgba(var(--v-theme-overcharge), 0.5); transform: scale(1.1) skewX(-15deg); z-index: 3; border: 1px solid rgb(var(--v-theme-overcharge));' : (Number(currentOvercharge) > Number(n) ? 'opacity: 0.3;' : 'border-style: dashed !important; border-width: 2px !important;')"
             >
-              <div class="heading h3">
-                <v-icon>cc:heat</v-icon>
-                +{{ t }}
+              <div 
+                style="transform: skewX(15deg);" 
+                class="d-flex align-center justify-center text-center px-1"
+              >
+                <v-icon size="18" class="mr-1" :color="Number(currentOvercharge) === Number(n) ? 'white' : ''">cc:heat</v-icon>
+                <span class="heading h4 mb-0 font-weight-black" :class="Number(currentOvercharge) === Number(n) ? 'text-white' : ''">
+                  +{{ t }}
+                </span>
               </div>
             </v-card>
-          </v-col>
-        </v-row>
-        <v-row
-          dense
-          class="text-center my-3"
-          align="center"
-          justify="center"
-        >
-          <v-col cols="auto">{{ $t('active.overcharge.willIncur') }}</v-col>
-          <v-col cols="auto">
-            <v-btn
-              icon
-              flat
-              tile
-              color="panel"
-              size="x-small"
-              class="fade-select ml-2 mr-n2 mt-n1"
-              @click="roll()"
-            >
-              <v-icon
-                icon="mdi-dice-d20"
-                size="30"
-              />
-            </v-btn>
-          </v-col>
-          <v-col cols="auto">
-            <v-text-field
-              v-model="heatCost"
-              :placeholder="controller.OverchargeCost"
-              class="d-inline-block"
-              density="compact"
-              type="number"
-              width="200px"
-              hide-details
-              flat
-              tile
-              variant="outlined"
-              color="overcharge"
-              append-inner-icon="cc:heat"
-            />
-          </v-col>
-          <v-col cols="auto">{{ $t('pm.sheet.heat') }}</v-col>
-        </v-row>
+          </div>
+        </div>
+
       </v-card>
-      <menu-input
-        :key="controller.RootActor.ID"
-        :owner="owner"
-        :encounter-instance="encounterInstance"
-        :disabled="heatMissing"
-        hide-input
-        :active-effect="action"
-        :close="close"
-        @apply="apply"
-        @reset="reset"
-      />
+
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2 mt-4 pb-2 px-12">
+        <v-btn
+          variant="plain"
+          color="disabled"
+          @click="close"
+        >
+          Cancelar
+        </v-btn>
+        <v-btn
+          color="action--quick"
+          variant="elevated"
+          class="font-weight-bold px-4"
+          height="36"
+          :disabled="heatMissing"
+          @click="apply(); close()"
+        >
+          <v-icon start icon="mdi-check-all" size="18" />
+          Concluir Sobrecarga {{ heatCost !== null ? `(${heatCost} de Calor)` : '' }}
+        </v-btn>
+      </div>
     </template>
   </combat-action-button>
 </template>
@@ -109,6 +81,8 @@
   import { DiceRoller } from '@/classes/dice/DiceRoller'
   import CombatActionButton from './CombatActionButton.vue'
   import MenuInput from '@/ui/components/chips/_activeeffect/_ae_menu_input.vue'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   const { owner, encounterInstance, activeController: controller } = useEncounterContext()
 
@@ -127,13 +101,52 @@
     return controller.value.OverchargeLevel
   })
 
-  function roll() {
-    heatCost.value = DiceRoller.roll(controller.value.OverchargeCost)
+  function roll(index: number) {
+    const formula = controller.value.OverchargeTrack[index] || '1d6'
+    heatCost.value = DiceRoller.roll(formula)
+
+    void dddiceService.rollDice({
+      diceString: formula,
+      label: `Overcharge Heat [${controller.value.CombatName || 'Mech'}]`,
+      external_id: controller.value.CombatName || undefined,
+    })
+
+    const actorName =
+      (owner.value?.actor as any)?.Callsign ||
+      (owner.value?.actor as any)?.Name ||
+      controller.value?.CombatName ||
+      'Piloto'
+    void useTableActionStore().postAction({
+      senderName: actorName,
+      category: 'roll',
+      title: 'Rolagem de Calor de Superaquecimento',
+      detail: `Gerou ${heatCost.value} de calor (${formula})`,
+      roll: {
+        total: Number(heatCost.value) || 0,
+        formula: formula,
+        isCrit: false,
+      },
+      tags: ['Superaquecimento', 'Calor'],
+    })
   }
   function apply() {
+    const cost = heatCost.value === null ? undefined : Number(heatCost.value)
     controller.value.RunAction(props.action.ID, {
-      value: heatCost.value === null ? undefined : Number(heatCost.value),
+      value: cost,
     })
+
+    const actorName =
+      (owner.value?.actor as any)?.Callsign ||
+      (owner.value?.actor as any)?.Name ||
+      controller.value?.CombatName ||
+      'Piloto'
+    void useTableActionStore().broadcastCombatAction({
+      actorName,
+      actionName: 'Sobrecarga',
+      actionType: 'protocol',
+      detail: cost !== undefined ? `+${cost} de Calor recebido` : undefined,
+    })
+
     heatCost.value = null
   }
   function reset() {

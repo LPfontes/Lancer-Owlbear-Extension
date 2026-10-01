@@ -178,7 +178,7 @@ class LicenseController extends RankedCollectionController<License, PilotLicense
 
   public static Deserialize(parent: Pilot, data: ILicenseSaveData) {
     assertController(parent.LicenseController, 'LicenseController')
-    parent.LicenseController._collection = data.licenses.map((x: IRankedData) =>
+    parent.LicenseController._collection = (data?.licenses || []).map((x: IRankedData) =>
       PilotLicense.Deserialize(x)
     )
   }

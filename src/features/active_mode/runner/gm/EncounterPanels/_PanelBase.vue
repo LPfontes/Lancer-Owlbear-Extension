@@ -25,14 +25,15 @@
   <v-card
     flat
     tile
-    :class="`pa-${layout.padX}`"
+    color="transparent"
+    :class="`bg-transparent pa-${layout.padX}`"
   >
     <v-row no-gutters>
       <v-col
         cols="12"
         :xl="xlPanels"
       >
-        <v-row class="pr-4">
+        <v-row class="">
           <v-col
             v-if="item.PortraitController?.HasImage && !mobile && layout.showPortraits"
             cols="auto"
@@ -101,7 +102,7 @@
             <timed-effect-panel :item="item" />
 
             <v-row
-              class="mt-n1"
+              class="my-2 flex-nowrap align-center overflow-x-auto stats-row"
               dense
             >
               <v-col
@@ -111,6 +112,7 @@
                     Object.keys((item as any).Parent.StatController.MaxStats).includes('grit'))
                 "
                 cols="auto"
+                class="px-1 py-0 flex-shrink-0"
               >
                 <v-tooltip
                   location="top"
@@ -119,13 +121,13 @@
                   <template #activator="{ props }">
                     <span
                       v-bind="props"
-                      class="text-no-wrap"
+                      class="text-no-wrap d-flex align-center"
                     >
                       <v-icon
                         v-if="layout.showIcon"
                         icon="mdi-star-four-points-outline"
                         :size="layout.iconSize"
-                        :class="mobile ? 'mr-1' : 'mt-n2 mr-1'"
+                        class="mr-1"
                       />
                       <span
                         v-if="layout.showLabel"
@@ -144,38 +146,46 @@
                 </v-tooltip>
               </v-col>
               <template
-                v-for="stat in <any[]>statColumns"
+                v-for="stat in (statColumns as any[])"
                 :key="stat.key"
               >
                 <v-col
                   v-if="stat.key === '__spacer__'"
-                  cols="1"
-                />
+                  cols="auto"
+                  class="px-1 py-0 flex-shrink-0 d-flex align-center"
+                >
+                  <v-divider
+                    vertical
+                    class="my-1"
+                    style="height: 16px"
+                  />
+                </v-col>
                 <v-col
                   v-else
                   cols="auto"
+                  class="px-1 py-0 flex-shrink-0"
                 >
                   <v-tooltip
-                    :text="stat.title"
+                    :text="getStatTitle(stat)"
                     location="top"
                     open-delay="400"
                   >
                     <template #activator="{ props }">
                       <span
                         v-bind="props"
-                        class="text-no-wrap"
+                        class="text-no-wrap d-flex align-center"
                       >
                         <v-icon
                           v-if="layout.showIcon"
                           :icon="stat.icon"
                           :size="layout.iconSize"
-                          :class="mobile ? 'mr-1' : 'mt-n2 mr-1'"
+                          class="mr-1"
                         />
                         <span
                           v-if="layout.showLabel"
                           class="text-caption text-disabled mr-1"
                         >
-                          {{ stat.title }}
+                          {{ getStatTitle(stat) }}
                         </span>
                         <span
                           :class="mobile || layout.showLabel ? '' : 'h2'"
@@ -190,9 +200,12 @@
                 </v-col>
               </template>
 
-              <v-col cols="auto">
+              <v-col
+                v-if="item.ItemType === 'mech' || item.ItemType === 'pilot'"
+                cols="auto"
+                class="px-1 py-0 flex-shrink-0"
+              >
                 <v-tooltip
-                  v-if="item.ItemType === 'mech' || item.ItemType === 'pilot'"
                   :text="$t('common.attackBonus')"
                   location="top"
                   open-delay="400"
@@ -200,13 +213,13 @@
                   <template #activator="{ props }">
                     <span
                       v-bind="props"
-                      class="text-no-wrap"
+                      class="text-no-wrap d-flex align-center"
                     >
                       <v-icon
                         v-if="layout.showIcon"
                         icon="cc:weapon"
                         :size="layout.iconSize"
-                        :class="mobile ? 'mr-1' : 'mt-n2 mr-1'"
+                        class="mr-1"
                       />
                       <span
                         v-if="layout.showLabel"
@@ -226,7 +239,10 @@
                 <cc-bonus :bonuses="getBonuses('attackBonus')" />
               </v-col>
 
-              <v-col cols="auto">
+              <v-col
+                cols="auto"
+                class="px-1 py-0 flex-shrink-0"
+              >
                 <cc-synergy-display
                   location="stats"
                   :mech="item"
@@ -245,21 +261,17 @@
               align="center"
               dense
               class="border-sm my-2"
-              justify="space-evenly"
             >
-              <v-col>
+              <v-col cols="12">
                 <slot name="action-palette" />
               </v-col>
 
               <v-col
-                cols="auto"
-                :class="mobile ? '' : 'ml-auto'"
+                cols="12"
                 align-self="center"
+                class="pt-0"
               >
-                <div
-                  v-if="mobile"
-                  class="text-cc-overline text-disabled"
-                >
+                <div class="text-cc-overline text-disabled">
                   {{ $t('active.panelBase.cover') }}
                 </div>
                 <v-btn-toggle
@@ -269,8 +281,10 @@
                   mandatory
                   color="primary"
                   style="height: 30px"
+                  class="w-100 d-flex"
                 >
                   <v-btn
+                    class="flex-grow-1"
                     size="small"
                     height="30"
                     value="none"
@@ -278,6 +292,7 @@
                     {{ mobile ? $t('common.none') : $t('active.panelBase.noCover') }}
                   </v-btn>
                   <v-btn
+                    class="flex-grow-1"
                     size="small"
                     height="30"
                     value="soft"
@@ -285,6 +300,7 @@
                     {{ mobile ? $t('active.panelBase.soft') : $t('active.panelBase.softCover') }}
                   </v-btn>
                   <v-btn
+                    class="flex-grow-1"
                     size="small"
                     height="30"
                     value="hard"
@@ -296,8 +312,21 @@
             </v-row>
 
             <div class="mb-2">
+              <lancer-foundry-stats-hud
+                v-if="item.ItemType === 'pilot' || item.ItemType === 'mech'"
+                :item="item"
+              >
+                <template #dmg>
+                  <damage-menu
+                    v-if="item.CombatController.StatController.MaxStats['hp']"
+                    :encounter="encounterInstance.Encounter"
+                    :controller="item.CombatController"
+                  />
+                </template>
+              </lancer-foundry-stats-hud>
               <component
                 :is="trackableStatsComponent"
+                v-else
                 :item="item"
               >
                 <template #dmg>
@@ -402,6 +431,7 @@
   import ActivationTracker from './_components/ActivationTracker.vue'
   import TrackableStatsComplex from './_components/TrackableStatsComplex.vue'
   import TrackableStatsSimple from './_components/TrackableStatsSimple.vue'
+  import LancerFoundryStatsHud from './_components/LancerFoundryStatsHud.vue'
   import { ICombatant } from '@/classes/components/combat/ICombatant'
   import { PilotStatus, NpcStatus, MechStatus } from '@/classes/enums'
   import { useLayoutOptions, filterStats } from '@/features/active_mode/layoutOptions'
@@ -501,7 +531,7 @@
     layout.value.simpleTickbars ? _TrackableStatsSimple : _TrackableStatsComplex
   )
 
-  function getBonuses(statKey) {
+  function getBonuses(statKey: string) {
     if (statKey === 'agi') statKey = 'agility'
     if (statKey === 'sys') statKey = 'systems'
     if (statKey === 'eng') statKey = 'engineering'
@@ -541,8 +571,55 @@
     }
     return 'grey'
   }
+
+  function getStatTitle(stat: any): string {
+    if (!stat) return ''
+    const key = stat.key || ''
+    const statKeyMap: Record<string, string> = {
+      hull: 'Casco',
+      agi: 'Agilidade',
+      agility: 'Agilidade',
+      sys: 'Sistemas',
+      systems: 'Sistemas',
+      eng: 'Engenharia',
+      engineering: 'Engenharia',
+      evasion: 'Evasão',
+      edef: 'Defesa-E',
+      edefense: 'Defesa-E',
+      sensorRange: 'Alcance dos Sensores',
+      sensor_range: 'Alcance dos Sensores',
+      sensors: 'Sensores',
+      saveTarget: 'Alvo de Salvaguarda',
+      save_target: 'Alvo de Salvaguarda',
+      save: 'Alvo de Salvaguarda',
+      techAttack: 'Ataque Tecnológico',
+      attackBonus: 'Bônus de Ataque',
+      speed: 'Velocidade',
+      armor: 'Armadura',
+      hp: 'Pontos de Vida',
+      structure: 'Estrutura',
+      stress: 'Estresse',
+      heatcap: 'Capacidade de Calor',
+      repairCapacity: 'Capacidade de Reparos',
+      grapple: 'Agarrar',
+      ram: 'Empurrar',
+    }
+    if (statKeyMap[key]) return statKeyMap[key]
+    const k = key.toLowerCase()
+    if (statKeyMap[k]) return statKeyMap[k]
+    return stat.title || key
+  }
 </script>
 
 <style scoped>
   @import './encounter-panels.css';
+
+  .stats-row {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    justify-content: center;
+  }
+  .stats-row::-webkit-scrollbar {
+    display: none;
+  }
 </style>

@@ -10,7 +10,7 @@
           :title="$t('active.titles.youHaveRemainingActions')"
         >
           <v-row
-            class="my-1 mx-4 px-2 text-text bg-panel"
+            class="my-1 mx-4 px-2 text-text bg-panel flex-nowrap"
             justify="space-around"
           >
             <end-round-action-chips

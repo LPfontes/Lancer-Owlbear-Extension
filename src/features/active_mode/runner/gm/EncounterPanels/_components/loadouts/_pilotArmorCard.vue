@@ -11,16 +11,6 @@
       class="pr-1"
       :style="item.Used ? 'opacity: 0.4' : ''"
     >
-      <v-col :class="mobile ? 'text-cc-overline line-short' : 'heading h3 text-uppercase'">
-        <div class="mt-n2 pl-1">
-          {{ item.Name }}
-          <span class="text-cc-overline text-disabled">
-            <cc-slashes class="mx-1" />
-            {{ $t('common.pilotArmor') }}
-          </span>
-        </div>
-      </v-col>
-
       <v-col cols="auto">
         <v-icon
           size="18"

@@ -80,6 +80,11 @@
                   @activate="activate($event)"
                 />
 
+                <search-action-button
+                  v-else-if="action === 'act_search'"
+                  :action="getBaseAction(action)"
+                />
+
                 <targeted-action-button
                   v-else-if="controller.NeedsTarget(action)"
                   :action="getBaseAction(action)"
@@ -140,6 +145,11 @@
                 />
                 <skill-check-button
                   v-else-if="action === 'act_skill_check'"
+                  :action="getBaseAction(action)"
+                  @activate="activate($event)"
+                />
+                <mech-full-tech-button
+                  v-else-if="action === 'act_full_tech'"
                   :action="getBaseAction(action)"
                   @activate="activate($event)"
                 />
@@ -251,6 +261,8 @@
   import OverchargeButton from './loadouts/action_buttons/overchargeButton.vue'
   import MechSkirmishButton from './loadouts/action_buttons/mechSkirmishButton.vue'
   import MechBarrageButton from './loadouts/action_buttons/mechBarrageButton.vue'
+  import MechFullTechButton from './loadouts/action_buttons/mechFullTechButton.vue'
+  import SearchActionButton from './loadouts/action_buttons/searchActionButton.vue'
 
   const { owner } = useEncounterContext()
 

@@ -24,9 +24,7 @@
       </div>
     </template>
 
-    <template #action-palette>
-      <turn-state-toggles :states="turnStates" />
-    </template>
+
 
     <unit-combat-loadout
       :unit="<Unit>actor"

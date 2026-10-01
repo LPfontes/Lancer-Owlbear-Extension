@@ -128,9 +128,10 @@
 
 <script setup lang="ts">
   import type { CombatController } from '@/classes/components/combat/CombatController'
-  import { computed, ref } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import * as _ from 'lodash-es'
   import { CompendiumStore } from '@/stores'
+  import { obrBridge } from '@/services/obrBridge'
   import StatusConditionItem from './StatusConditionItem.vue'
 
   defineOptions({ name: 'StatusConditionSelector' })
@@ -155,9 +156,28 @@
 
   const special = computed(() => (props.controller as any).CustomStatuses)
 
+  function syncMarkers() {
+    try {
+      const parentId = (props.controller as any).Parent?.ID
+      if (!parentId) return
+      const list = ((props.controller as any).Statuses || []).map((s: any) => s.status?.ID || s.status)
+      if (props.controller.IsInDangerZone && !list.includes('dangerzone')) {
+        list.push('dangerzone')
+      }
+      obrBridge.syncCombatantStatusMarkers(parentId, list).catch(() => {})
+    } catch (_e) {}
+  }
+
   function setStatus(status: any) {
     ;(props.controller as any).ToggleStatus(status, undefined, true)
+    syncMarkers()
   }
+
+  watch(
+    () => (props.controller as any).Statuses?.map((s: any) => s.status?.ID || s.status),
+    () => syncMarkers(),
+    { deep: true }
+  )
 
   function addCustomStatus(name: string) {
     if (!name || !name.trim().length) return

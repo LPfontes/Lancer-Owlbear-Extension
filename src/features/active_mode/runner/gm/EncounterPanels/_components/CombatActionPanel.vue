@@ -4,6 +4,7 @@
     <v-row
       dense
       align="stretch"
+      class="flex-nowrap"
     >
       <template
         v-for="(action, idx) in actions"
@@ -12,7 +13,7 @@
         <v-col
           v-if="action.separator"
           cols="auto"
-          class="d-flex align-center justify-center"
+          class="d-flex align-center justify-center pa-1 flex-shrink-0"
           aria-hidden="true"
         >
           <v-icon
@@ -23,10 +24,8 @@
         </v-col>
         <v-col
           v-else
-          cols="6"
-          sm="4"
-          md="4"
-          lg=""
+          class="pa-1 flex-grow-1 flex-shrink-1"
+          style="min-width: 0;"
         >
           <v-btn
             :color="action.available ? action.color : 'grey'"
@@ -79,11 +78,6 @@
             />
           </v-btn>
         </v-col>
-        <v-responsive
-          v-if="action.breakAfter && layout.showLabel"
-          :key="`b${idx}`"
-          width="100%"
-        />
       </template>
     </v-row>
   </div>
@@ -125,6 +119,7 @@
   }
 
   const actions = computed<Tile[]>(() => {
+    void props.controller.CombatLogVersion
     const c = props.controller
     const tiles: Tile[] = [
       {
@@ -197,8 +192,9 @@
 
 <style scoped>
   .combat-action-tile {
-    min-width: max(44px, 100%);
-    min-height: 32px;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    min-height: 28px;
     position: relative;
     overflow: hidden;
   }
@@ -206,6 +202,10 @@
   .combat-action-label {
     white-space: nowrap;
     text-align: center;
+    font-size: 0.65rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .combat-action-tile--spent .combat-action-label {

@@ -11,6 +11,7 @@ import { NavStore } from '@/stores/nav'
 import type { IndexItem } from '@/stores/nav'
 import { CloudController } from '@/classes/components/cloud/CloudController'
 import logger from '@/user/logger'
+import { obrBridge } from '@/services/obrBridge'
 
 export const NpcStore = defineStore('npc', {
   state: () => ({
@@ -169,6 +170,7 @@ export const NpcStore = defineStore('npc', {
       if (idx >= -1) this.Npcs.splice(idx, 1)
       NavStore().removeNpcEntry(id)
       await RemoveItem('npcs', id)
+      void obrBridge.removeNpcFromRoom(id)
       await this.SaveNpcData()
       if (payload.CloudController.ShareCode) {
         await CloudController.MarkCloudDeleted(payload.CloudController.Metadata)
@@ -178,12 +180,14 @@ export const NpcStore = defineStore('npc', {
       try {
         await SetItem('npcs', toRaw(npc).Serialize())
         logger.info(`NPC ${npc.ID} (${npc.Name}) saved`, this)
+        void obrBridge.saveNpcToRoom(npc)
       } catch (err) {
         logger.error(`Error saving NPC ${npc.ID} (${npc.Name})`, err)
       }
     },
     async SaveNpcData(): Promise<void> {
       await saveAll('npcs', this.Npcs as any[], y => toRaw(y).Serialize(), 'NPC data')
+      void obrBridge.saveNpcsToRoom(this.Npcs)
     },
   },
 })

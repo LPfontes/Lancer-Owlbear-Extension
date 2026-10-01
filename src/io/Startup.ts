@@ -12,13 +12,14 @@ import {
 import { collectionDataQuery } from '@/user/api'
 import { lt, coerce } from 'semver'
 
-import { Initialize } from './Storage'
+import { Initialize, GetValue } from './Storage'
 import { lancerData } from '@/features/compendium/store/compendiumUtils'
 import { stampContentKeys } from '@/i18n/contentKeys'
 import { AchievementManager } from '@/user/achievements/AchievementManager'
 import { UnauthorizedError } from '@/io/apis/account'
 import logger from '@/user/logger'
 import { migrateV2LocalStorage } from './FullImporter'
+import { obrBridge } from '@/services/obrBridge'
 
 export default async function (skipSync = false): Promise<void> {
   UserStore().IsLoading = true
@@ -33,6 +34,11 @@ export default async function (skipSync = false): Promise<void> {
 
   const savedLanguage = UserStore().User?.Language
   NavStore().setLanguage(savedLanguage || 'pt', false)
+
+  const savedTheme = (await GetValue('user_theme')) || UserStore().User?.Theme
+  if (savedTheme && UserStore().User) {
+    UserStore().User.Theme = savedTheme
+  }
 
   let migrationResult: any = null
   await Promise.all([
@@ -71,6 +77,10 @@ export default async function (skipSync = false): Promise<void> {
     CampaignStore().LoadCampaigns(),
   ])
   logger.info('data loaded')
+
+  if (obrBridge.getIsReady()) {
+    await obrBridge.syncFromRoom()
+  }
 
   await Promise.all([
     UserStore().removeOldItems(),

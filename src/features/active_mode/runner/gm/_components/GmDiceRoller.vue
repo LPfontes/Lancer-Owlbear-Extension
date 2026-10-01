@@ -317,6 +317,8 @@
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { computed, ref } from 'vue'
   import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   const props = withDefaults(
     defineProps<{
@@ -394,6 +396,36 @@
     const history = (props.encounterInstance as any).RollHistory as string[]
     history.unshift(str)
     if (history.length > 200) history.length = 200
+
+    // Dispara rolagem 3D compartilhada no Owlbear Rodeo
+    void dddiceService.rollDice({
+      diceString: diceValue,
+      flatBonus: Number(bonus.value) || 0,
+      accuracy: accuracy.value,
+      label: rollType.value ? `${rollType.value}` : 'GM Roll',
+      external_id: rollerName || undefined,
+    })
+
+    const titleStr = rollType.value ? `Rolagem: ${rollType.value}` : 'Rolagem de Dados'
+    const tags: string[] = []
+    if (rollType.value) tags.push(rollType.value)
+    if (isCrit.value) tags.push('CRÍTICO')
+    if (Overkill.value) tags.push('OVERKILL')
+
+    void useTableActionStore().postAction({
+      senderName: rollerName || 'GM',
+      category: 'roll',
+      title: titleStr,
+      detail: lastRollString.value,
+      roll: {
+        total: Number(lastRoll.value) || 0,
+        formula: `${diceValue}${Number(bonus.value) ? (bonus.value > 0 ? `+${bonus.value}` : `${bonus.value}`) : ''}`,
+        isCrit: !!isCrit.value,
+        accuracy: accuracy.value,
+      },
+      tags: tags.length ? tags : ['Dados'],
+    })
+
     rollType.value = ''
   }
 </script>

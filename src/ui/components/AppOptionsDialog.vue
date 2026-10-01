@@ -42,14 +42,17 @@
           <v-tab value="settings" prepend-icon="mdi-palette" class="font-weight-bold text-uppercase">
             {{ $t('ow.tabAppearance') }}
           </v-tab>
+          <v-tab value="dddice" prepend-icon="mdi-dice-multiple" class="font-weight-bold text-uppercase">
+            Dados 3D (dddice)
+          </v-tab>
         </v-tabs>
       </div>
 
       <!-- Tab Content Area -->
-      <v-card-text class="pa-0 flex-grow-1 overflow-y-auto" style="min-height: 480px;">
+      <v-card-text class="pa-0 flex-grow-1 overflow-hidden" style="min-height: 0;">
         <v-window v-model="activeTab" class="h-100">
           <!-- TAB 1: LCPs -->
-          <v-window-item value="lcps" class="pa-4">
+          <v-window-item value="lcps" class="pa-4 h-100 overflow-y-auto">
             <!-- LCP Sub-navigation -->
             <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-4 pb-2 border-b border-grey-darken-3">
               <v-btn-toggle
@@ -97,7 +100,7 @@
           </v-window-item>
 
           <!-- TAB 2: Language & Translation -->
-          <v-window-item value="language" class="pa-4 pa-sm-6">
+          <v-window-item value="language" class="pa-4 pa-sm-6 h-100 overflow-y-auto">
             <v-row>
               <v-col cols="12" md="6">
                 <v-card variant="outlined" class="pa-4 border-grey-darken-3 bg-grey-darken-4 mb-4">
@@ -230,7 +233,7 @@
           </v-window-item>
 
           <!-- TAB 3: Settings & Appearance -->
-          <v-window-item value="settings" class="pa-4 pa-sm-6">
+          <v-window-item value="settings" class="pa-4 pa-sm-6 h-100 overflow-y-auto">
             <v-row>
               <v-col cols="12" md="6">
                 <v-card variant="outlined" class="pa-4 border-grey-darken-3 bg-grey-darken-4 mb-4">
@@ -300,6 +303,11 @@
               </v-col>
             </v-row>
           </v-window-item>
+
+          <!-- TAB 4: Dados 3D (dddice) -->
+          <v-window-item value="dddice" class="h-100 overflow-y-auto">
+            <DddiceConfigPanel />
+          </v-window-item>
         </v-window>
       </v-card-text>
 
@@ -334,16 +342,18 @@ import {
 } from '@/i18n/completeness'
 import { NavStore, UserStore } from '@/stores'
 import * as allThemes from '@/ui/style/themes'
+import { SetValue } from '@/io/Storage'
 
 import PacksList from '@/features/nav/pages/ExtraContent/PacksList.vue'
 import PackInstall from '@/features/nav/pages/ExtraContent/PackInstall.vue'
 import PacksDirectory from '@/features/nav/pages/ExtraContent/PacksDirectory.vue'
 import PackConfig from '@/features/nav/pages/ExtraContent/PackConfig.vue'
+import DddiceConfigPanel from './DddiceConfigPanel.vue'
 
 const props = withDefaults(
   defineProps<{
     modelValue: boolean
-    initialTab?: 'lcps' | 'language' | 'settings'
+    initialTab?: 'lcps' | 'language' | 'settings' | 'dddice'
   }>(),
   {
     initialTab: 'lcps',
@@ -362,7 +372,7 @@ const isOpen = computed({
   set: (val: boolean) => emit('update:modelValue', val),
 })
 
-const activeTab = ref<'lcps' | 'language' | 'settings'>(props.initialTab)
+const activeTab = ref<'lcps' | 'language' | 'settings' | 'dddice'>(props.initialTab)
 const lcpSubTab = ref<'install' | 'list' | 'directory' | 'config'>('install')
 
 watch(
@@ -447,11 +457,12 @@ const font = computed({
 })
 
 const theme = computed({
-  get: () => user.value.Theme,
+  get: () => user.value?.Theme || themeObj.global.name.value,
   set: (newVal: string) => {
-    user.value.Theme = newVal
+    if (!newVal) return
+    if (user.value) user.value.Theme = newVal
     themeObj.global.name.value = newVal
-    window.location.reload()
+    void SetValue('user_theme', newVal)
   },
 })
 
@@ -470,5 +481,36 @@ const userDesktopTables = computed({
 .options-dialog-card {
   border: 1px solid rgba(var(--v-theme-accent), 0.35) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+}
+
+.options-dialog-card :deep(.v-window) {
+  height: 100%;
+}
+
+.options-dialog-card :deep(.v-window__container) {
+  height: 100%;
+}
+
+.options-dialog-card :deep(.v-window-item) {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Custom sleek scrollbar */
+.options-dialog-card :deep(.v-window-item)::-webkit-scrollbar {
+  width: 8px;
+}
+
+.options-dialog-card :deep(.v-window-item)::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.options-dialog-card :deep(.v-window-item)::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-accent), 0.4);
+  border-radius: 4px;
+}
+
+.options-dialog-card :deep(.v-window-item)::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-accent), 0.8);
 }
 </style>

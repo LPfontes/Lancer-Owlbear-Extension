@@ -13,14 +13,10 @@
     <v-container
       v-if="windowManager.isMinimized.value"
       fluid
-      class="d-flex align-center py-0 px-2 justify-space-between fill-height window-drag-handle cursor-grab"
+      class="d-flex align-center py-0 px-2 justify-space-between fill-height"
       style="user-select: none;"
-      @pointerdown="(e: PointerEvent) => windowManager.handlePointerDown(e)"
-      @pointermove="(e: PointerEvent) => windowManager.handlePointerMove(e)"
-      @pointerup="(e: PointerEvent) => windowManager.handlePointerUp(e)"
     >
       <div class="d-flex align-center ga-2">
-        <v-icon icon="mdi-drag-vertical" color="accent" size="small" />
         <v-avatar size="24" color="primary" class="rounded-0">
           <v-icon icon="cc:lancer" size="16" color="white" />
         </v-avatar>
@@ -37,55 +33,41 @@
         >
           {{ activePilotSheet.Combatant.actor.ActiveMech.Name }}
         </v-chip>
+
+        <!-- Indicador visual de rolagem ativa -->
+        <v-chip
+          v-if="dddiceService.isRolling.value"
+          size="x-small"
+          color="accent"
+          variant="flat"
+          class="font-weight-bold text-black ml-1"
+        >
+          <v-icon icon="mdi-dice-multiple" size="14" class="mr-1" />
+          Rolando...
+        </v-chip>
       </div>
 
       <div class="d-flex align-center ga-1 no-drag">
-        <!-- Snap Menu (Minimized) -->
-        <v-menu location="bottom end" transition="slide-y-transition">
-          <template #activator="{ props: snapProps }">
-            <v-btn
-              v-bind="snapProps"
-              icon="mdi-dock-window"
-              variant="text"
-              size="x-small"
-              color="grey-lighten-1"
-              :title="$t('ow.snapToCorners')"
-            />
-          </template>
-          <v-list density="compact" class="bg-grey-darken-4 border-accent pa-1" elevation="6">
-            <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.dockWindow') }}</v-list-subheader>
-            <v-list-item
-              prepend-icon="mdi-arrow-top-right-bold-box-outline"
-              :title="$t('ow.topRight')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('top-right')"
-            />
-            <v-list-item
-              prepend-icon="mdi-arrow-top-left-bold-box-outline"
-              :title="$t('ow.topLeft')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('top-left')"
-            />
-            <v-list-item
-              prepend-icon="mdi-arrow-bottom-right-bold-box-outline"
-              :title="$t('ow.bottomRight')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('bottom-right')"
-            />
-            <v-list-item
-              prepend-icon="mdi-arrow-bottom-left-bold-box-outline"
-              :title="$t('ow.bottomLeft')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('bottom-left')"
-            />
-            <v-list-item
-              prepend-icon="mdi-image-filter-center-focus"
-              :title="$t('ow.center')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('center')"
-            />
-          </v-list>
-        </v-menu>
+        <!-- Ações da Mesa e Chat (Minimized) -->
+        <v-btn
+          icon
+          variant="text"
+          size="x-small"
+          :color="isChatWindowOpen ? 'accent' : 'grey-lighten-1'"
+          :title="`Ações da Mesa e Chat (${tableActionStore.unreadCount} novas)`"
+          @click="handleToggleChat"
+        >
+          <v-badge
+            v-if="tableActionStore.unreadCount > 0"
+            :content="tableActionStore.unreadCount"
+            color="accent"
+            floating
+          >
+            <v-icon icon="mdi-message-text-clock-outline" size="14" />
+          </v-badge>
+          <v-icon v-else icon="mdi-message-text-clock-outline" size="14" />
+        </v-btn>
+
 
         <!-- Restore Window -->
         <v-btn
@@ -257,6 +239,61 @@
         </v-chip>
       </div>
 
+      <!-- Gerenciador de Fichas da Mesa (Mestre) -->
+      <v-btn
+        icon="mdi-account-group-outline"
+        variant="text"
+        color="accent"
+        size="small"
+        class="nav-btn rounded-0 mr-1"
+        title="Gerenciar Fichas da Mesa (Mestre - Adicionar / Excluir)"
+        @click="openTableSheetsManager"
+      />
+
+      <!-- Owlbear Room Sync Button -->
+      <v-btn
+        icon="mdi-cloud-sync"
+        variant="text"
+        color="accent"
+        size="small"
+        class="nav-btn rounded-0 mr-1"
+        :loading="isSyncingOwlbear"
+        title="Sincronizar Pilotos e NPCs com a Sala Owlbear"
+        @click="syncWithOwlbearRoom"
+      />
+
+      <!-- 3D Dice (dddice) Shortcut Button -->
+      <v-btn
+        icon="mdi-dice-multiple"
+        variant="text"
+        :color="dddiceService.config.enabled ? 'accent' : 'grey-lighten-2'"
+        size="small"
+        class="nav-btn rounded-0 mr-1"
+        :title="`Dados 3D (dddice): ${dddiceService.config.enabled ? 'Ativo' : 'Desativado'}`"
+        @click="openOptions('dddice')"
+      />
+
+      <!-- Table Actions & Chat Window Button -->
+      <v-btn
+        icon
+        variant="text"
+        :color="isChatWindowOpen ? 'accent' : 'grey-lighten-2'"
+        size="small"
+        class="nav-btn rounded-0 mr-1"
+        :title="`Ações da Mesa e Chat (${tableActionStore.unreadCount} novas)`"
+        @click="handleToggleChat"
+      >
+        <v-badge
+          v-if="tableActionStore.unreadCount > 0"
+          :content="tableActionStore.unreadCount"
+          color="accent"
+          floating
+        >
+          <v-icon icon="mdi-message-text-clock-outline" />
+        </v-badge>
+        <v-icon v-else icon="mdi-message-text-clock-outline" />
+      </v-btn>
+
       <!-- Options Button -->
       <v-btn
         variant="text"
@@ -268,167 +305,9 @@
         <span v-if="!mobile">{{ $t('ow.options') }}</span>
       </v-btn>
 
-      <!-- Quick Action: Criar / Importar Menu -->
-      <v-menu location="bottom end" transition="slide-y-transition">
-        <template #activator="{ props: menuProps }">
-          <v-btn
-            v-bind="menuProps"
-            color="accent"
-            variant="flat"
-            size="small"
-            class="font-weight-bold rounded-0 elevation-2 mr-2"
-            prepend-icon="mdi-plus"
-          >
-            <span v-if="!mobile">{{ $t('ow.actions') }}</span>
-            <v-icon icon="mdi-chevron-down" end size="small" />
-          </v-btn>
-        </template>
 
-        <v-list density="compact" class="bg-grey-darken-4 border-accent pa-1" elevation="6">
-          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.characterAndPilot') }}</v-list-subheader>
-          <v-list-item
-            to="/new/no_group"
-            prepend-icon="mdi-account-plus"
-            :title="$t('ow.createPilotSheet')"
-            class="my-1 rounded-0 text-accent font-weight-bold"
-          />
-          <v-list-item
-            to="/pilot_management"
-            prepend-icon="cc:pilot"
-            :title="$t('ow.pilotRoster')"
-            class="my-1 rounded-0"
-          />
-          <v-list-item
-            to="/active-mode/new-sheet"
-            prepend-icon="mdi-sword"
-            :title="$t('ow.startActiveSheet')"
-            class="my-1 rounded-0"
-          />
-          <v-divider class="my-1 border-grey-darken-3" />
-          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.gmSection') }}</v-list-subheader>
-          <v-list-item
-            to="/active-mode/new-encounter"
-            prepend-icon="mdi-sword-cross"
-            :title="$t('ow.newEncounter')"
-            class="my-1 rounded-0"
-          />
-          <v-list-item
-            to="/active-mode/npcs"
-            prepend-icon="cc:npc"
-            :title="$t('ow.npcRoster')"
-            class="my-1 rounded-0"
-          />
-          <v-divider class="my-1 border-grey-darken-3" />
-          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.importSection') }}</v-list-subheader>
-          <v-list-item
-            prepend-icon="mdi-file-import-outline"
-            :title="$t('ow.importShareCodeJson')"
-            class="my-1 rounded-0 text-accent font-weight-bold"
-            @click="showImportDialog = true"
-          />
-          <v-divider class="my-1 border-grey-darken-3" />
-          <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.settingsAndLcps') }}</v-list-subheader>
-          <v-list-item
-            prepend-icon="mdi-package-down"
-            :title="$t('ow.installLcpsFull')"
-            class="my-1 rounded-0"
-            @click="openOptions('lcps')"
-          />
-          <v-list-item
-            prepend-icon="mdi-translate"
-            :title="$t('ow.selectLanguage')"
-            class="my-1 rounded-0"
-            @click="openOptions('language')"
-          />
-        </v-list>
-      </v-menu>
-
-      <!-- Window Control Cluster (Drag, Snap, Compact, Minimize, Close) -->
+      <!-- Window Control Cluster (Minimize, Close) -->
       <div class="window-controls d-flex align-center border-l border-grey-darken-3 pl-2 ga-1">
-        <!-- Drag Handle for repositioning -->
-        <div
-          class="window-drag-handle d-flex align-center px-2 py-1 rounded cursor-grab"
-          :title="$t('ow.dragWindowHelp')"
-          @pointerdown="(e: PointerEvent) => windowManager.handlePointerDown(e)"
-          @pointermove="(e: PointerEvent) => windowManager.handlePointerMove(e)"
-          @pointerup="(e: PointerEvent) => windowManager.handlePointerUp(e)"
-        >
-          <v-icon icon="mdi-drag-vertical" size="small" color="accent" />
-          <span class="text-caption font-weight-bold text-accent d-none d-lg-inline ml-1" style="font-size: 0.7rem !important; letter-spacing: 0.5px;">{{ $t('ow.move') }}</span>
-        </div>
-
-        <!-- Snap to Corners Menu -->
-        <v-menu location="bottom end" transition="slide-y-transition">
-          <template #activator="{ props: snapProps }">
-            <v-btn
-              v-bind="snapProps"
-              icon="mdi-dock-window"
-              variant="text"
-              size="small"
-              color="grey-lighten-2"
-              :title="$t('ow.snapToCorners')"
-            />
-          </template>
-          <v-list density="compact" class="bg-grey-darken-4 border-accent pa-1" elevation="6">
-            <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.snapToCorners') }}</v-list-subheader>
-            <v-list-item
-              prepend-icon="mdi-arrow-top-right-bold-box-outline"
-              :title="$t('ow.topRight')"
-              :subtitle="$t('ow.topRightDesc')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('top-right')"
-            />
-            <v-list-item
-              prepend-icon="mdi-arrow-top-left-bold-box-outline"
-              :title="$t('ow.topLeft')"
-              :subtitle="$t('ow.topLeftDesc')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('top-left')"
-            />
-            <v-list-item
-              prepend-icon="mdi-arrow-bottom-right-bold-box-outline"
-              :title="$t('ow.bottomRight')"
-              :subtitle="$t('ow.bottomRightDesc')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('bottom-right')"
-            />
-            <v-list-item
-              prepend-icon="mdi-arrow-bottom-left-bold-box-outline"
-              :title="$t('ow.bottomLeft')"
-              :subtitle="$t('ow.bottomLeftDesc')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('bottom-left')"
-            />
-            <v-list-item
-              prepend-icon="mdi-image-filter-center-focus"
-              :title="$t('ow.centerOnScreen')"
-              :subtitle="$t('ow.centerOnScreenDesc')"
-              class="my-1 rounded-0"
-              @click="windowManager.snapTo('center')"
-            />
-            <v-divider class="my-1 border-grey-darken-3" />
-            <v-list-item
-              prepend-icon="mdi-open-in-new"
-              :title="$t('ow.detachFloating')"
-              :subtitle="$t('ow.detachFloatingSubtitle')"
-              class="my-1 rounded-0 text-accent font-weight-bold"
-              @click="windowManager.syncWithObr()"
-            />
-          </v-list>
-        </v-menu>
-
-        <!-- Compact / Wide Toggle -->
-        <v-btn
-          icon
-          variant="text"
-          size="small"
-          :color="windowManager.isCompact.value ? 'accent' : 'grey-lighten-2'"
-          :title="windowManager.isCompact.value ? $t('ow.expandWideMode') : $t('ow.compactSideMode')"
-          @click="windowManager.toggleCompact()"
-        >
-          <v-icon :icon="windowManager.isCompact.value ? 'mdi-arrow-expand-horizontal' : 'mdi-arrow-collapse-horizontal'" size="small" />
-        </v-btn>
-
         <!-- Minimize Window -->
         <v-btn
           icon="mdi-window-minimize"
@@ -444,7 +323,7 @@
           icon="mdi-close"
           variant="text"
           size="small"
-          color="grey-lighten-1"
+          color="grey-lighten-2"
           :title="$t('ow.closeWindow')"
           @click="windowManager.closeWindow()"
         />
@@ -574,6 +453,26 @@
         @click="drawer = false; showImportDialog = true"
       />
 
+      <v-list-item
+        prepend-icon="mdi-account-group-outline"
+        title="Gerenciar Fichas da Mesa"
+        subtitle="Adicionar, excluir ou sincronizar fichas"
+        class="my-1 rounded-0 text-accent font-weight-bold"
+        @click="drawer = false; openTableSheetsManager()"
+      />
+
+      <v-list-item
+        prepend-icon="mdi-message-text-clock-outline"
+        title="Ações da Mesa & Chat"
+        subtitle="Janela flutuante de ações e mensagens"
+        class="my-1 rounded-0 text-accent font-weight-bold"
+        @click="drawer = false; handleToggleChat()"
+      >
+        <template #append v-if="tableActionStore.unreadCount > 0">
+          <v-badge :content="tableActionStore.unreadCount" color="accent" inline />
+        </template>
+      </v-list-item>
+
       <v-divider class="my-3 border-grey-darken-3" />
       <v-list-subheader class="text-cc-overline text-accent">{{ $t('ow.settingsAndLcps') }}</v-list-subheader>
       <v-list-item
@@ -593,6 +492,12 @@
         :title="$t('ow.appearanceAndTheme')"
         class="my-1 rounded-0"
         @click="drawer = false; openOptions('settings')"
+      />
+      <v-list-item
+        prepend-icon="mdi-dice-multiple"
+        title="Dados 3D (dddice)"
+        class="my-1 rounded-0"
+        @click="drawer = false; openOptions('dddice')"
       />
 
       <!-- Active Sessions (Mobile) -->
@@ -629,24 +534,52 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { EncounterStore, PilotSheetStore, NpcStore } from '@/stores'
 import { windowManager } from '@/services/windowManager'
+import { obrBridge } from '@/services/obrBridge'
+import OBR from '@owlbear-rodeo/sdk'
 import ImportDialog from '@/features/active_mode/_components/ImportDialog.vue'
 import AppOptionsDialog from './AppOptionsDialog.vue'
+import { dddiceService } from '@/services/dddiceService'
+import { useTableActionStore } from '@/stores/tableActionStore'
+import { toggleTableChatWindow, isChatWindowOpen, isTableChatOpen } from '@/services/tableChatWindow'
 
 const route = useRoute()
 const router = useRouter()
 const { mdAndDown: mobile } = useDisplay()
+const tableActionStore = useTableActionStore()
+
+function handleToggleChat() {
+  void toggleTableChatWindow()
+}
 
 const drawer = ref(false)
 const showImportDialog = ref(false)
 const showOptionsDialog = ref(false)
-const optionsTab = ref<'lcps' | 'language' | 'settings'>('lcps')
+const optionsTab = ref<'lcps' | 'language' | 'settings' | 'dddice'>('lcps')
+const isSyncingOwlbear = ref(false)
 
-function openOptions(tab: 'lcps' | 'language' | 'settings' = 'lcps') {
+async function syncWithOwlbearRoom() {
+  if (isSyncingOwlbear.value) return
+  isSyncingOwlbear.value = true
+  try {
+    const pushedPilots = await obrBridge.pushAllLocalPilotsToRoom()
+    const pushedNpcs = await obrBridge.pushAllLocalNpcsToRoom()
+    const { pilotsCount, npcsCount } = await obrBridge.syncFromRoom()
+    if (OBR.isAvailable) {
+      await OBR.notification.show(`Sincronização Owlbear: ${pushedPilots} pilotos e ${pushedNpcs} NPCs salvos na sala.`)
+    }
+  } catch (e) {
+    console.error('[AppNavbar] Erro ao sincronizar com sala Owlbear:', e)
+  } finally {
+    isSyncingOwlbear.value = false
+  }
+}
+
+function openOptions(tab: 'lcps' | 'language' | 'settings' | 'dddice' = 'lcps') {
   optionsTab.value = tab
   showOptionsDialog.value = true
 }
@@ -703,6 +636,25 @@ function resumeEncounter() {
     router.push(`/active-mode/gm-encounter-runner/${activeEncounter.value.ID}`)
   }
 }
+
+import { openTableSheetsWindow } from '@/services/tableSheetsWindow'
+
+function openTableSheetsManager() {
+  void openTableSheetsWindow()
+}
+
+function handleOpenImportDialog() {
+  showImportDialog.value = true
+}
+
+onMounted(() => {
+  window.addEventListener('compcon-open-import-dialog', handleOpenImportDialog)
+  void isTableChatOpen()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('compcon-open-import-dialog', handleOpenImportDialog)
+})
 </script>
 
 <style scoped>

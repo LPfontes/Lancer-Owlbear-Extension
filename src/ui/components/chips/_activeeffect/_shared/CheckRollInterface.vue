@@ -133,6 +133,9 @@
 
   const canConsumeLockOn = computed(() => attacker.value.CanConsumeLockOn(targetController.value))
 
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
+
   function reset() {
     props.rollData.AttackBonus = props.rollData.Event.AttackBonus || 0
     props.rollData.AttackAccuracy = props.rollData.Event.Accuracy || 0
@@ -142,14 +145,49 @@
 
   function rollAttack() {
     const lockOn = props.rollData.ConsumingLockOn ? 1 : 0
+    const totalAccuracy = props.rollData.AttackAccuracy + statusAccuracy.value + lockOn
 
     const rollResult = DiceRoller.rollSkillCheck(
       Number(props.rollData.AttackBonus),
-      props.rollData.AttackAccuracy + statusAccuracy.value + lockOn
+      totalAccuracy
     )
     props.rollData.AttackRollResult = rollResult
     props.rollData.AttackRolledValue = rollResult.total
 
     emit('rolled', props.rollData.AttackRolledValue)
+
+    void dddiceService.rollDice({
+      diceString: '1d20',
+      flatBonus: Number(props.rollData.AttackBonus) || 0,
+      accuracy: totalAccuracy,
+      label: `Ataque vs ${props.rollData.TargetDefense || 'Alvo'}`,
+      external_id: attacker.value?.CombatName || undefined,
+    })
+
+    const actorName = attacker.value?.CombatName || 'Piloto'
+    const targetName =
+      targetController.value?.CombatName ||
+      (props.rollData.TargetDefense ? `Alvo (${props.rollData.TargetDefense})` : 'Alvo')
+    const isCrit = Number(rollResult.total) >= 20
+
+    void useTableActionStore().postAction({
+      senderName: actorName,
+      category: 'roll',
+      title: `Ataque vs ${targetName}`,
+      detail: rollResult.toString ? rollResult.toString() : String(rollResult.total),
+      targetName,
+      roll: {
+        total: Number(rollResult.total) || 0,
+        formula: `1d20${Number(props.rollData.AttackBonus) >= 0 ? '+' : ''}${props.rollData.AttackBonus || 0}`,
+        isCrit,
+        accuracy: totalAccuracy,
+      },
+      tags: ['Ataque', ...(isCrit ? ['CRÍTICO'] : [])],
+    })
   }
+
+  defineExpose({
+    rollAttack,
+    reset,
+  })
 </script>

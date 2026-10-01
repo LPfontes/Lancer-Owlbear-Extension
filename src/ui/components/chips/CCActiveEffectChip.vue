@@ -15,7 +15,7 @@
           :class="`light bg-${isGreyed ? 'panel-border' : lightColor}`"
         />
         <v-chip
-          :color="isGreyed ? 'panel-border' : 'primary'"
+          :color="isGreyed ? 'panel-border' : 'surface'"
           variant="elevated"
           :ripple="false"
           size="small"
@@ -247,7 +247,7 @@
         </v-chip>
         <div
           class="end"
-          :class="`bg-${isGreyed ? 'panel-border' : 'primary'}`"
+          :class="`bg-${isGreyed ? 'panel-border' : 'surface'}`"
         />
         <div
           class="end-light"
@@ -390,5 +390,14 @@
 
   .top-element:hover .end-light {
     filter: brightness(2) saturate(200%) hue-rotate(40deg);
+  }
+
+  :deep(.v-chip.bg-surface) {
+    background-color: rgb(var(--v-theme-surface)) !important;
+    color: rgb(var(--v-theme-on-surface)) !important;
+  }
+
+  .end.bg-surface {
+    background-color: rgb(var(--v-theme-surface)) !important;
   }
 </style>

@@ -269,8 +269,8 @@ class Pilot
     }
 
     try {
-      this._mechs = data?.mechs.length
-        ? data?.mechs.map((x: IMechData) => Mech.Deserialize(x, this))
+      this._mechs = data?.mechs && data.mechs.length
+        ? data.mechs.map((x: IMechData) => Mech.Deserialize(x, this))
         : []
     } catch (e) {
       this.LoadError(e, 'pilot mechs')
@@ -278,7 +278,7 @@ class Pilot
 
     try {
       this._special_equipment = data?.special_equipment
-        ? Pilot.deserializeSE(data?.special_equipment)
+        ? Pilot.deserializeSE(data.special_equipment)
         : []
     } catch (e) {
       this.LoadError(e, 'pilot special equipment')

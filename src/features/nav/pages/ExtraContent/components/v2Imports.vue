@@ -188,7 +188,7 @@
       max-width="400px"
     >
       <v-card>
-        <v-card-title class="text-subtitle-2">{{ $t('nav.v2Import.strippedTitle') }}</v-card-title>
+        <v-card-title class="text-subtitle-1">{{ $t('nav.v2Import.strippedTitle') }}</v-card-title>
         <v-card-text>
           {{ $t('nav.v2Import.strippedBody') }}
           <div class="mt-2">

@@ -101,6 +101,14 @@
             cols="auto"
             class="ml-auto mr-4"
           >
+            <v-btn
+              icon="mdi-message-text"
+              variant="text"
+              size="small"
+              title="Enviar para o chat"
+              class="mr-2"
+              @click.stop="broadcastSystem"
+            />
             <cc-bonus
               :bonuses="item.Bonuses"
               chip
@@ -136,8 +144,11 @@
   import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { Mech } from '@/classes/mech/Mech'
   import { MechSystem } from '@/classes/mech/components/equipment/MechSystem'
+  import Tag from '@/classes/Tag'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   const { owner, encounterInstance } = useEncounterContext()
+  const tableActionStore = useTableActionStore()
 
   const props = defineProps({
     item: {
@@ -162,6 +173,16 @@
     if (!props.item) return 'none'
     return props.item.ItemType === ItemType.MechWeapon ? 'weapon' : 'system'
   })
+  function broadcastSystem() {
+    const actorName = props.mech?.Name || props.mech?.Pilot?.Name || 'Piloto'
+    tableActionStore.broadcastCombatAction({
+      actorName,
+      actionName: `Sistema: ${props.item.Name}`,
+      actionType: 'chat',
+      detail: props.item.Description + '<br/>' + props.item.Effect,
+      tags: Tag.Serialize(props.item.Tags),
+    })
+  }
 </script>
 
 <style scoped>

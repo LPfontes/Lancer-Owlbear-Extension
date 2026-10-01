@@ -80,6 +80,8 @@
 <script setup lang="ts">
   import type { ActiveEventTarget } from '@/classes/components/feature/active_effects/effect_events/eventTarget'
   import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
   import AccuracyDifficultyRow from './AccuracyDifficultyRow.vue'
 
   const props = defineProps<{
@@ -98,5 +100,29 @@
     )
     props.rollData.SaveRollResult = rollResult
     props.rollData.SaveRolledValue = rollResult.total
+
+    void dddiceService.rollDice({
+      diceString: '1d20',
+      flatBonus: Number(props.rollData.SaveBonus) || 0,
+      accuracy: props.rollData.AttackAccuracy || 0,
+      label: `Save vs ${props.rollData.TargetDefense || 'Efeito'}`,
+      external_id: props.rollData.Combatant?.actor?.CombatController?.CombatName || undefined,
+    })
+
+    const actorName = props.rollData.Combatant?.actor?.CombatController?.CombatName || 'Piloto'
+    const targetDefense = props.rollData.TargetDefense || 'Efeito'
+    void useTableActionStore().postAction({
+      senderName: actorName,
+      category: 'roll',
+      title: `Salvaguarda vs ${targetDefense}`,
+      detail: rollResult.toString ? rollResult.toString() : String(rollResult.total),
+      roll: {
+        total: Number(rollResult.total) || 0,
+        formula: `1d20${Number(props.rollData.SaveBonus) >= 0 ? '+' : ''}${props.rollData.SaveBonus || 0}`,
+        isCrit: false,
+        accuracy: props.rollData.AttackAccuracy || 0,
+      },
+      tags: ['Save'],
+    })
   }
 </script>

@@ -15,9 +15,10 @@
 
         <v-row
           dense
-          class="mb-4"
+          class="mb-4 flex-column"
+          style="flex-direction: column;"
         >
-          <v-col>
+          <v-col cols="12">
             <div class="text-center text-cc-overline text-disabled py-2">
               {{ $t('active.stabilize.chooseOne') }}
             </div>
@@ -36,7 +37,7 @@
               />
             </v-radio-group>
           </v-col>
-          <v-col>
+          <v-col cols="12">
             <div class="text-center text-cc-overline text-disabled py-2">
               {{ $t('active.stabilize.chooseOne') }}
             </div>
@@ -153,6 +154,7 @@
   import CombatActionButton from './CombatActionButton.vue'
   import MenuInput from '@/ui/components/chips/_activeeffect/_ae_menu_input.vue'
   import type { Status } from '@/classes/Status'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   type ClearableCondition = { status: Status; expires: any }
 
@@ -187,6 +189,17 @@
       options: [firstChoice.value, secondChoice.value],
     })
     if (!performed) return
+
+    const actorName =
+      (owner.value?.actor as any)?.Callsign ||
+      (owner.value?.actor as any)?.Name ||
+      controller.value?.CombatName ||
+      'Piloto'
+    void useTableActionStore().broadcastCombatAction({
+      actorName,
+      actionName: 'Estabilizar',
+      actionType: 'full_action',
+    })
 
     if (secondChoice.value === 'clear_self' && clearSelfCondition.value)
       controller.value.ClearCondition(clearSelfCondition.value.status.ID)

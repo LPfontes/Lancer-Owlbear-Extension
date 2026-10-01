@@ -1,4 +1,5 @@
 import * as _ from 'lodash-es'
+import { i18n } from '@/i18n'
 export const StatKey = {
   ACTIVATIONS: 'activations',
   SIZE: 'size',
@@ -177,15 +178,45 @@ class Stats {
   }
 
   private static readonly KEY_LABELS: Record<string, string> = {
-    hp: 'HP',
-    heat: 'Heat Capacity',
-    heatcap: 'Heat Capacity',
-    heatcapacity: 'Heat Capacity',
-    techattack: 'Tech Attack',
-    edef: 'E-Defense',
-    agi: 'Agility',
-    sys: 'Systems',
-    eng: 'Engineering',
+    hull: 'Casco',
+    casco: 'Casco',
+    agi: 'Agilidade',
+    agility: 'Agilidade',
+    agilidade: 'Agilidade',
+    sys: 'Sistemas',
+    systems: 'Sistemas',
+    sistemas: 'Sistemas',
+    eng: 'Engenharia',
+    engineering: 'Engenharia',
+    engenharia: 'Engenharia',
+    evasion: 'Evasão',
+    evasao: 'Evasão',
+    edef: 'Defesa-E',
+    edefense: 'Defesa-E',
+    sensorrange: 'Alcance dos Sensores',
+    sensor_range: 'Alcance dos Sensores',
+    sensors: 'Sensores',
+    savetarget: 'Alvo de Salvaguarda',
+    save_target: 'Alvo de Salvaguarda',
+    save: 'Alvo de Salvaguarda',
+    hp: 'PV',
+    armor: 'Armadura',
+    speed: 'Velocidade',
+    heat: 'Capacidade de Calor',
+    heatcap: 'Capacidade de Calor',
+    heatcapacity: 'Capacidade de Calor',
+    techattack: 'Ataque Tecnológico',
+    tech_attack: 'Ataque Tecnológico',
+    attackbonus: 'Bônus de Ataque',
+    repaircapacity: 'Capacidade de Reparos',
+    grapple: 'Agarrar',
+    ram: 'Empurrar',
+    overshield: 'Escudo Provisório',
+    structure: 'Estrutura',
+    stress: 'Estresse',
+    burn: 'Queimadura',
+    size: 'Tamanho',
+    activations: 'Ativações',
   }
 
   public static cleanKey(key: string): string {
@@ -195,11 +226,38 @@ class Stats {
   }
 
   public static expandKey(key: string): string {
-    const label = Stats.KEY_LABELS[key.toLowerCase()]
+    const stripped = key.replace(/[\s_-]/g, '').toLowerCase()
+    const lower = key.toLowerCase()
+
+    try {
+      const g: any = i18n.global
+      if (g) {
+        const locale = typeof g.locale === 'object' ? g.locale.value : g.locale
+        const candidates = [
+          `stats.${key}`,
+          `stats.${lower}`,
+          `stats.${stripped}`,
+          `ui.titles.${key}`,
+          `ui.titles.${lower}`,
+        ]
+        for (const cand of candidates) {
+          if (typeof g.te === 'function') {
+            if (g.te(cand, locale) || g.te(cand, 'en')) {
+              return g.t(cand)
+            }
+          } else if (typeof g.t === 'function') {
+            const res = g.t(cand)
+            if (res && res !== cand) return res
+          }
+        }
+      }
+    } catch (_e) {}
+
+    const label = Stats.KEY_LABELS[stripped] || Stats.KEY_LABELS[lower]
     if (label) return label
 
     let k = key
-    if (['grapple', 'ram'].includes(key.toLowerCase())) k += ' bonus'
+    if (['grapple', 'ram'].includes(lower)) k += ' bonus'
 
     return _.upperFirst(k)
       .replace(/([A-Z])/g, ' $1')

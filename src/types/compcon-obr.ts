@@ -43,3 +43,16 @@ export interface CombatRollBroadcast {
   type: 'attack' | 'damage' | 'structure' | 'heat' | 'system'
   timestamp: number
 }
+
+export interface TokenSheetBinding {
+  sheetType: 'pilot' | 'npc'
+  sheetId: string
+  name: string
+  mechId?: string
+  hp?: ResourceMeter
+  structure?: ResourceMeter
+  heat?: ResourceMeter
+  stress?: ResourceMeter
+  statuses?: MechStatus[]
+}
+

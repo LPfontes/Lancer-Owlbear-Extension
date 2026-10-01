@@ -3,7 +3,7 @@ import localforage from 'localforage'
 
 const dbName = 'COMPCON Persistent'
 
-const storeRegistry = {
+const storeRegistry: Record<string, LocalForage> = {
   pilot_groups: localforage.createInstance({
     name: dbName,
     storeName: 'pilot_groups',
@@ -88,6 +88,11 @@ const storeRegistry = {
     name: dbName,
     storeName: 'v2_backup',
     description: 'Stores v2 data awaiting LCP installation for re-import',
+  }),
+  table_actions: localforage.createInstance({
+    name: dbName,
+    storeName: 'table_actions',
+    description: 'Stores Table Actions and Chat history',
   }),
 }
 

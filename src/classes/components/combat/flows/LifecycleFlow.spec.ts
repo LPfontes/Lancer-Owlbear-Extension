@@ -106,15 +106,23 @@ describe('EndRoundFlow', () => {
     expect(cur(StatKey.ACTIVATIONS)).toBe(cc().StatController.getMax(StatKey.ACTIVATIONS))
   })
 
-  it('trades brace for the brace cooldown instead of a full pool', () => {
+  it('maintains brace across rounds if not cleared by end of turn', () => {
     cc().Brace()
     expect(cc().Braced).toBe(true)
 
     cc().EndRound()
 
-    expect(cc().Braced).toBe(false)
-    expect(cc().HasCustomStatus('Brace Cooldown')).toBe(true)
+    expect(cc().Braced).toBe(true)
+    expect(cc().HasCustomStatus('Brace Cooldown')).toBe(false)
     expect(cc().CanActivate('full')).toBe(false)
     expect(cc().CanActivate('quick')).toBe(true)
+  })
+
+  it('clears brace on EndTurn', () => {
+    cc().Brace()
+    expect(cc().Braced).toBe(true)
+
+    cc().EndTurn()
+    expect(cc().Braced).toBe(false)
   })
 })

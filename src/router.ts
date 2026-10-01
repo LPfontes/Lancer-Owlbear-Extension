@@ -23,6 +23,16 @@ const router = createRouter({
       path: '/pilot_management' + (route.path ? '/' + route.path : ''),
     })),
     {
+      path: '/table-sheets',
+      name: 'table-sheets',
+      component: () => import('@/features/gm/TableSheetsView.vue'),
+    },
+    {
+      path: '/table-chat',
+      name: 'table-chat',
+      component: () => import('@/features/active_mode/TableChatView.vue'),
+    },
+    {
       path: '/new',
       redirect: '/new/no_group',
     },

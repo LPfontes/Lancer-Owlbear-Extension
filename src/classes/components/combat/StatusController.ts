@@ -68,6 +68,28 @@ class StatusController {
     })
   }
 
+  public NotifyStatusChange(): void {
+    if (typeof window !== 'undefined') {
+      try {
+        const parentId = (this._parent as any).Parent?.ID
+        if (parentId) {
+          const activeStatuses = this.Statuses.map(s => s.status.ID)
+          if (this._parent.IsInDangerZone && !activeStatuses.includes('dangerzone')) {
+            activeStatuses.push('dangerzone')
+          }
+          window.dispatchEvent(
+            new CustomEvent('compcon-combatant-statuses-changed', {
+              detail: {
+                combatantId: parentId,
+                statuses: activeStatuses,
+              },
+            })
+          )
+        }
+      } catch (_e) {}
+    }
+  }
+
   public RemoveStatus(
     statusID: string,
     reason: 'expired' | 'removed' | 'cleared' | 'replaced' | 'consumed' = 'removed'
@@ -77,6 +99,7 @@ class StatusController {
     if (existingIndex === -1) return
     const [lost] = target.Statuses.splice(existingIndex, 1)
     this._parent.Record('status.lose', { status: statusRef(lost.status), reason })
+    target.NotifyStatusChange()
     ruleFor(statusID)?.implies?.forEach(id => this.RemoveStatus(id, reason))
   }
 
@@ -92,6 +115,7 @@ class StatusController {
       target.Statuses.splice(existingIndex, 1)
       this._parent.Record('status.lose', { status: statusRef(status), reason: 'removed' })
     }
+    target.NotifyStatusChange()
   }
 
   public SetCustomStatus(special: EffectSpecial, expires?: any): void {

@@ -24,7 +24,10 @@
           tabindex="0"
           style="overflow-y: auto"
         >
-          <v-container fluid>
+          <v-container
+            fluid
+            class="pb-12"
+          >
             <div>
               <div v-if="panel && sheet">
                 <component
@@ -66,52 +69,13 @@
           </v-container>
         </v-main>
 
-        <cc-panel-toggle
-          v-model="showRight"
-          side="right"
-          :open-offset="mobile ? 55 : 255"
-          :closed-offset="mobile ? 0 : 55"
-          :bottom-inset="36"
-        />
 
-        <v-navigation-drawer
-          v-if="!mobile"
-          :rail="!showRight"
-          location="right"
-          permanent
-        >
-          <gm-tool-palette
-            pc
-            :expanded="showRight"
-            :selected="panel"
-            :combatant="combatant"
-            @select-panel="selectPanel"
-            @open-dice-roller="diceDialog = true"
-            @open-table-index="tableDialog = true"
-          />
-        </v-navigation-drawer>
-
-        <v-navigation-drawer
-          v-else
-          v-model="showRight"
-          location="right"
-          temporary
-        >
-          <gm-tool-palette
-            pc
-            expanded
-            :selected="panel"
-            :combatant="combatant"
-            @select-panel="selectPanel"
-            @open-dice-roller="diceDialog = true"
-            @open-table-index="tableDialog = true"
-          />
-        </v-navigation-drawer>
 
         <v-footer
           app
           height="36"
-          style="border-top: 1px solid rgba(255, 255, 255, 0.1)"
+          class="bg-panel"
+          style="position: fixed !important; bottom: 0px !important; left: 0px !important; right: 0px !important; width: 100% !important; z-index: 1000 !important; border-top: 1px solid rgba(255, 255, 255, 0.1);"
         >
           <v-row
             justify="space-between"
@@ -164,10 +128,11 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue'
+  import { ref, computed, onMounted } from 'vue'
   import { useDisplay } from 'vuetify'
   import { useRoute, onBeforeRouteLeave } from 'vue-router'
-  import { PilotSheetStore } from '@/stores'
+  import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
+  import { PilotStore } from '@/features/pilot_management/store'
   import ActorTelemetry from '../gm/EncounterPanels/_components/ActorTelemetry.vue'
   import ActorLogs from '../gm/EncounterPanels/_components/ActorLogs.vue'
   import CombatStatblockExport from '../gm/EncounterPanels/_components/CombatStatblockExport.vue'
@@ -208,11 +173,57 @@ const panelMap: Record<string, any> = {
   const leaveDialog = ref(false)
   let resolveLeaveDialog: ((value: string) => void) | null = null
 
-const sheet = computed(() =>
-    PilotSheetStore().GetSheet(
-      props.id || (route.params.id as string) || PilotSheetStore().CurrentActiveID
-    )
-  )
+  const sheet = computed(() => {
+    const store = PilotSheetStore()
+    const targetId = props.id || (route.params.id as string) || store.CurrentActiveID
+    if (!targetId) return null
+    let s = store.GetSheet(targetId)
+    if (!s && store.PilotSheets?.length) {
+      s = store.PilotSheets.find(
+        (ps: any) => !ps.SaveController?.IsDeleted && (ps.PilotID === targetId || ps.ID === targetId)
+      ) as any
+    }
+    return s || null
+  })
+
+  onMounted(async () => {
+    const sheetStore = PilotSheetStore()
+    if (!sheetStore.PilotSheets?.length) {
+      await sheetStore.LoadPilotSheets()
+    }
+
+    const targetId = (props.id || (route.params.id as string) || sheetStore.CurrentActiveID) as string
+    if (targetId) {
+      let targetSheet = sheetStore.GetSheet(targetId)
+      if (!targetSheet) {
+        targetSheet = sheetStore.PilotSheets.find(
+          (s: any) => !s.SaveController?.IsDeleted && (s.PilotID === targetId || s.ID === targetId)
+        )
+        if (targetSheet?.Archived) {
+          targetSheet.Unarchive()
+        }
+      }
+
+      if (!targetSheet) {
+        const pilotStore = PilotStore()
+        if (!pilotStore.Pilots?.length) {
+          await pilotStore.LoadPilots()
+        }
+        const pilotObj: any = pilotStore.Pilots.find((p: any) => p.ID === targetId)
+        if (pilotObj) {
+          if (!pilotObj.ActiveMech && pilotObj.Mechs?.length) {
+            pilotObj.ActiveMech = pilotObj.Mechs[0]
+          }
+          await sheetStore.AddPilotSheet(pilotObj)
+          targetSheet = sheetStore.GetSheet(sheetStore.CurrentActiveID)
+        }
+      }
+
+      if (targetSheet && sheetStore.CurrentActiveID !== targetSheet.ID) {
+        await sheetStore.SetActiveSheet(targetSheet.ID)
+      }
+    }
+  })
   const sheetID = computed(() => (sheet.value ? sheet.value.ID : 0))
   const combatant = computed(() => sheet.value!.Combatant)
   const pilot = computed(() => sheet.value!.Combatant.actor as Pilot)

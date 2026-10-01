@@ -122,7 +122,7 @@ class SkillsController extends RankedCollectionController<Skill | CustomSkill, P
 
   public static Deserialize(parent: Pilot, data: ISkillsData) {
     assertController(parent.SkillsController, 'SkillsController')
-    parent.SkillsController._collection = data.skills.map((x: IRankedData) =>
+    parent.SkillsController._collection = (data?.skills || []).map((x: IRankedData) =>
       PilotSkill.Deserialize(x)
     )
   }

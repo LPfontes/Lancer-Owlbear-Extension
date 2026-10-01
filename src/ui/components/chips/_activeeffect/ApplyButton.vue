@@ -13,182 +13,66 @@
 
     <div
       v-else-if="!embedded"
-      class="d-flex justify-end mt-2 mr-4"
+      class="d-flex flex-column"
     >
-      <cc-button
-        size="small"
-        stacked
-        @click="cancel(close)"
-      >
-        {{ $t('common.cancel') }}
-      </cc-button>
-      <v-spacer />
-      <div>
-        <cc-button
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2 mt-2">
+        <v-btn
+          variant="plain"
+          color="disabled"
+          @click="cancel(close)"
+        >
+          {{ $t('common.cancel') }}
+        </v-btn>
+
+        <v-btn
           v-if="!ready"
-          size="small"
-          stacked
           :color="color"
+          variant="elevated"
+          class="font-weight-bold px-4"
+          height="36"
           :disabled="mandatoryRemaining"
           @click="stage(false)"
         >
-          <div class="px-4">
-            <v-icon
-              v-if="icon"
-              :icon="icon"
-              class="mt-n1"
-              start
-            />
-            <span v-if="activation">{{ $t('ui.combat.activate') }}</span>
-            <span v-else>{{ canOverride ? $t('ui.combat.applyAll') : $t('common.confirm') }}</span>
-            <div class="text-disabled">
-              <span
-                v-if="activation && (activeEffect as any).Activation !== 'None'"
-                style="letter-spacing: 1px"
-              >
-                {{
-                  isFree
-                    ? $t('ui.combat.free')
-                    : overchargeUse
-                      ? $t('active.combatAction.asOvercharge')
-                      : $enum('activationType', (activeEffect as any).Activation)
-                }}
-              </span>
-              <span v-if="(activeEffect as any).Activation && activeEffect.Frequency">•</span>
-              <span
-                v-if="activeEffect.Frequency"
-                style="letter-spacing: 1px"
-              >
-                {{ frequencyText }}
-              </span>
-            </div>
-          </div>
-          <template #options>
-            <v-list
-              density="compact"
-              class="pa-0"
-              bg-color="panel"
-              border
-              tile
-            >
-              <v-list-item
-                class="bg-action--free"
-                :disabled="mandatoryRemaining"
-                :title="$t('ui.titles.activateFreeAction')"
-                @click="stage(true)"
-              >
-                <template
-                  v-if="mandatoryRemaining"
-                  #subtitle
-                >
-                  <v-list-item-subtitle>{{ $t('ui.combat.mandatoryFields') }}</v-list-item-subtitle>
-                </template>
-                <template #prepend>
-                  <v-icon
-                    icon="cc:free"
-                    class="mr-n5"
-                  />
-                </template>
-              </v-list-item>
-              <v-divider class="my-2" />
-              <v-list-item
-                :title="$t('ui.titles.resetAllInputs')"
-                @click="$emit('reset', false)"
-              >
-                <template #prepend>
-                  <v-icon
-                    icon="mdi-reload"
-                    class="mr-n5"
-                  />
-                </template>
-              </v-list-item>
-            </v-list>
-          </template>
-        </cc-button>
+          <v-icon
+            v-if="icon"
+            :icon="icon"
+            start
+            size="18"
+          />
+          <span v-if="activation">{{ $t('ui.combat.activate') }}</span>
+          <span v-else>{{ canOverride ? $t('ui.combat.applyAll') : $t('common.confirm') }}</span>
+        </v-btn>
 
-        <cc-button
+        <v-btn
           v-else
-          size="small"
-          stacked
           :color="color"
+          variant="elevated"
+          class="font-weight-bold px-4"
+          height="36"
           :disabled="disabled"
           @click="apply(close)"
         >
-          <div class="px-4">
-            <v-icon
-              v-if="icon"
-              :icon="icon"
-              class="mt-n1"
-              start
-            />
-            {{ $t('common.confirm') }}
-            <div class="text-disabled">
-              <span
-                v-if="activation"
-                style="letter-spacing: 1px"
-              >
-                {{
-                  isFree
-                    ? $t('ui.combat.free')
-                    : overchargeUse
-                      ? $t('active.combatAction.asOvercharge')
-                      : $enum('activationType', (activeEffect as any).Activation)
-                }}
-              </span>
-              <span
-                v-if="
-                  (activeEffect as any).Activation &&
-                  activeEffect.Frequency &&
-                  !activeEffect.Frequency.Unlimited
-                "
-              >
-                •
-              </span>
-              <span
-                v-if="activeEffect.Frequency"
-                style="letter-spacing: 1px"
-              >
-                {{ frequencyText }}
-              </span>
-            </div>
-          </div>
-          <template #options>
-            <v-list
-              density="compact"
-              bg-color="panel"
-              border
-              tile
-            >
-              <v-list-item
-                :title="$t('ui.titles.resetAllInputs')"
-                @click="$emit('reset', false)"
-              >
-                <template #prepend>
-                  <v-icon
-                    icon="mdi-reload"
-                    class="mr-n5"
-                  />
-                </template>
-              </v-list-item>
-            </v-list>
-          </template>
-        </cc-button>
-        <cc-force-override
-          v-model="overridePrompt"
-          :reason="blockReason"
-          :action="activeEffect.Name"
-          @confirm="apply(close, true)"
-        />
-        <div class="text-center text-cc-overline text-disabled">
-          <div
-            v-if="confirmedKills"
-            style="max-width: 220px"
-          >
-            {{ $t('ui.combat.confirmKillHint', { n: confirmedKills }) }}
-          </div>
-          <div v-if="isApplied">{{ $t('ui.combat.alreadyActivated') }}</div>
-          <div v-if="noAction">{{ $t('ui.combat.insufficientActionsShort') }}</div>
+          <v-icon icon="mdi-check-all" start size="18" />
+          <span>{{ $t('common.confirm') }}</span>
+        </v-btn>
+      </div>
+
+      <cc-force-override
+        v-model="overridePrompt"
+        :reason="blockReason"
+        :action="activeEffect.Name"
+        @confirm="apply(close, true)"
+      />
+
+      <div class="text-center text-cc-overline text-disabled mt-2">
+        <div
+          v-if="confirmedKills"
+          style="max-width: 220px; margin: 0 auto;"
+        >
+          {{ $t('ui.combat.confirmKillHint', { n: confirmedKills }) }}
         </div>
+        <div v-if="isApplied">{{ $t('ui.combat.alreadyActivated') }}</div>
+        <div v-if="noAction">{{ $t('ui.combat.insufficientActionsShort') }}</div>
       </div>
     </div>
   </template>
@@ -368,7 +252,7 @@
     (): boolean => props.disabled || !events.value.every(x => x.Ready)
   )
 
-  function stage(asFree) {
+  function stage(asFree: boolean) {
     events.value.forEach(e => (e.Staged = true))
     isFree.value = asFree || false
     ready.value = true

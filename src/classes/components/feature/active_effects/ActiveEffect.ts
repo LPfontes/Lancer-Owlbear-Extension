@@ -52,7 +52,7 @@ class ActiveEffect {
   private readonly _name: string
   private readonly _detail: string
   private readonly _lkey?: string
-  public readonly Condition: string
+  private readonly _condition: string
   public readonly Damage: Damage[]
   public readonly Range: Range[]
   public readonly Bonuses: Bonus[]
@@ -98,7 +98,7 @@ class ActiveEffect {
     this._name = data.name || fallbackName || 'Unnamed Effect'
     this._detail = data.detail || ''
     this._lkey = keyPrefixes.get(data as object)
-    this.Condition = data.condition || ''
+    this._condition = data.condition || ''
     this.Accuracy = (data.attack === 'tech' ? data.tech_accuracy : undefined) ?? data.accuracy ?? 0
     this.AttackBonus =
       (data.attack === 'tech' ? data.tech_attack_bonus : undefined) ?? data.attack_bonus ?? 0
@@ -213,6 +213,10 @@ class ActiveEffect {
 
   public get Detail(): string {
     return this._lkey ? localize(this._lkey, 'detail', this._detail) : this._detail
+  }
+
+  public get Condition(): string {
+    return this._lkey ? localize(this._lkey, 'condition', this._condition) : this._condition
   }
 
   public getDetail(tier?: number): string {

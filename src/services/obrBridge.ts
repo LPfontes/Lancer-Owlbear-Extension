@@ -1,22 +1,114 @@
 import OBR, { Item } from '@owlbear-rodeo/sdk'
-import type { MechCombatState, CombatRollBroadcast } from '@/types/compcon-obr'
+import type { MechCombatState, CombatRollBroadcast, TokenSheetBinding } from '@/types/compcon-obr'
+import type { TableActionItem } from '@/types/table-actions'
+import { SetItem } from '@/io/Storage'
+import { toRaw } from 'vue'
+import { dddiceService } from './dddiceService'
+import { statusMarkerService } from './statusMarkerService'
 
 export const COMPCON_METADATA_KEY = 'com.compcon.activemode'
+export const COMPCON_PILOT_PREFIX = 'com.compcon.activemode/p/'
+export const COMPCON_NPC_PREFIX = 'com.compcon.activemode/n/'
+export const COMPCON_PILOT_INDEX_KEY = 'com.compcon.activemode/pilots_index'
+export const COMPCON_NPC_INDEX_KEY = 'com.compcon.activemode/npcs_index'
+export const COMPCON_PILOTS_METADATA_KEY = 'com.compcon.activemode/pilots'
+export const COMPCON_NPCS_METADATA_KEY = 'com.compcon.activemode/npcs'
+export const COMPCON_PILOT_ROSTER_KEY = 'com.compcon.activemode/pilot_roster'
+export const COMPCON_NPC_ROSTER_KEY = 'com.compcon.activemode/npc_roster'
+export const COMPCON_TABLE_ACTIONS_KEY = 'com.compcon.activemode/table_actions'
 export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
+export const COMPCON_ICON_URL = '/icon.svg'
+export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
+
 
 class OBRBridge {
   private isReady = false
   private role: 'GM' | 'PLAYER' = 'PLAYER'
+  private playerId: string = ''
+  private tabId: string = 'tab_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now()
+  private isSyncingFromRemote = false
+  private isSavingToRemote = false
+  private incomingChunks = new Map<string, { chunks: string[]; total: number; timestamp: number }>()
+  private processedMsgIds = new Set<string>()
+  private localTabChannel?: BroadcastChannel
+  private broadcastUnsubscribe?: () => void
+  private lastSyncBroadcastTime = 0
+  private broadcastQueue: Array<{ payload: any; resolve: () => void }> = []
+  private isProcessingBroadcastQueue = false
 
   public async init(onReadyCallback?: () => void) {
     if (this.isReady) return
 
+    // Inicializa canal de broadcast local entre abas do mesmo navegador
+    if (typeof BroadcastChannel !== 'undefined' && !this.localTabChannel) {
+      try {
+        this.localTabChannel = new BroadcastChannel('compcon_obr_local_tabs')
+        this.localTabChannel.onmessage = async (event) => {
+          if (!event.data || typeof event.data !== 'object') return
+          if (event.data.senderTabId && event.data.senderTabId === this.tabId) return
+          await this.handleBroadcastMessage(event.data)
+        }
+      } catch (e) {
+        console.warn('[OBRBridge] BroadcastChannel local não suportado:', e)
+      }
+    }
+
+    if (!OBR.isAvailable) {
+      console.log('[OBRBridge] Owlbear Rodeo SDK não disponível neste ambiente.')
+      return
+    }
+
     OBR.onReady(async () => {
       this.isReady = true
-      this.role = await OBR.player.getRole()
-      console.log(`[OBRBridge] Inicializado com sucesso. Role: ${this.role}`)
-      
-      this.setupContextMenu()
+      try {
+        this.role = await OBR.player.getRole()
+      } catch {
+        this.role = 'PLAYER'
+      }
+      try {
+        this.playerId = OBR.player.id || (await OBR.player.getName()) || 'client_' + Math.random().toString(36).slice(2, 9)
+      } catch {
+        this.playerId = 'client_' + Math.random().toString(36).slice(2, 9)
+      }
+      console.log(`[OBRBridge] Inicializado com sucesso. Role: ${this.role}, PlayerId: ${this.playerId}, TabId: ${this.tabId}`)
+
+      const isStandaloneChat =
+        typeof window !== 'undefined' &&
+        (window.location.hash.includes('/table-chat') || window.location.search.includes('/table-chat'))
+
+      this.setupBroadcastListener()
+      this.setupRoomMetadataListener()
+
+      if (!isStandaloneChat) {
+        this.setupContextMenu()
+        this.setupSceneMetadataListener()
+
+        // Carrega fichas já salvas na cena/sala do Owlbear
+        await this.syncFromRoom().catch(() => {})
+
+        // Solicita sincronização cross-scene com todos os jogadores na sala
+        await this.requestSyncFromRoom().catch(() => {})
+
+        // Limpa chaves legadas pesadas do room que estouram os 16 kB
+        void this.cleanupRoomMetadata()
+
+        // Limpa marcadores legados de status com URLs inválidas que possam ter ficado gravados na cena
+        void statusMarkerService.cleanupLegacyMarkers().catch(() => {})
+
+        // Inicializa serviço de dados 3D compartilhados (dddice)
+        dddiceService.init()
+
+        // Listener global para sincronizar marcadores de status quando fichas mudarem no COMP/CON
+        if (typeof window !== 'undefined') {
+          window.addEventListener('compcon-combatant-statuses-changed', async (e: any) => {
+            const { combatantId, statuses } = e.detail || {}
+            if (combatantId && Array.isArray(statuses)) {
+              await this.syncCombatantStatusMarkers(combatantId, statuses).catch(() => {})
+            }
+          })
+        }
+      }
+
       if (onReadyCallback) onReadyCallback()
     })
   }
@@ -30,36 +122,1462 @@ class OBRBridge {
   }
 
   private setupContextMenu() {
-    OBR.contextMenu.create({
-      id: 'compcon-bind-token',
-      icons: [
-        {
-          icon: '/icon.svg',
-          label: 'Vincular Ficha COMP/CON',
-          filter: {
-            roles: ['GM', 'PLAYER'],
-            min: 1,
-            max: 1,
+    try {
+      // Menu de contexto para vincular token à ficha
+      void OBR.contextMenu.create({
+        id: 'compcon-bind-token',
+        icons: [
+          {
+            icon: COMPCON_ICON_DATA_URI,
+            label: 'Vincular Ficha COMP/CON',
+            filter: {
+              roles: ['GM', 'PLAYER'],
+              min: 1,
+              max: 1,
+            },
           },
+        ],
+        onClick: (context) => {
+          const selectedIds = context.items.map((item: Item) => item.id)
+          console.log('[OBRBridge] Token selecionado para vincular:', selectedIds)
+          window.dispatchEvent(
+            new CustomEvent('compcon-bind-token-requested', {
+              detail: { tokenIds: selectedIds, token: context.items[0] },
+            })
+          )
         },
-      ],
-      onClick: (context) => {
-        const selectedIds = context.items.map((item: Item) => item.id)
-        console.log('[OBRBridge] Token selecionado para vincular:', selectedIds)
-        window.dispatchEvent(new CustomEvent('compcon-bind-token-requested', { detail: { tokenIds: selectedIds } }))
-      },
+      }).catch((e) => {
+        console.warn('[OBRBridge] Aviso ao criar menu de contexto bind-token:', e)
+      })
+
+      // Menu de contexto para abrir ficha do token no COMP/CON
+      void OBR.contextMenu.create({
+        id: 'compcon-open-sheet',
+        icons: [
+          {
+            icon: COMPCON_ICON_DATA_URI,
+            label: 'Abrir Ficha (Modo Ativo)',
+            filter: {
+              roles: ['GM', 'PLAYER'],
+              min: 1,
+              max: 1,
+              some: [
+                {
+                  key: ['metadata', COMPCON_METADATA_KEY, 'sheetId'],
+                  value: undefined,
+                  operator: '!=',
+                },
+              ],
+            },
+          },
+        ],
+        onClick: (context) => {
+          const item = context.items[0]
+          const meta = item?.metadata[COMPCON_METADATA_KEY] as any
+          if (meta && meta.sheetId) {
+            console.log('[OBRBridge] Abrindo ficha para token:', meta)
+            window.dispatchEvent(
+              new CustomEvent('compcon-open-sheet-requested', {
+                detail: { sheetType: meta.sheetType, sheetId: meta.sheetId },
+              })
+            )
+          }
+        },
+      }).catch((e) => {
+        console.warn('[OBRBridge] Aviso ao criar menu de contexto open-sheet:', e)
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao registrar menus de contexto:', e)
+    }
+  }
+
+  /**
+   * Monitora alterações de metadados da sala para sincronização bidirecional em tempo real
+   */
+  private setupRoomMetadataListener() {
+    OBR.room.onMetadataChange(async (metadata) => {
+      if (this.isSyncingFromRemote || this.isSavingToRemote) return
+
+      const hasPilotChanges = Object.keys(metadata).some(
+        k => k.startsWith(COMPCON_PILOT_PREFIX) || k === COMPCON_PILOT_INDEX_KEY || k === COMPCON_PILOTS_METADATA_KEY
+      )
+      const hasNpcChanges = Object.keys(metadata).some(
+        k => k.startsWith(COMPCON_NPC_PREFIX) || k === COMPCON_NPC_INDEX_KEY || k === COMPCON_NPCS_METADATA_KEY
+      )
+
+      if (hasPilotChanges || hasNpcChanges) {
+        await this.syncFromRoom()
+      }
+
+      if (COMPCON_TABLE_ACTIONS_KEY in metadata) {
+        const raw = metadata[COMPCON_TABLE_ACTIONS_KEY]
+        if (Array.isArray(raw)) {
+          window.dispatchEvent(new CustomEvent('compcon-table-actions-synced', { detail: raw }))
+        }
+      }
+
+      // Se houver alteração de sala dddice e auto-detect estiver ativo
+      const hasDddiceChanges = Object.keys(metadata).some(k => k.toLowerCase().includes('dddice'))
+      if (hasDddiceChanges && dddiceService.config.autoDetectRoom) {
+        void dddiceService.detectRoomFromObr()
+      }
     })
   }
 
   /**
-   * Atualiza os metadados do token no Owlbear Rodeo com o estado do Mecha
+   * Monitora alterações de metadados na cena ativa (limite de 25 MB)
+   */
+  private setupSceneMetadataListener() {
+    OBR.scene.onMetadataChange(async (metadata) => {
+      if (this.isSyncingFromRemote || this.isSavingToRemote) return
+
+      const hasPilotChanges = Object.keys(metadata).some(
+        k => k.startsWith(COMPCON_PILOT_PREFIX) || k === COMPCON_PILOT_INDEX_KEY
+      )
+      const hasNpcChanges = Object.keys(metadata).some(
+        k => k.startsWith(COMPCON_NPC_PREFIX) || k === COMPCON_NPC_INDEX_KEY
+      )
+
+      if (hasPilotChanges || hasNpcChanges) {
+        await this.syncFromRoom()
+      }
+    })
+
+    OBR.scene.onReadyChange(async (ready) => {
+      if (ready) {
+        console.log('[OBRBridge] Nova cena ativada no Owlbear Rodeo. Sincronizando fichas cross-scene...')
+        await this.syncFromRoom()
+        await this.pushAllLocalPilotsToRoom()
+        await this.pushAllLocalNpcsToRoom()
+        await this.requestSyncFromRoom()
+        void statusMarkerService.cleanupLegacyMarkers().catch(() => {})
+      }
+    })
+  }
+
+  /**
+   * Monitora mensagens em tempo real via OBR Broadcast (independente da cena)
+   */
+  /**
+   * Monitora mensagens em tempo real via OBR Broadcast (independente da cena)
+   */
+  private setupBroadcastListener() {
+    if (this.broadcastUnsubscribe) {
+      this.broadcastUnsubscribe()
+    }
+
+    this.broadcastUnsubscribe = OBR.broadcast.onMessage(COMPCON_BROADCAST_CHANNEL, async (event) => {
+      const msg = event.data as any
+      if (!msg || typeof msg !== 'object') return
+
+      // Ignora mensagens enviadas por esta mesma aba
+      if (msg.senderTabId && msg.senderTabId === this.tabId) return
+
+      await this.handleBroadcastMessage(msg)
+    })
+  }
+
+  /**
+   * Trata mensagens recebidas tanto do OBR Broadcast quanto do BroadcastChannel local entre abas
+   */
+  private async handleBroadcastMessage(msg: any): Promise<void> {
+    if (!msg || typeof msg !== 'object') return
+
+    // Deduplicação de mensagens entre OBR broadcast e BroadcastChannel local
+    if (msg.msgId) {
+      if (this.processedMsgIds.has(msg.msgId)) return
+      this.processedMsgIds.add(msg.msgId)
+      if (this.processedMsgIds.size > 200) {
+        const first = this.processedMsgIds.values().next().value
+        if (first) this.processedMsgIds.delete(first)
+      }
+    }
+
+    try {
+      if (msg.type === 'SYNC_REQUEST' || msg.action === 'SYNC_REQUEST') {
+        if (msg.senderId && msg.senderId === this.playerId) {
+          // Requisição do mesmo usuário/jogador local, não precisa retransmitir no OBR broadcast
+          return
+        }
+        await this.handleDebouncedSyncRequest()
+      } else if (msg.type === 'PILOT_DATA') {
+        await this.handleReceivedPilot(msg.pilotId, msg.data)
+      } else if (msg.type === 'PILOT_CHUNK') {
+        await this.handleIncomingChunk('pilot', msg.pilotId, msg.chunkIndex, msg.totalChunks, msg.chunkData)
+      } else if (msg.type === 'PILOT_UPDATE') {
+        await this.handleReceivedPilotUpdate(msg.pilotId, msg.patch)
+      } else if (msg.type === 'PILOT_REMOVED') {
+        console.log('[OBRBridge] Piloto removido por outro participante:', msg.pilotId)
+        window.dispatchEvent(new CustomEvent('compcon-pilot-removed', { detail: { pilotId: msg.pilotId } }))
+      } else if (msg.type === 'NPC_REMOVED') {
+        console.log('[OBRBridge] NPC removido por outro participante:', msg.npcId)
+        window.dispatchEvent(new CustomEvent('compcon-npc-removed', { detail: { npcId: msg.npcId } }))
+      } else if (msg.type === 'NPC_DATA') {
+        await this.handleReceivedNpc(msg.npcId, msg.data)
+      } else if (msg.type === 'NPC_CHUNK') {
+        await this.handleIncomingChunk('npc', msg.npcId, msg.chunkIndex, msg.totalChunks, msg.chunkData)
+      } else if (msg.type === 'OPEN_TABLE_SHEETS') {
+        window.dispatchEvent(new CustomEvent('compcon-open-table-sheets'))
+      } else if (msg.type === 'OPEN_SHEET_REQUESTED') {
+        window.dispatchEvent(
+          new CustomEvent('compcon-open-sheet-requested', {
+            detail: { sheetType: msg.sheetType || 'pilot', sheetId: msg.sheetId },
+          })
+        )
+      } else if (msg.type === 'TABLE_ACTION') {
+        window.dispatchEvent(new CustomEvent('compcon-table-action', { detail: msg.action }))
+      } else if (msg.senderName && msg.title) {
+        // Evento de rolagem de combate compartilhado
+        window.dispatchEvent(new CustomEvent('compcon-combat-roll', { detail: msg }))
+      }
+    } catch (err) {
+      console.warn('[OBRBridge] Erro ao tratar mensagem de broadcast:', err)
+    }
+  }
+
+  private async handleDebouncedSyncRequest() {
+    const now = Date.now()
+    if (now - this.lastSyncBroadcastTime < 5000) {
+      return
+    }
+    this.lastSyncBroadcastTime = now
+    console.log('[OBRBridge] Processando pedido de sincronização cross-scene...')
+    await this.broadcastAllLocalPilots()
+    if (this.role === 'GM') {
+      await this.broadcastAllLocalNpcs()
+    }
+  }
+
+  /**
+   * Envia uma mensagem via BroadcastChannel local (abas locais) e via OBR.broadcast (remoto) com fila e rate limiting
+   */
+  public async sendBroadcastMessage(payload: any): Promise<void> {
+    const fullPayload = {
+      ...payload,
+      msgId: `${this.tabId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      senderTabId: this.tabId,
+      senderId: this.playerId,
+    }
+
+    // 1. Envia via BroadcastChannel local (sincronização instantânea entre abas no mesmo navegador)
+    if (this.localTabChannel) {
+      try {
+        this.localTabChannel.postMessage(fullPayload)
+      } catch (e) {
+        console.warn('[OBRBridge] Erro ao postar no BroadcastChannel local:', e)
+      }
+    }
+
+    // 2. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting
+    if (OBR.isAvailable && this.isReady) {
+      await new Promise<void>((resolve) => {
+        this.broadcastQueue.push({ payload: fullPayload, resolve })
+        void this.processBroadcastQueue()
+      })
+    }
+  }
+
+  private async processBroadcastQueue() {
+    if (this.isProcessingBroadcastQueue) return
+    this.isProcessingBroadcastQueue = true
+
+    while (this.broadcastQueue.length > 0) {
+      const item = this.broadcastQueue.shift()
+      if (!item) break
+
+      let sent = false
+      let attempts = 0
+      while (!sent && attempts < 3) {
+        attempts++
+        try {
+          await OBR.broadcast.sendMessage(COMPCON_BROADCAST_CHANNEL, item.payload, {
+            destination: 'ALL',
+          })
+          sent = true
+        } catch (e: any) {
+          const isRateLimit =
+            e?.error?.name === 'RateLimitHit' ||
+            e?.name === 'RateLimitHit' ||
+            (typeof e?.message === 'string' && e.message.includes('RateLimit')) ||
+            (e?.error && typeof e.error.message === 'string' && e.error.message.includes('Too many requests'))
+
+          if (isRateLimit && attempts < 3) {
+            console.warn(`[OBRBridge] Broadcast rate limit atingido, pausando ${600 * attempts}ms antes de retentar...`)
+            await new Promise((r) => setTimeout(r, 600 * attempts))
+          } else {
+            console.warn('[OBRBridge] Erro ao enviar OBR broadcast:', e)
+            sent = true
+          }
+        }
+      }
+
+      item.resolve()
+      // Pausa de 80ms entre envios no OBR para respeitar a cota do SDK
+      await new Promise((r) => setTimeout(r, 80))
+    }
+
+    this.isProcessingBroadcastQueue = false
+  }
+
+  private async handleIncomingChunk(
+    type: 'pilot' | 'npc',
+    id: string,
+    chunkIndex: number,
+    totalChunks: number,
+    chunkData: string
+  ) {
+    const key = `${type}_${id}`
+    let item = this.incomingChunks.get(key)
+    if (!item || item.total !== totalChunks) {
+      item = { chunks: new Array(totalChunks).fill(''), total: totalChunks, timestamp: Date.now() }
+      this.incomingChunks.set(key, item)
+    }
+    item.chunks[chunkIndex] = chunkData
+
+    const isComplete = item.chunks.every(c => typeof c === 'string' && c.length > 0)
+    if (isComplete) {
+      const fullCompressed = item.chunks.join('')
+      this.incomingChunks.delete(key)
+      if (type === 'pilot') {
+        await this.handleReceivedPilot(id, fullCompressed)
+      } else {
+        await this.handleReceivedNpc(id, fullCompressed)
+      }
+    }
+  }
+
+  private async handleReceivedPilot(pilotId: string, compressedData: string): Promise<void> {
+    try {
+      const data = await this.decompressData(compressedData)
+      if (!data || typeof data !== 'object') return
+
+      const { PilotStore } = await import('@/features/pilot_management/store')
+      const { Pilot } = await import('@/classes/pilot/Pilot')
+      const { NavStore } = await import('@/stores/nav')
+
+      const sanitized: any = {
+        ...data,
+        id: data.id || data.ID || pilotId,
+        skills: Array.isArray(data.skills) ? data.skills : [],
+        talents: Array.isArray(data.talents) ? data.talents : [],
+        core_bonuses: Array.isArray(data.core_bonuses) ? data.core_bonuses : [],
+        licenses: Array.isArray(data.licenses) ? data.licenses : [],
+        mechs: Array.isArray(data.mechs) ? data.mechs : [],
+        special_equipment: data.special_equipment || {},
+        quirks: Array.isArray(data.quirks) ? data.quirks : [],
+      }
+
+      const pilot = Pilot.Deserialize(sanitized)
+      const pilotStore = PilotStore()
+      const existingIdx = pilotStore.Pilots.findIndex(p => p.ID === pilot.ID)
+      if (existingIdx === -1) {
+        pilotStore.Pilots.push(pilot)
+        NavStore().updatePilotEntry(pilot)
+        console.log(`[OBRBridge] Novo piloto recebido via broadcast: ${pilot.Name} (${pilot.Callsign})`)
+      } else {
+        pilotStore.Pilots.splice(existingIdx, 1, pilot)
+        console.log(`[OBRBridge] Piloto atualizado via broadcast: ${pilot.Name} (${pilot.Callsign})`)
+      }
+
+      // Persiste no IndexedDB local de quem recebeu
+      await SetItem('pilots', sanitized)
+
+      // Garante que o piloto seja indexado no PilotGroupStore para aparecer no Hangar (Roster)
+      const { PilotGroupStore } = await import('@/features/pilot_management/store/PilotGroupStore')
+      const groupStore = PilotGroupStore()
+      if (!groupStore.PilotGroups || groupStore.PilotGroups.length === 0) {
+        await groupStore.LoadGroups()
+      }
+      await groupStore.ImportUngroupedPilots()
+      await groupStore.SaveGroupData()
+
+      // Dispara evento na janela para re-renderizar o Hangar imediatamente em todas as abas
+      window.dispatchEvent(new CustomEvent('compcon-pilot-synced', { detail: { pilotId: pilot.ID, pilot } }))
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao processar piloto recebido via broadcast:', pilotId, e)
+    }
+  }
+
+  private async handleReceivedPilotUpdate(pilotId: string, patch: any): Promise<void> {
+    try {
+      if (!patch || typeof patch !== 'object') return
+      const { PilotStore } = await import('@/features/pilot_management/store')
+      const pilot = PilotStore().Pilots.find(p => p.ID === pilotId)
+      if (pilot && pilot.ActiveMech) {
+        const mech = pilot.ActiveMech as any
+        if (patch.hp && mech.CurrentHP !== undefined) {
+          mech.CurrentHP = patch.hp.current ?? mech.CurrentHP
+        }
+        if (patch.heat && mech.CurrentHeat !== undefined) {
+          mech.CurrentHeat = patch.heat.current ?? mech.CurrentHeat
+        }
+        if (patch.structure && mech.CurrentStructure !== undefined) {
+          mech.CurrentStructure = patch.structure.current ?? mech.CurrentStructure
+        }
+        if (patch.stress && mech.CurrentStress !== undefined) {
+          mech.CurrentStress = patch.stress.current ?? mech.CurrentStress
+        }
+      }
+      window.dispatchEvent(new CustomEvent('compcon-pilot-patch', { detail: { pilotId, patch } }))
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao aplicar patch de piloto via broadcast:', pilotId, e)
+    }
+  }
+
+  private async handleReceivedNpc(npcId: string, compressedData: string): Promise<void> {
+    try {
+      const data = await this.decompressData(compressedData)
+      if (!data || typeof data !== 'object') return
+
+      const { NpcStore } = await import('@/features/gm/store/npc_store')
+      const { Unit } = await import('@/classes/npc/unit/Unit')
+      const { Doodad } = await import('@/classes/npc/doodad/Doodad')
+      const { Eidolon } = await import('@/classes/npc/eidolon/Eidolon')
+      const { NavStore } = await import('@/stores/nav')
+
+      let npc: any = null
+      if (data.npcType === 'unit') {
+        npc = Unit.Deserialize(data)
+      } else if (data.npcType === 'doodad') {
+        npc = Doodad.Deserialize(data)
+      } else if (data.npcType === 'eidolon') {
+        npc = Eidolon.Deserialize(data)
+      }
+
+      if (npc) {
+        const npcStore = NpcStore()
+        const existingIdx = npcStore.Npcs.findIndex(n => n.ID === npc.ID)
+        if (existingIdx === -1) {
+          npcStore.Npcs.push(npc)
+          NavStore().updateNpcEntry(npc)
+          console.log(`[OBRBridge] Novo NPC recebido via broadcast: ${npc.Name}`)
+        } else {
+          npcStore.Npcs.splice(existingIdx, 1, npc)
+          console.log(`[OBRBridge] NPC atualizado via broadcast: ${npc.Name}`)
+        }
+        await SetItem('npcs', data)
+        window.dispatchEvent(new CustomEvent('compcon-npc-synced', { detail: { npcId: npc.ID, npc } }))
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao processar NPC recebido via broadcast:', npcId, e)
+    }
+  }
+
+  /**
+   * Solicita que todos os outros clientes na sala transmitam suas fichas
+   */
+  public async requestSyncFromRoom(): Promise<void> {
+    await this.sendBroadcastMessage({
+      type: 'SYNC_REQUEST',
+      senderRole: this.role,
+    })
+  }
+
+  /**
+   * Transmite todos os pilotos locais em tempo real para a sala
+   */
+  public async broadcastAllLocalPilots(): Promise<void> {
+    try {
+      const { PilotStore } = await import('@/features/pilot_management/store')
+      const pilots = PilotStore().Pilots
+      if (pilots && pilots.length > 0) {
+        for (const p of pilots) {
+          await this.broadcastSinglePilot(p)
+          await new Promise((r) => setTimeout(r, 60))
+        }
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao transmitir pilotos locais via broadcast:', e)
+    }
+  }
+
+  /**
+   * Transmite um único piloto via broadcast (com suporte a chunks se necessário)
+   */
+  public async broadcastSinglePilot(pilotObj: any): Promise<void> {
+    try {
+      const { Pilot } = await import('@/classes/pilot/Pilot')
+      const raw = toRaw(pilotObj)
+      const id = raw?.ID || raw?.id
+      if (!id) return
+
+      let serialized: any = null
+      if (typeof raw.Serialize === 'function') {
+        serialized = raw.Serialize()
+      } else if (raw.SkillsController && typeof Pilot.Serialize === 'function') {
+        serialized = Pilot.Serialize(raw as any)
+      } else if (typeof raw === 'object' && (raw.skills || raw.talents || raw.callsign || raw.name || raw.id)) {
+        serialized = raw
+      } else {
+        return
+      }
+
+      const sanitized = JSON.parse(JSON.stringify(serialized))
+      sanitized.id = sanitized.id || sanitized.ID || id
+      sanitized.skills = Array.isArray(sanitized.skills) ? sanitized.skills : []
+      sanitized.talents = Array.isArray(sanitized.talents) ? sanitized.talents : []
+      sanitized.core_bonuses = Array.isArray(sanitized.core_bonuses) ? sanitized.core_bonuses : []
+      sanitized.licenses = Array.isArray(sanitized.licenses) ? sanitized.licenses : []
+      sanitized.mechs = Array.isArray(sanitized.mechs) ? sanitized.mechs : []
+      sanitized.special_equipment = sanitized.special_equipment || {}
+
+      const compressed = await this.compressData(sanitized)
+      const MAX_BROADCAST_PAYLOAD = 12000
+
+      if (compressed.length <= MAX_BROADCAST_PAYLOAD) {
+        await this.sendBroadcastMessage({
+          type: 'PILOT_DATA',
+          pilotId: id,
+          data: compressed,
+        })
+      } else {
+        const chunkCount = Math.ceil(compressed.length / MAX_BROADCAST_PAYLOAD)
+        for (let i = 0; i < chunkCount; i++) {
+          const chunk = compressed.slice(i * MAX_BROADCAST_PAYLOAD, (i + 1) * MAX_BROADCAST_PAYLOAD)
+          await this.sendBroadcastMessage({
+            type: 'PILOT_CHUNK',
+            pilotId: id,
+            chunkIndex: i,
+            totalChunks: chunkCount,
+            chunkData: chunk,
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Falha ao enviar broadcast de piloto:', e)
+    }
+  }
+
+  /**
+   * Transmite todos os NPCs locais em tempo real para a sala
+   */
+  public async broadcastAllLocalNpcs(): Promise<void> {
+    try {
+      const { NpcStore } = await import('@/features/gm/store/npc_store')
+      const npcs = NpcStore().Npcs
+      if (npcs && npcs.length > 0) {
+        for (const n of npcs) {
+          await this.broadcastSingleNpc(n)
+          await new Promise((r) => setTimeout(r, 60))
+        }
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao transmitir NPCs locais via broadcast:', e)
+    }
+  }
+
+  /**
+   * Transmite um único NPC via broadcast
+   */
+  public async broadcastSingleNpc(npcObj: any): Promise<void> {
+    try {
+      const raw = toRaw(npcObj)
+      const id = raw?.ID || raw?.id
+      if (!id) return
+      const serialized = typeof raw.Serialize === 'function' ? raw.Serialize() : raw
+      const sanitized = JSON.parse(JSON.stringify(serialized))
+
+      const compressed = await this.compressData(sanitized)
+      const MAX_BROADCAST_PAYLOAD = 12000
+
+      if (compressed.length <= MAX_BROADCAST_PAYLOAD) {
+        await this.sendBroadcastMessage({
+          type: 'NPC_DATA',
+          npcId: id,
+          data: compressed,
+        })
+      } else {
+        const chunkCount = Math.ceil(compressed.length / MAX_BROADCAST_PAYLOAD)
+        for (let i = 0; i < chunkCount; i++) {
+          const chunk = compressed.slice(i * MAX_BROADCAST_PAYLOAD, (i + 1) * MAX_BROADCAST_PAYLOAD)
+          await this.sendBroadcastMessage({
+            type: 'NPC_CHUNK',
+            npcId: id,
+            chunkIndex: i,
+            totalChunks: chunkCount,
+            chunkData: chunk,
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Falha ao enviar broadcast de NPC:', e)
+    }
+  }
+
+  /**
+   * Transmite atualizações parciais de combate de um piloto
+   */
+  public async broadcastPilotUpdate(pilotId: string, patch: any): Promise<void> {
+    await this.sendBroadcastMessage({
+      type: 'PILOT_UPDATE',
+      pilotId,
+      patch,
+    })
+  }
+
+  /**
+   * Remove chaves legadas e pesadas do metadata do Room para não estourar a cota de 16 kB
+   */
+  public async cleanupRoomMetadata(): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    try {
+      const roomMeta = await OBR.room.getMetadata()
+      const toDelete: Record<string, undefined> = {}
+      for (const key of Object.keys(roomMeta)) {
+        if (
+          key.startsWith(COMPCON_PILOT_PREFIX) ||
+          key.startsWith(COMPCON_NPC_PREFIX) ||
+          key === COMPCON_PILOTS_METADATA_KEY ||
+          key === COMPCON_NPCS_METADATA_KEY ||
+          key === COMPCON_PILOT_INDEX_KEY ||
+          key === COMPCON_NPC_INDEX_KEY
+        ) {
+          toDelete[key] = undefined
+        }
+      }
+      if (Object.keys(toDelete).length > 0) {
+        console.log('[OBRBridge] Limpando metadados legados do room para liberar cota de 16 kB:', Object.keys(toDelete))
+        await OBR.room.setMetadata(toDelete)
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Aviso ao limpar metadados legados do room:', e)
+    }
+  }
+
+  // =========================================================================
+  // COMPRESSÃO & FRAGMENTAÇÃO DE DADOS (Limite de 16 kB do Owlbear Rodeo)
+  // =========================================================================
+
+  private async streamToUint8Array(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+    const reader = stream.getReader()
+    const chunks: Uint8Array[] = []
+    let totalLength = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        chunks.push(value)
+        totalLength += value.length
+      }
+    }
+    const result = new Uint8Array(totalLength)
+    let offset = 0
+    for (const chunk of chunks) {
+      result.set(chunk, offset)
+      offset += chunk.length
+    }
+    return result
+  }
+
+  private async streamToText(stream: ReadableStream<Uint8Array>): Promise<string> {
+    const reader = stream.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        text += decoder.decode(value, { stream: true })
+      }
+    }
+    text += decoder.decode()
+    return text
+  }
+
+  private async decompressStreamWithFallback(bytes: Uint8Array): Promise<string | null> {
+    if (typeof DecompressionStream === 'undefined' || bytes.length === 0) return null
+
+    // Identifica o provável formato pelos magic bytes
+    const isGzip = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b
+    const isDeflate = bytes.length >= 1 && bytes[0] === 0x78
+    const formats: ('gzip' | 'deflate' | 'deflate-raw')[] = isGzip
+      ? ['gzip', 'deflate', 'deflate-raw']
+      : isDeflate
+      ? ['deflate', 'gzip', 'deflate-raw']
+      : ['gzip', 'deflate', 'deflate-raw']
+
+    for (const format of formats) {
+      try {
+        const stream = new Blob([bytes as any]).stream().pipeThrough(new DecompressionStream(format))
+        const text = await this.streamToText(stream)
+        if (text && (text.startsWith('{') || text.startsWith('['))) {
+          return text
+        }
+      } catch {
+        // Tenta o próximo formato
+      }
+    }
+
+    // Fallback: se os bytes eram UTF-8 puro
+    try {
+      const text = new TextDecoder().decode(bytes)
+      if (text && (text.startsWith('{') || text.startsWith('['))) {
+        return text
+      }
+    } catch {
+      // ignore
+    }
+
+    return null
+  }
+
+  private async compressData(data: any): Promise<string> {
+    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data)
+    if (typeof CompressionStream !== 'undefined') {
+      try {
+        const stream = new Blob([jsonStr]).stream().pipeThrough(new CompressionStream('gzip'))
+        const bytes = await this.streamToUint8Array(stream)
+        let binary = ''
+        const chunkSize = 8192
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
+        }
+        return 'gz:' + btoa(binary)
+      } catch (e) {
+        console.warn('[OBRBridge] Falha ao comprimir com gzip, usando texto plano:', e)
+      }
+    }
+    return jsonStr
+  }
+
+  private async decompressData(val: any): Promise<any> {
+    if (!val) return null
+
+    if (typeof val === 'string' && val.startsWith('gz:')) {
+      const rawBase64 = val.slice(3).trim()
+      try {
+        const binary = atob(rawBase64)
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i)
+        }
+        const decompressedText = await this.decompressStreamWithFallback(bytes)
+        if (decompressedText) {
+          return JSON.parse(decompressedText)
+        }
+      } catch {
+        // Se atob falhou ou não é base64 válido, tenta se o conteúdo após 'gz:' era JSON puro
+        try {
+          return JSON.parse(rawBase64)
+        } catch {
+          // ignore
+        }
+      }
+      return null
+    }
+
+    if (typeof val === 'string') {
+      try {
+        return JSON.parse(val)
+      } catch {
+        return val
+      }
+    }
+
+    return val
+  }
+
+  private async encodeDataToChunks(baseKey: string, data: any): Promise<Record<string, any>> {
+    const compressed = await this.compressData(data)
+    const MAX_CHUNK_SIZE = 12000
+
+    if (compressed.length <= MAX_CHUNK_SIZE) {
+      return { [baseKey]: compressed }
+    }
+
+    const chunks: Record<string, any> = {}
+    const chunkCount = Math.ceil(compressed.length / MAX_CHUNK_SIZE)
+    chunks[baseKey] = `gz_chunked:${chunkCount}`
+
+    for (let i = 0; i < chunkCount; i++) {
+      chunks[`${baseKey}_${i}`] = compressed.slice(i * MAX_CHUNK_SIZE, (i + 1) * MAX_CHUNK_SIZE)
+    }
+
+    return chunks
+  }
+
+  private async decodeDataFromChunks(baseKey: string, metadata: Record<string, any>): Promise<any> {
+    const val = metadata[baseKey]
+    if (!val) return null
+
+    if (typeof val === 'string' && val.startsWith('gz_chunked:')) {
+      const count = parseInt(val.split(':')[1], 10) || 0
+      let fullCompressed = ''
+      for (let i = 0; i < count; i++) {
+        fullCompressed += (metadata[`${baseKey}_${i}`] || '')
+      }
+      return await this.decompressData(fullCompressed)
+    }
+
+    return await this.decompressData(val)
+  }
+
+  // =========================================================================
+  // PERSISTÊNCIA & SINCRONIZAÇÃO DE PILOTOS (Independente da cena)
+  // =========================================================================
+
+  /**
+   * Salva pilotos localmente, transmite via broadcast para a sala e atualiza roster/cache
+   */
+  public async savePilotsToRoom(pilots: any[]): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable || this.isSyncingFromRemote) return
+    try {
+      this.isSavingToRemote = true
+      const { Pilot } = await import('@/classes/pilot/Pilot')
+
+      const rosterEntries: Record<string, any> = {}
+      const sceneUpdates: Record<string, any> = {}
+
+      for (const p of pilots) {
+        const raw = toRaw(p)
+        const id = raw?.ID || raw?.id
+        if (!id) continue
+
+        let serialized: any = null
+        if (typeof raw.Serialize === 'function') {
+          serialized = raw.Serialize()
+        } else if (raw.SkillsController && typeof Pilot.Serialize === 'function') {
+          serialized = Pilot.Serialize(raw as any)
+        } else if (typeof raw === 'object' && (raw.skills || raw.talents || raw.callsign || raw.name || raw.id)) {
+          serialized = raw
+        } else {
+          continue
+        }
+
+        const sanitized = JSON.parse(JSON.stringify(serialized))
+        sanitized.id = sanitized.id || sanitized.ID || id
+        sanitized.skills = Array.isArray(sanitized.skills) ? sanitized.skills : []
+        sanitized.talents = Array.isArray(sanitized.talents) ? sanitized.talents : []
+        sanitized.core_bonuses = Array.isArray(sanitized.core_bonuses) ? sanitized.core_bonuses : []
+        sanitized.licenses = Array.isArray(sanitized.licenses) ? sanitized.licenses : []
+        sanitized.mechs = Array.isArray(sanitized.mechs) ? sanitized.mechs : []
+        sanitized.special_equipment = sanitized.special_equipment || {}
+
+        // 1. Persiste no IndexedDB local de quem está salvando (nunca perde dados)
+        await SetItem('pilots', sanitized)
+
+        // 2. Transmite via broadcast para os outros jogadores e GM na sala (cross-scene)
+        await this.broadcastSinglePilot(sanitized)
+
+        // 3. Monta entrada ultra-leve para o manifest global da sala (< 100 bytes)
+        rosterEntries[id] = {
+          id,
+          name: sanitized.name || sanitized.Name || 'Piloto',
+          callsign: sanitized.callsign || sanitized.Callsign || '',
+          updatedAt: Date.now(),
+        }
+
+        // 4. Prepara cache para a cena caso haja cena ativa
+        const key = COMPCON_PILOT_PREFIX + id
+        const compressed = await this.compressData(sanitized)
+        sceneUpdates[key] = compressed
+      }
+
+      // Atualiza roster no Room metadata (sem estourar cota de 16 kB)
+      try {
+        const roomMeta = await OBR.room.getMetadata()
+        const currentRoster = (roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
+        await OBR.room.setMetadata({
+          [COMPCON_PILOT_ROSTER_KEY]: { ...currentRoster, ...rosterEntries },
+        })
+      } catch (e) {
+        console.warn('[OBRBridge] Falha ao atualizar roster no room:', e)
+      }
+
+      // Se houver cena ativa aberta no Owlbear, atualiza também a cena como cache adicional
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (isSceneReady && Object.keys(sceneUpdates).length > 0) {
+        const sceneMetadata = await OBR.scene.getMetadata()
+        const existingIndex: string[] = (sceneMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || []
+        const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
+        sceneUpdates[COMPCON_PILOT_INDEX_KEY] = Array.from(indexSet)
+        await OBR.scene.setMetadata(sceneUpdates)
+      }
+
+      // Libera chaves do metadata legado do ROOM
+      void this.cleanupRoomMetadata()
+
+      console.log(`[OBRBridge] ${pilots.length} piloto(s) sincronizado(s) via broadcast + local.`)
+    } catch (err) {
+      console.error('[OBRBridge] Erro ao salvar pilotos no OBR:', err)
+    } finally {
+      this.isSavingToRemote = false
+    }
+  }
+
+  /**
+   * Salva um único piloto na sala/broadcast
+   */
+  public async savePilotToRoom(pilot: any): Promise<void> {
+    await this.savePilotsToRoom([pilot])
+  }
+
+  /**
+   * Remove um piloto dos metadados e avisa os outros clientes
+   */
+  public async removePilotFromRoom(pilotId: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable || this.isSyncingFromRemote) return
+    try {
+      this.isSavingToRemote = true
+
+      // 1. Avisa os outros clientes via broadcast (local e remoto)
+      await this.sendBroadcastMessage({
+        type: 'PILOT_REMOVED',
+        pilotId,
+      })
+      window.dispatchEvent(new CustomEvent('compcon-pilot-removed', { detail: { pilotId } }))
+
+      // 2. Remove do roster do Room
+      try {
+        const roomMeta = await OBR.room.getMetadata()
+        const roster = (roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
+        if (roster[pilotId]) {
+          delete roster[pilotId]
+          await OBR.room.setMetadata({
+            [COMPCON_PILOT_ROSTER_KEY]: roster,
+          })
+        }
+      } catch {}
+
+      // 3. Remove da cena ativa se estiver pronta
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (isSceneReady) {
+        const metadata = await OBR.scene.getMetadata()
+        const index: string[] = (metadata[COMPCON_PILOT_INDEX_KEY] as string[]) || []
+        const newIndex = index.filter(id => id !== pilotId)
+        const key = COMPCON_PILOT_PREFIX + pilotId
+
+        await OBR.scene.setMetadata({
+          [key]: undefined,
+          [COMPCON_PILOT_INDEX_KEY]: newIndex,
+        })
+      }
+
+      await OBR.room.setMetadata({
+        [COMPCON_PILOT_PREFIX + pilotId]: undefined,
+      }).catch(() => {})
+      console.log(`[OBRBridge] Piloto ${pilotId} removido do OBR.`)
+    } catch (err) {
+      console.error('[OBRBridge] Erro ao remover piloto do OBR:', err)
+    } finally {
+      this.isSavingToRemote = false
+    }
+  }
+
+  /**
+   * Obtém os pilotos salvos na cena do Owlbear (com fallback para a sala)
+   */
+  public async getRoomPilots(): Promise<Record<string, any>> {
+    if (!this.isReady || !OBR.isAvailable) return {}
+    const pilots: Record<string, any> = {}
+
+    // 1. Tenta carregar da Cena ativa (25 MB de limite)
+    let isSceneReady = false
+    try {
+      isSceneReady = await OBR.scene.isReady()
+    } catch {
+      isSceneReady = false
+    }
+
+    if (isSceneReady) {
+      try {
+        const sceneMetadata = await OBR.scene.getMetadata()
+        const pilotIds = new Set<string>((sceneMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || [])
+        for (const key of Object.keys(sceneMetadata)) {
+          if (key.startsWith(COMPCON_PILOT_PREFIX)) {
+            const rest = key.slice(COMPCON_PILOT_PREFIX.length)
+            if (!rest.includes('_')) {
+              pilotIds.add(rest)
+            }
+          }
+        }
+
+        for (const id of pilotIds) {
+          const data = await this.decodeDataFromChunks(COMPCON_PILOT_PREFIX + id, sceneMetadata)
+          if (data && typeof data === 'object' && (data.id || data.ID || data.callsign || data.name || data.skills)) {
+            pilots[id] = data
+          }
+        }
+      } catch (e) {
+        console.warn('[OBRBridge] Erro ao ler pilotos da cena:', e)
+      }
+    }
+
+    // 2. Fallback / migração de metadados legados do Room (16 kB de limite)
+    try {
+      const roomMetadata = await OBR.room.getMetadata()
+      const roomPilotIds = new Set<string>((roomMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || [])
+      for (const key of Object.keys(roomMetadata)) {
+        if (key.startsWith(COMPCON_PILOT_PREFIX)) {
+          const rest = key.slice(COMPCON_PILOT_PREFIX.length)
+          if (!rest.includes('_')) {
+            roomPilotIds.add(rest)
+          }
+        }
+      }
+
+      for (const id of roomPilotIds) {
+        if (!pilots[id]) {
+          const data = await this.decodeDataFromChunks(COMPCON_PILOT_PREFIX + id, roomMetadata)
+          if (data && typeof data === 'object' && (data.id || data.ID || data.callsign || data.name || data.skills)) {
+            pilots[id] = data
+          }
+        }
+      }
+
+      const legacy = roomMetadata[COMPCON_PILOTS_METADATA_KEY] as Record<string, any> | undefined
+      if (legacy && typeof legacy === 'object') {
+        for (const [id, data] of Object.entries(legacy)) {
+          if (!pilots[id] && data && typeof data === 'object' && (data.id || data.ID || data.callsign || data.name || data.skills)) {
+            pilots[id] = data
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao ler pilotos legados do room:', e)
+    }
+
+    return pilots
+  }
+
+  /**
+   * Envia todos os pilotos locais via broadcast e para o cache da cena
+   */
+  public async pushAllLocalPilotsToRoom(): Promise<number> {
+    const { PilotStore } = await import('@/features/pilot_management/store')
+    const pilots = PilotStore().Pilots
+    await this.savePilotsToRoom(pilots)
+    return pilots.length
+  }
+
+  // =========================================================================
+  // PERSISTÊNCIA & SINCRONIZAÇÃO DE NPCS (Independente da cena)
+  // =========================================================================
+
+  /**
+   * Salva lista de NPCs localmente, transmite via broadcast e atualiza cache da cena
+   */
+  public async saveNpcsToRoom(npcs: any[]): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable || this.isSyncingFromRemote) return
+    try {
+      this.isSavingToRemote = true
+
+      const rosterEntries: Record<string, any> = {}
+      const sceneUpdates: Record<string, any> = {}
+
+      for (const n of npcs) {
+        const raw = toRaw(n)
+        const id = raw.ID || raw.id
+        if (!id) continue
+        const serialized = typeof raw.Serialize === 'function' ? raw.Serialize() : raw
+        const sanitized = JSON.parse(JSON.stringify(serialized))
+
+        // 1. Persiste no IndexedDB local
+        await SetItem('npcs', sanitized)
+
+        // 2. Broadcast em tempo real
+        await this.broadcastSingleNpc(sanitized)
+
+        // 3. Roster leve
+        rosterEntries[id] = {
+          id,
+          name: sanitized.name || sanitized.Name || 'NPC',
+          updatedAt: Date.now(),
+        }
+
+        // 4. Cache para cena
+        const key = COMPCON_NPC_PREFIX + id
+        const compressed = await this.compressData(sanitized)
+        sceneUpdates[key] = compressed
+      }
+
+      // Atualiza roster no Room metadata
+      try {
+        const roomMeta = await OBR.room.getMetadata()
+        const currentRoster = (roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
+        await OBR.room.setMetadata({
+          [COMPCON_NPC_ROSTER_KEY]: { ...currentRoster, ...rosterEntries },
+        })
+      } catch (e) {
+        console.warn('[OBRBridge] Falha ao atualizar roster de NPCs no room:', e)
+      }
+
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (isSceneReady && Object.keys(sceneUpdates).length > 0) {
+        const sceneMetadata = await OBR.scene.getMetadata()
+        const existingIndex: string[] = (sceneMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || []
+        const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
+        sceneUpdates[COMPCON_NPC_INDEX_KEY] = Array.from(indexSet)
+        await OBR.scene.setMetadata(sceneUpdates)
+      }
+
+      void this.cleanupRoomMetadata()
+
+      console.log(`[OBRBridge] ${npcs.length} NPC(s) sincronizado(s) via broadcast + local.`)
+    } catch (err) {
+      console.error('[OBRBridge] Erro ao salvar NPCs no OBR:', err)
+    } finally {
+      this.isSavingToRemote = false
+    }
+  }
+
+  /**
+   * Salva um único NPC na sala/broadcast
+   */
+  public async saveNpcToRoom(npc: any): Promise<void> {
+    await this.saveNpcsToRoom([npc])
+  }
+
+  /**
+   * Remove um NPC dos metadados e avisa os outros clientes
+   */
+  public async removeNpcFromRoom(npcId: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable || this.isSyncingFromRemote) return
+    try {
+      this.isSavingToRemote = true
+
+      await this.sendBroadcastMessage({
+        type: 'NPC_REMOVED',
+        npcId,
+      })
+      window.dispatchEvent(new CustomEvent('compcon-npc-removed', { detail: { npcId } }))
+
+      try {
+        const roomMeta = await OBR.room.getMetadata()
+        const roster = (roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
+        if (roster[npcId]) {
+          delete roster[npcId]
+          await OBR.room.setMetadata({
+            [COMPCON_NPC_ROSTER_KEY]: roster,
+          })
+        }
+      } catch {}
+
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (isSceneReady) {
+        const metadata = await OBR.scene.getMetadata()
+        const index: string[] = (metadata[COMPCON_NPC_INDEX_KEY] as string[]) || []
+        const newIndex = index.filter(id => id !== npcId)
+        const key = COMPCON_NPC_PREFIX + npcId
+
+        await OBR.scene.setMetadata({
+          [key]: undefined,
+          [COMPCON_NPC_INDEX_KEY]: newIndex,
+        })
+      }
+      await OBR.room.setMetadata({
+        [COMPCON_NPC_PREFIX + npcId]: undefined,
+      }).catch(() => {})
+      console.log(`[OBRBridge] NPC ${npcId} removido do OBR.`)
+    } catch (err) {
+      console.error('[OBRBridge] Erro ao remover NPC do OBR:', err)
+    } finally {
+      this.isSavingToRemote = false
+    }
+  }
+
+  /**
+   * Obtém os NPCs salvos na cena do Owlbear (com fallback para a sala)
+   */
+  public async getRoomNpcs(): Promise<Record<string, any>> {
+    if (!this.isReady || !OBR.isAvailable) return {}
+    const npcs: Record<string, any> = {}
+
+    let isSceneReady = false
+    try {
+      isSceneReady = await OBR.scene.isReady()
+    } catch {
+      isSceneReady = false
+    }
+
+    if (isSceneReady) {
+      try {
+        const sceneMetadata = await OBR.scene.getMetadata()
+        const npcIds = new Set<string>((sceneMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || [])
+        for (const key of Object.keys(sceneMetadata)) {
+          if (key.startsWith(COMPCON_NPC_PREFIX)) {
+            const rest = key.slice(COMPCON_NPC_PREFIX.length)
+            if (!rest.includes('_')) {
+              npcIds.add(rest)
+            }
+          }
+        }
+
+        for (const id of npcIds) {
+          const data = await this.decodeDataFromChunks(COMPCON_NPC_PREFIX + id, sceneMetadata)
+          if (data && typeof data === 'object') {
+            npcs[id] = data
+          }
+        }
+      } catch (e) {
+        console.warn('[OBRBridge] Erro ao ler NPCs da cena:', e)
+      }
+    }
+
+    // Fallback / migração do Room
+    try {
+      const roomMetadata = await OBR.room.getMetadata()
+      const roomNpcIds = new Set<string>((roomMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || [])
+      for (const key of Object.keys(roomMetadata)) {
+        if (key.startsWith(COMPCON_NPC_PREFIX)) {
+          const rest = key.slice(COMPCON_NPC_PREFIX.length)
+          if (!rest.includes('_')) {
+            roomNpcIds.add(rest)
+          }
+        }
+      }
+
+      for (const id of roomNpcIds) {
+        if (!npcs[id]) {
+          const data = await this.decodeDataFromChunks(COMPCON_NPC_PREFIX + id, roomMetadata)
+          if (data) npcs[id] = data
+        }
+      }
+
+      const legacy = roomMetadata[COMPCON_NPCS_METADATA_KEY] as Record<string, any> | undefined
+      if (legacy && typeof legacy === 'object') {
+        for (const [id, data] of Object.entries(legacy)) {
+          if (!npcs[id]) npcs[id] = data
+        }
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao ler NPCs legados do room:', e)
+    }
+
+    return npcs
+  }
+
+  /**
+   * Envia todos os NPCs locais via broadcast e para o cache da cena
+   */
+  public async pushAllLocalNpcsToRoom(): Promise<number> {
+    const { NpcStore } = await import('@/features/gm/store/npc_store')
+    const npcs = NpcStore().Npcs
+    await this.saveNpcsToRoom(npcs)
+    return npcs.length
+  }
+
+  // =========================================================================
+  // SINCRONIZAÇÃO DA SALA COM O COMP/CON LOCAL
+  // =========================================================================
+
+  /**
+   * Baixa pilotos e NPCs salvos na sala e solicita sincronização via broadcast
+   */
+  public async syncFromRoom(): Promise<{ pilotsCount: number; npcsCount: number }> {
+    if (!this.isReady || !OBR.isAvailable) return { pilotsCount: 0, npcsCount: 0 }
+
+    this.isSyncingFromRemote = true
+    let pilotsCount = 0
+    let npcsCount = 0
+
+    try {
+      const metadata = await OBR.room.getMetadata()
+
+      // --- PILOTOS ---
+      const roomPilots = await this.getRoomPilots()
+      if (Object.keys(roomPilots).length > 0) {
+        const { PilotStore } = await import('@/features/pilot_management/store')
+        const { Pilot } = await import('@/classes/pilot/Pilot')
+        const { NavStore } = await import('@/stores/nav')
+        const pilotStore = PilotStore()
+
+        for (const [id, rawData] of Object.entries(roomPilots)) {
+          if (!rawData || typeof rawData !== 'object') continue
+          try {
+            const data: any = {
+              ...rawData,
+              id: rawData.id || rawData.ID || id,
+              skills: Array.isArray(rawData.skills) ? rawData.skills : [],
+              talents: Array.isArray(rawData.talents) ? rawData.talents : [],
+              core_bonuses: Array.isArray(rawData.core_bonuses) ? rawData.core_bonuses : [],
+              licenses: Array.isArray(rawData.licenses) ? rawData.licenses : [],
+              mechs: Array.isArray(rawData.mechs) ? rawData.mechs : [],
+              special_equipment: rawData.special_equipment || {},
+              quirks: Array.isArray(rawData.quirks) ? rawData.quirks : [],
+            }
+            const pilot = Pilot.Deserialize(data)
+            const existingIdx = pilotStore.Pilots.findIndex(p => p.ID === id)
+            if (existingIdx === -1) {
+              pilotStore.Pilots.push(pilot)
+              NavStore().updatePilotEntry(pilot)
+            } else {
+              pilotStore.Pilots.splice(existingIdx, 1, pilot)
+            }
+            await SetItem('pilots', data)
+            pilotsCount++
+          } catch (e) {
+            console.warn('[OBRBridge] Erro ao desserializar piloto da sala:', id, e)
+          }
+        }
+
+        // Se havia a chave legada monolítica, remove para liberar quota de metadados
+        if (metadata[COMPCON_PILOTS_METADATA_KEY] !== undefined) {
+          await OBR.room.setMetadata({ [COMPCON_PILOTS_METADATA_KEY]: undefined })
+        }
+
+        // Garante que todos os pilotos carregados sejam indexados no PilotGroupStore para aparecer no Hangar (Roster)
+        const { PilotGroupStore } = await import('@/features/pilot_management/store/PilotGroupStore')
+        const groupStore = PilotGroupStore()
+        if (!groupStore.PilotGroups || groupStore.PilotGroups.length === 0) {
+          await groupStore.LoadGroups()
+        }
+        await groupStore.ImportUngroupedPilots()
+        await groupStore.SaveGroupData()
+      }
+
+      // --- NPCS ---
+      const roomNpcs = await this.getRoomNpcs()
+      if (Object.keys(roomNpcs).length > 0) {
+        const { NpcStore } = await import('@/features/gm/store/npc_store')
+        const { Unit } = await import('@/classes/npc/unit/Unit')
+        const { Doodad } = await import('@/classes/npc/doodad/Doodad')
+        const { Eidolon } = await import('@/classes/npc/eidolon/Eidolon')
+        const { NavStore } = await import('@/stores/nav')
+        const npcStore = NpcStore()
+
+        for (const [id, data] of Object.entries(roomNpcs)) {
+          if (!data) continue
+          try {
+            let npc: any = null
+            if (data.npcType === 'unit') {
+              npc = Unit.Deserialize(data)
+            } else if (data.npcType === 'doodad') {
+              npc = Doodad.Deserialize(data)
+            } else if (data.npcType === 'eidolon') {
+              npc = Eidolon.Deserialize(data)
+            }
+
+            if (npc) {
+              const existingIdx = npcStore.Npcs.findIndex(n => n.ID === id)
+              if (existingIdx === -1) {
+                npcStore.Npcs.push(npc)
+                NavStore().updateNpcEntry(npc)
+              } else {
+                npcStore.Npcs.splice(existingIdx, 1, npc)
+              }
+              await SetItem('npcs', data)
+              npcsCount++
+            }
+          } catch (e) {
+            console.warn('[OBRBridge] Erro ao desserializar NPC da sala:', id, e)
+          }
+        }
+
+        if (metadata[COMPCON_NPCS_METADATA_KEY] !== undefined) {
+          await OBR.room.setMetadata({ [COMPCON_NPCS_METADATA_KEY]: undefined })
+        }
+      }
+
+      // Solicita sincronização via broadcast com outros participantes conectados
+      await this.requestSyncFromRoom()
+      // Envia os nossos pilotos locais para que os outros também recebam
+      await this.broadcastAllLocalPilots()
+      if (this.role === 'GM') {
+        await this.broadcastAllLocalNpcs()
+      }
+
+      void this.cleanupRoomMetadata()
+    } catch (err) {
+      console.error('[OBRBridge] Erro na sincronização da sala OBR:', err)
+    } finally {
+      this.isSyncingFromRemote = false
+    }
+
+    return { pilotsCount, npcsCount }
+  }
+
+  // =========================================================================
+  // VINCULAÇÃO DE TOKENS E STATUS VISUAIS NO CANVAS
+  // =========================================================================
+
+  /**
+   * Vincula um token do mapa a uma ficha de Piloto ou NPC
+   */
+  public async bindTokenToSheet(tokenId: string, binding: TokenSheetBinding): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+
+    await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
+      for (const item of items) {
+        item.metadata[COMPCON_METADATA_KEY] = JSON.parse(JSON.stringify({
+          ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
+          sheetType: binding.sheetType,
+          sheetId: binding.sheetId,
+          mechId: binding.mechId,
+          name: binding.name,
+          hp: binding.hp,
+          heat: binding.heat,
+          structure: binding.structure,
+          stress: binding.stress,
+          statuses: binding.statuses,
+        }))
+        // Atualiza o nome do token no Owlbear se desejado
+        if (item.name !== binding.name) {
+          item.name = binding.name
+        }
+      }
+    })
+
+    await OBR.notification.show(`Token vinculado com sucesso a: ${binding.name}`)
+
+    // Sincroniza marcadores visuais no token se houver estados ativos
+    if (binding.statuses && binding.statuses.length > 0) {
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => {})
+    }
+  }
+
+  /**
+   * Desvincula um token de qualquer ficha
+   */
+  public async unbindToken(tokenId: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+
+    await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
+      for (const item of items) {
+        delete item.metadata[COMPCON_METADATA_KEY]
+      }
+    })
+
+    // Remove marcadores visuais de status anexados
+    await statusMarkerService.clearTokenStatusMarkers(tokenId).catch(() => {})
+
+    await OBR.notification.show('Ficha desvinculada do token.')
+  }
+
+  /**
+   * Obtém a ficha vinculada a um token
+   */
+  public async getTokenBinding(tokenId: string): Promise<TokenSheetBinding | null> {
+    if (!this.isReady || !OBR.isAvailable) return null
+    const items = await OBR.scene.items.getItems([tokenId])
+    if (!items.length) return null
+    const meta = items[0].metadata[COMPCON_METADATA_KEY] as any
+    if (meta && meta.sheetId) {
+      return {
+        sheetType: meta.sheetType,
+        sheetId: meta.sheetId,
+        mechId: meta.mechId,
+        name: meta.name,
+        hp: meta.hp,
+        heat: meta.heat,
+        structure: meta.structure,
+        stress: meta.stress,
+        statuses: meta.statuses,
+      }
+    }
+    return null
+  }
+
+  /**
+   * Atualiza os metadados visuais de combate em um token
    */
   public async updateTokenVisuals(tokenId: string, state: MechCombatState) {
-    if (!this.isReady) return
+    if (!this.isReady || !OBR.isAvailable) return
 
     await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
       for (const item of items) {
         item.metadata[COMPCON_METADATA_KEY] = {
+          ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
           mechId: state.id,
           name: state.name,
           hp: state.hp,
@@ -70,25 +1588,126 @@ class OBRBridge {
         }
       }
     })
+
+    // Atualiza marcadores visuais no canvas do Owlbear
+    if (state.statuses) {
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, state.statuses).catch(() => {})
+    }
+  }
+
+  /**
+   * Atualiza todos os tokens no mapa que estão vinculados à ficha informada
+   */
+  public async updateTokensForCombatant(sheetId: string, state: MechCombatState) {
+    if (!this.isReady || !OBR.isAvailable) return
+
+    const items = await OBR.scene.items.getItems((item) => {
+      const meta = item.metadata[COMPCON_METADATA_KEY] as any
+      return meta && (meta.sheetId === sheetId || meta.mechId === sheetId)
+    })
+
+    if (items.length > 0) {
+      const tokenIds = items.map((i) => i.id)
+      await OBR.scene.items.updateItems(tokenIds, (sceneItems: Item[]) => {
+        for (const item of sceneItems) {
+          item.metadata[COMPCON_METADATA_KEY] = {
+            ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
+            mechId: state.id,
+            name: state.name,
+            hp: state.hp,
+            heat: state.heat,
+            structure: state.structure,
+            stress: state.stress,
+            statuses: state.statuses,
+          }
+        }
+      })
+
+      // Atualiza marcadores visuais em cada token vinculado
+      if (state.statuses) {
+        for (const tid of tokenIds) {
+          await statusMarkerService.syncTokenStatusMarkers(tid, state.statuses).catch(() => {})
+        }
+      }
+    }
+  }
+
+  /**
+   * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha)
+   */
+  public async syncCombatantStatusMarkers(combatantId: string, statuses: string[]): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    try {
+      const items = await OBR.scene.items.getItems((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        return meta && (meta.sheetId === combatantId || meta.mechId === combatantId)
+      })
+      for (const item of items) {
+        await statusMarkerService.syncTokenStatusMarkers(item.id, statuses).catch(() => {})
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao sincronizar marcadores de status do combatente:', e)
+    }
   }
 
   /**
    * Envia uma notificação e broadcast de combate para todos os jogadores na sala
    */
   public async broadcastRoll(rollData: CombatRollBroadcast) {
-    if (!this.isReady) return
+    if (!this.isReady || !OBR.isAvailable) return
 
     const rollMsg = rollData.rollResult !== undefined ? ` [Resultado: ${rollData.rollResult}]` : ''
-    await OBR.notification.show(`${rollData.senderName}: ${rollData.title} - ${rollData.detail}${rollMsg}`)
+    const cleanDetail = rollData.detail ? rollData.detail.replace(/<[^>]*>/g, '') : ''
+    const detailPart = cleanDetail ? ` - ${cleanDetail}` : ''
+    await OBR.notification.show(`${rollData.senderName}: ${rollData.title}${detailPart}${rollMsg}`)
+    await OBR.broadcast.sendMessage(COMPCON_BROADCAST_CHANNEL, JSON.parse(JSON.stringify(rollData)))
+  }
 
-    await OBR.broadcast.sendMessage(COMPCON_BROADCAST_CHANNEL, rollData)
+  /**
+   * Envia uma ação tática ou mensagem de chat da mesa via broadcast
+   */
+  public async broadcastTableAction(action: TableActionItem): Promise<void> {
+    await this.sendBroadcastMessage({
+      type: 'TABLE_ACTION',
+      action,
+    })
+  }
+
+  /**
+   * Obtém as ações recentes persistidas na sala do Owlbear
+   */
+  public async getRoomTableActions(): Promise<TableActionItem[]> {
+    if (!this.isReady || !OBR.isAvailable) return []
+    try {
+      const metadata = await OBR.room.getMetadata()
+      const data = metadata[COMPCON_TABLE_ACTIONS_KEY] as TableActionItem[]
+      return Array.isArray(data) ? data : []
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao buscar ações da sala:', e)
+      return []
+    }
+  }
+
+  /**
+   * Salva o buffer rotativo de ações na sala do Owlbear (máx 60 ações para manter payload leve)
+   */
+  public async saveRoomTableActions(actions: TableActionItem[]): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    const recent = actions.slice(-60)
+    try {
+      await OBR.room.setMetadata({
+        [COMPCON_TABLE_ACTIONS_KEY]: JSON.parse(JSON.stringify(recent)),
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao salvar ações na sala:', e)
+    }
   }
 
   /**
    * Obtém os IDs dos tokens selecionados no mapa atualmente
    */
   public async getSelectedTokenIds(): Promise<string[]> {
-    if (!this.isReady) return []
+    if (!this.isReady || !OBR.isAvailable) return []
     const selection = await OBR.player.getSelection()
     return selection || []
   }
@@ -97,21 +1716,136 @@ class OBRBridge {
    * Salva todo o estado do combate no Metadata da Sala do Owlbear
    */
   public async syncRoomEncounterState(encounters: Record<string, MechCombatState>) {
-    if (!this.isReady) return
+    if (!this.isReady || !OBR.isAvailable) return
     await OBR.room.setMetadata({
-      [COMPCON_METADATA_KEY]: encounters,
+      [COMPCON_METADATA_KEY]: JSON.parse(JSON.stringify(encounters)),
     })
   }
 
   /**
-   * Escuta atualizações de metadados da sala
+   * Escuta atualizações de estado de combate da sala
    */
   public onRoomStateChange(callback: (encounters: Record<string, MechCombatState>) => void) {
-    if (!this.isReady) return
+    if (!this.isReady || !OBR.isAvailable) return
     OBR.room.onMetadataChange((metadata) => {
       const state = metadata[COMPCON_METADATA_KEY] as Record<string, MechCombatState>
       if (state) callback(state)
     })
+  }
+
+  /**
+   * Obtém o catálogo/roster leve de pilotos da sala
+   */
+  public async getTablePilotRoster(): Promise<Record<string, any>> {
+    if (!this.isReady || !OBR.isAvailable) return {}
+    try {
+      const roomMeta = await OBR.room.getMetadata()
+      return (roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
+    } catch {
+      return {}
+    }
+  }
+
+  /**
+   * Obtém o catálogo/roster leve de NPCs da sala
+   */
+  public async getTableNpcRoster(): Promise<Record<string, any>> {
+    if (!this.isReady || !OBR.isAvailable) return {}
+    try {
+      const roomMeta = await OBR.room.getMetadata()
+      return (roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
+    } catch {
+      return {}
+    }
+  }
+
+  /**
+   * Obtém os tokens da cena ativa que estão vinculados a fichas do COMP/CON
+   */
+  public async getSceneTokensWithBindings(): Promise<Array<{ tokenId: string; tokenName: string; binding: TokenSheetBinding }>> {
+    if (!this.isReady || !OBR.isAvailable) return []
+    try {
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!isSceneReady) return []
+      const items = await OBR.scene.items.getItems((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        return !!(meta && meta.sheetId)
+      })
+      return items.map((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        return {
+          tokenId: item.id,
+          tokenName: item.name || 'Token',
+          binding: {
+            sheetType: meta.sheetType,
+            sheetId: meta.sheetId,
+            mechId: meta.mechId,
+            name: meta.name || item.name,
+            hp: meta.hp,
+            heat: meta.heat,
+            structure: meta.structure,
+            stress: meta.stress,
+            statuses: meta.statuses,
+          },
+        }
+      })
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Obtém todos os tokens da cena ativa (personagens, imagens e tokens posicionados na mesa)
+   */
+  public async getSceneTokens(): Promise<Array<{
+    id: string
+    name: string
+    layer: string
+    imageUrl: string
+    binding: TokenSheetBinding | null
+  }>> {
+    if (!this.isReady || !OBR.isAvailable) return []
+    try {
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!isSceneReady) return []
+      const items = await OBR.scene.items.getItems((item) => {
+        return (
+          item.layer === 'CHARACTER' ||
+          item.layer === 'MOUNT' ||
+          item.layer === 'PROP' ||
+          item.layer === 'ATTACHMENT' ||
+          (item as any).type === 'IMAGE' ||
+          !!(item as any).image?.url
+        )
+      })
+      return items.map((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        let binding: TokenSheetBinding | null = null
+        if (meta && meta.sheetId) {
+          binding = {
+            sheetType: meta.sheetType,
+            sheetId: meta.sheetId,
+            mechId: meta.mechId,
+            name: meta.name || item.name,
+            hp: meta.hp,
+            heat: meta.heat,
+            structure: meta.structure,
+            stress: meta.stress,
+            statuses: meta.statuses,
+          }
+        }
+        return {
+          id: item.id,
+          name: item.name || (item as any).text?.plainText || 'Token sem nome',
+          layer: item.layer,
+          imageUrl: (item as any).image?.url || '',
+          binding,
+        }
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao buscar tokens da cena:', e)
+      return []
+    }
   }
 }
 

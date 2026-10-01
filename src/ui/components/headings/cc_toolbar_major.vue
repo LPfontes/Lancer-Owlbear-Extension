@@ -45,7 +45,7 @@
         style="transform: skew(-45deg); opacity: 1 !important"
       />
       <v-col cols="auto">
-        <v-toolbar-items>
+        <v-toolbar-items >
           <slot name="toolbar-items" />
         </v-toolbar-items>
       </v-col>

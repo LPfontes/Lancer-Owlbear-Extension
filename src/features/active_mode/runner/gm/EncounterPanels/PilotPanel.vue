@@ -42,9 +42,7 @@
       </cc-alert>
     </template>
 
-    <template #action-palette>
-      <turn-state-toggles :states="turnStates" />
-    </template>
+
 
     <template #actions>
       <pilot-actions-panel @deploy="deploy($event)" />

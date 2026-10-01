@@ -456,6 +456,8 @@
 <script setup lang="ts">
   import { computed, ref, watch, nextTick } from 'vue'
   import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   defineOptions({ name: 'cc-dice-menu' })
 
@@ -549,6 +551,46 @@
       }
     })
     rollAccuracy()
+
+    // Dispara rolagem 3D compartilhada no Owlbear Rodeo
+    const dicePayload: Array<{ type: string }> = []
+    let extraMod = 0
+    for (const d of dice.value) {
+      for (let i = 0; i < d.count; i++) {
+        let sides = d.sides
+        if (sides <= 3) {
+          sides = 4
+          extraMod -= 1
+        }
+        const validTypes = [4, 6, 8, 10, 12, 20, 100]
+        if (!validTypes.includes(sides)) sides = 6
+        dicePayload.push({ type: `d${sides}` })
+      }
+    }
+    void dddiceService.rollDice({
+      dice: dicePayload,
+      flatBonus: (flat.value || 0) + extraMod,
+      accuracy: accuracy.value,
+      label: props.title || 'Roll',
+    })
+
+    const formulaStr =
+      dice.value.map(d => `${d.count}d${d.sides}`).join(' + ') +
+      (flat.value ? `${flat.value >= 0 ? '+' : ''}${flat.value}` : '')
+
+    void useTableActionStore().postAction({
+      senderName: props.title || 'Piloto',
+      category: 'roll',
+      title: props.title ? `Rolagem: ${props.title}` : 'Rolagem de Dados',
+      detail: `Dados: ${formulaStr}${accuracy.value !== 0 ? ` (Acerto/Dif: ${accuracy.value})` : ''}`,
+      roll: {
+        total: Number(total.value) || 0,
+        formula: formulaStr,
+        isCrit: !!props.critical,
+        accuracy: accuracy.value,
+      },
+      tags: [props.title || 'Dados', ...(props.critical ? ['CRÍTICO'] : [])],
+    })
   }
   function rollAccuracy() {
     accTotal.value = 0

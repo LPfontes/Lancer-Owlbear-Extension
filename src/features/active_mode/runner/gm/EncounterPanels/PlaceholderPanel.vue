@@ -32,9 +32,7 @@
     :item="combatant.actor"
     no-stats
   >
-    <template #action-palette>
-      <turn-state-toggles :states="turnStates" />
-    </template>
+
   </panel-base>
 </template>
 

@@ -920,6 +920,11 @@
       "reliableOnMiss": "CONFIÁVEL {n} {type} aplica-se no erro",
       "reliableN": "Confiável {n}",
       "noAttackRolled": "Nenhum Ataque Rolado",
+      "rollAttack": "Lançar Ataque",
+      "rerollAttack": "Rolar Novamente",
+      "rollDamage": "Rolar Dano",
+      "rerollDamage": "Rolar Novamente",
+      "rollBonusDamage": "Rolar Dano Bônus",
       "criticalHit": "Acerto Crítico",
       "successfulAttack": "Ataque Bem-sucedido",
       "failedAttack": "Ataque Falho",
@@ -1308,22 +1313,58 @@
       "unmarkDeleted": "Remover status Deletado do Item",
       "unmarkDeletedMultiple": "Remover status Deletado dos Itens",
       "archive": "Arquivo"
+    },
+    "flow": {
+      "unresolved": "Não resolvido: {list}",
+      "awaiting": "Aguardando {n} entrada(s)",
+      "request": {
+        "burn": "Teste de Queimadura",
+        "structureOrStressCheck": "Teste de Estrutura ou Estresse",
+        "attackInputs": "Entradas de Ataque",
+        "attackRoll": "Rolagem de Ataque",
+        "damage": "Rolagem de Dano",
+        "Encaixe": "Encaixe a destruir",
+        "encaixe": "Encaixe a destruir",
+        "Mount": "Encaixe a destruir",
+        "mount": "Encaixe a destruir",
+        "mountToDestroy": "Encaixe a destruir",
+        "Sistema": "Sistema a destruir",
+        "sistema": "Sistema a destruir",
+        "System": "Sistema a destruir",
+        "system": "Sistema a destruir",
+        "systemToDestroy": "Sistema a destruir"
+      }
     }
   },
   "stats": {
+    "hull": "Casco",
     "agility": "Agilidade",
     "systems": "Sistemas",
     "engineering": "Engenharia",
-    "agi": "AGI",
+    "agi": "Agilidade",
+    "sys": "Sistemas",
+    "eng": "Engenharia",
     "hp": "PV",
     "armor": "Armadura",
     "evasion": "Evasão",
-    "edef": "DEF-E",
+    "edef": "Defesa-E",
     "edefense": "Defesa-E",
     "speed": "Velocidade",
     "sensors": "Sensores",
+    "sensorRange": "Alcance dos Sensores",
+    "sensor_range": "Alcance dos Sensores",
+    "saveTarget": "Alvo de Salvaguarda",
+    "save_target": "Alvo de Salvaguarda",
+    "save": "Alvo de Salvaguarda",
+    "techAttack": "Ataque Tecnológico",
+    "tech_attack": "Ataque Tecnológico",
     "structure": "Estrutura",
     "stress": "Estresse",
+    "heatcap": "Capacidade de Calor",
+    "heatCapacity": "Capacidade de Calor",
+    "repairCapacity": "Capacidade de Reparos",
+    "grapple": "Agarrar",
+    "ram": "Empurrar",
     "sp": "PS"
   },
   "gm": {
@@ -1998,7 +2039,9 @@
       "mechBracedTitle": "Mecha ativou Suportar",
       "mechBracedText": "{name} agora está Suportando.",
       "overwatchTitle": "Mecha ativou Retaliar",
-      "overwatchText": "{name} vai Retaliar."
+      "overwatchText": "{name} vai Retaliar.",
+      "shutDownTitle": "Mecha Desligado",
+      "shutDownText": "{name} foi desligado. Calor e EXPOSTO foram limpos; o mecha está ATORDOADO e imune a ações tecnológicas até ser reiniciado."
     },
     "npcActions": {
       "npcPreparedTitle": "PNJ Preparado",
@@ -2033,7 +2076,8 @@
       "copiedToClipboard": "Copiado para a Área de Transferência",
       "nominal": "Nominal",
       "halfDamage": "Metade do Dano",
-      "condition_status": "Condição"
+      "condition_status": "Condição",
+      "invalidJsonFile": "Arquivo JSON inválido."
     },
     "roster": {
       "addFromRoster": "adicionar da lista",
@@ -2075,7 +2119,10 @@
       "devNoteReport": "Este recurso ainda está em desenvolvimento. Relatórios pós-ação serão expandidos em builds futuros.",
       "devNoteLogs": "Este recurso ainda está em desenvolvimento. Dados adicionais e opções de exportação estarão disponíveis em builds futuros.",
       "deleteArchiveDetail": "Isso marcará o arquivo para exclusão. Ele não aparecerá mais nesta lista, mas será excluído permanentemente com base nas suas opções de retenção no Menu de Opções.",
-      "noArchivedFoundFiltered": "Nenhum encontro arquivado encontrado contendo \"{search}\""
+      "noArchivedFoundFiltered": "Nenhum encontro arquivado encontrado contendo \"{search}\"",
+      "loadFromJson": "Carregar Combate de JSON",
+      "exportActorLog": "Exportar Registro",
+      "exportActorLogTooltip": "Exporta o registro deste combatente como um arquivo que você pode entregar ao jogador. Apenas os eventos e referências deste combatente são incluídos."
     },
     "encSummary": {
       "turnN": "(Turno {n})",
@@ -2108,7 +2155,15 @@
       "kia": "KIA",
       "savePilotHistory": "Salvar Histórico do Piloto",
       "featureInDev": "Recurso em desenvolvimento (v3.1)",
-      "encounterHash": "encontro #"
+      "encounterHash": "encontro #",
+      "saveToLogbook": "Salvar no Diário de Bordo",
+      "saveToLogbookTooltip": "Grava o registro de combate desta ficha no diário de bordo do piloto. Salvar novamente substitui o registro já existente para este combate.",
+      "historySaved": "Registro de combate gravado no diário de bordo de {name}.",
+      "historySaveFailed": "Não foi possível gravar este combate no diário de bordo do piloto.",
+      "noEvents": "Esta ficha não possui eventos de combate gravados.",
+      "viewSheet": "Ver Ficha",
+      "viewSheetTooltip": "Revisa os atributos, status e equipamentos deste piloto como estavam quando a ficha foi arquivada.",
+      "viewSheetUnavailable": "Esta ficha não possui mecha ativo para relatar."
     },
     "newSheet": {
       "llLevel": "NL{n}",
@@ -2134,7 +2189,13 @@
     },
     "endEnc": {
       "endEncounter": "Encerrar Encontro",
-      "confirmEndEncounter": "Confirmar Fim do Encontro"
+      "confirmEndEncounter": "Confirmar Fim do Encontro",
+      "gmConfirm": "Finalizar este combate fechará a instância ativa e enviará uma cópia para o arquivo. Combates arquivados não podem ser retomados (mas podem ser reiniciados). Tem certeza de que deseja continuar?",
+      "results": {
+        "pc_victory": "VITÓRIA DOS JOGADORES",
+        "enemy_victory": "VITÓRIA DOS INIMIGOS",
+        "stalemate": "IMPASSE"
+      }
     },
     "sortBar": {
       "sortByRecent": "Ordenar por Recentes",
@@ -2157,8 +2218,8 @@
       "exitWithoutSaving": "Sair Sem Salvar"
     },
     "endRound": {
-      "endRound": "Encerrar Rodada",
-      "confirmEndRound": "Confirmar Fim da Rodada"
+      "endRound": "Encerrar Turno",
+      "confirmEndRound": "Confirmar Fim do Turno"
     },
     "actionChips": {
       "protocol": "Protocolo",
@@ -2166,7 +2227,7 @@
     },
     "pcEndRound": {
       "forfeitActions": "Encerrar a rodada perderá quaisquer ações não utilizadas.",
-      "nextRound": "Próxima Rodada",
+      "nextRound": "Próxima Turno",
       "willLoseStatuses": "perderá os seguintes status",
       "atThe": "no",
       "endsOnTurn": "{when} do seu turno",
@@ -2175,7 +2236,9 @@
       "burnTitle": "Queimadura",
       "resolveBurn": "Resolver Queimadura",
       "burnResolved": "Queimadura resolvida",
-      "burnRequired": "Resolver ou ignorar sua Queimadura no fim da rodada."
+      "burnRequired": "Resolver ou ignorar sua Queimadura no fim da rodada.",
+      "movementRemainingTitle": "Você ainda possui movimento restante",
+      "movementRemaining": "{n} espaços de movimento serão perdidos."
     },
     "joinTable": {
       "sortOnline": "Ordenar por Status Online",
@@ -2202,7 +2265,8 @@
       "atRound": "na Rodada",
       "warningReplace": "Aviso: O estado da Ficha de Personagem importado substituirá o estado atual da Ficha de Personagem.",
       "changeActiveMech": "Alterar Mecha Ativo",
-      "applySave": "Aplicar & Salvar"
+      "applySave": "Aplicar & Salvar",
+      "invalidSheetFile": "Arquivo de Instância de Ficha de Personagem inválido."
     },
     "pcNotes": {
       "playerNotes": "Notas do Jogador",
@@ -2230,7 +2294,9 @@
       "editReinforcements": "Editar Reforços",
       "noReinforcementSchedule": "Sem Cronograma de Reforços",
       "undoRemoveCombatant": "Remover {name} do Encontro",
-      "undoEditOverrides": "Desfazer alterações de {name}"
+      "undoEditOverrides": "Desfazer alterações de {name}",
+      "invalidEncounterFile": "Arquivo de Instância de Combate inválido.",
+      "importFailed": "Não foi possível importar este arquivo de combate."
     },
     "encInfo": {
       "reinforcements": "Reforços",
@@ -2301,7 +2367,8 @@
       "coverLabel": "{cover} cobertura",
       "activationsRemaining": "{n} Ativações restantes nesta rodada",
       "aiControl": "Mecha sob Controle de IA",
-      "selfDestructInitiated": "Autodestruição iniciada"
+      "selfDestructInitiated": "Autodestruição iniciada",
+      "resistanceLineOther": "{condition} a {type}"
     },
     "addRoster": {
       "addPc": "Adicionar PJ",
@@ -2379,13 +2446,57 @@
       "collectedNote": "Os dados de telemetria são coletados ao final de cada rodada",
       "encounterInstance": "instânciaDoEncontro",
       "lifetime": "tempo de vida",
-      "exportText": "Exportar como Texto"
+      "exportText": "Exportar como Texto",
+      "rounds": "Rodadas",
+      "turns": "Turnos",
+      "unmounted": "Desmontado",
+      "roundsUnmounted": "Rodadas Desmontado",
+      "actionsUnmounted": "Ações Desmontado",
+      "damageDealtUnmounted": "Dano Causado Desmontado",
+      "damageTakenUnmounted": "Dano Recebido Desmontado",
+      "movementUnmounted": "Espaços Movidos Desmontado",
+      "movementSpent": "Movimento Gasto",
+      "offense": "Ofensiva",
+      "defense": "Defensiva",
+      "checks": "Testes e Salvaguardas",
+      "statuses": "Status Adquiridos",
+      "actions": "Ações Realizadas",
+      "attacks": "Ataques Acertados",
+      "crits": "Acertos Críticos",
+      "misses": "Erros",
+      "kills": "Abates",
+      "damageDealt": "Dano Causado",
+      "damageTaken": "Dano Recebido",
+      "reducedByArmor": "Reduzido por Blindagem",
+      "structureChecks": "Testes de Estrutura",
+      "stressChecks": "Testes de Estresse",
+      "mechsLost": "Mechas Perdidos",
+      "savesPassed": "Salvaguardas Bem-sucedidas",
+      "savesFailed": "Salvaguardas Falhas",
+      "checksPassed": "Testes Bem-sucedidos",
+      "checksFailed": "Testes Falhos",
+      "heatGained": "Calor Gerado",
+      "overcharges": "Sobrecargas (Calor)",
+      "deployablesLaunched": "Implantáveis Lançados",
+      "deployablesDestroyed": "Implantáveis Destruídos",
+      "none": "Nenhum registrado",
+      "noLifetimeData": "Nenhum registro vitalício para este piloto ainda. Entradas no diário são gravadas quando um combate é arquivado.",
+      "encountersLogged": "Combates Registrados",
+      "heatCleared": "Calor Dissipado",
+      "equipmentDestroyed": "Equipamento destruído",
+      "coreEnergySpent": "Energia de Núcleo gasta"
     },
     "actorLogs": {
       "log": "Registro",
       "noEntries": "Nenhuma entrada no registro de combate.",
       "exportText": "Exportar Registro em Texto",
-      "exportJson": "Exportar Registro em JSON"
+      "exportJson": "Exportar Registro em JSON",
+      "filterKind": "Filtrar por Evento",
+      "filterRound": "Rodada",
+      "allRounds": "Todas as Rodadas",
+      "noMatches": "Nenhuma entrada corresponde aos filtros atuais.",
+      "showing": "Exibindo {shown} de {total} entradas",
+      "round": "Rodada {n}"
     },
     "dmgCond": {
       "title": "Resist. / imune / vuln.",
@@ -2400,7 +2511,18 @@
     },
     "timedEffect": {
       "roundsRemaining": "{n} Rodadas restantes",
-      "override": "// Sobrescrever"
+      "override": "// Sobrescrever",
+      "retryMeltdown": "Tente novamente o teste de ENGENHARIA (ação completa) para evitar o derretimento",
+      "selfDestructName": "Auto-destruição",
+      "selfDestructDetail": "Este mecha explodirá como se tivesse sofrido um derretimento de reator. A explosão aniquilará este mecha, matando todos dentro e causando 4d6 de dano explosivo a todos os alvos em uma explosão de área 2 ao redor dele.",
+      "reactorMeltdownName": "Derretimento de Reator",
+      "reactorMeltdownDetail": "O reator deste mecha irá derreter, aniquilando-o e matando todos dentro, causando 4d6 de dano explosivo a todos os alvos em uma explosão de área 2 ao redor dele.",
+      "meltdownDamageName": "Causar Dano de Derretimento",
+      "meltdownDamageDetail": "A explosão do reator causa 4d6 de dano explosivo a todos os alvos em uma área de explosão 2 ao redor deste mecha.",
+      "statusExpiredName": "Status/Condição Expirou",
+      "statusExpiredDetail": "O status {name} expirou.",
+      "specialExpiredName": "Status Especial Expirou",
+      "specialExpiredDetail": "O status especial {attribute} expirou."
     },
     "statblockExport": {
       "title": "Bloco de Estatísticas de Combate",
@@ -2409,7 +2531,9 @@
     },
     "statusCond": {
       "title": "Status / Condições",
-      "addCustom": "Adicionar Status Personalizado"
+      "addCustom": "Adicionar Status Personalizado",
+      "braceCooldownDetail": "Devido ao estresse de suportar, até o final deste turno você só pode realizar uma ação rápida. Você não pode realizar reações, sobrecarregar, mover-se normalmente, realizar ações completas ou realizar ações livres.",
+      "cascadeDetail": "Um NHP instalado entrou em CASCATA e assumiu o controle total do mecha. O mecha fica sob controle do Mestre até que o Piloto retome o controle escolhendo Desligar o mecha."
     },
     "scan": {
       "scan": "Escanear"
@@ -2450,7 +2574,10 @@
       "usesExhausted": "sem usos restantes nesse {period}",
       "restoreUse": "Click para restaurar um uso",
       "quickN": "Rápida {n}",
-      "orTwoQuick": "Uma Ação completa pode ser gasta como duas Ações Rápidas"
+      "orTwoQuick": "Uma Ação completa pode ser gasta como duas Ações Rápidas",
+      "restoreAction": "Clique para restaurar esta ação",
+      "asOvercharge": "Como Sobrecarregar",
+      "overchargeReady": "Sobrecarregado - qualquer ação rápida é gratuita"
     },
     "deploy": {
       "deployNamed": "Implantar {name}",
@@ -2515,11 +2642,11 @@
       "select": "Selecione uma Ação de Montaria"
     },
     "barrage": {
-      "selectWeapon": "selecionar armas para Barragem",
+      "selectWeapon": "selecionar armas para Dano",
       "additionalAux": "armas aux adicionais de {name}"
     },
     "skirmish": {
-      "selectWeapon": "selecionar arma para Alvejar"
+      "selectWeapon": "selecionar arma para Ataque"
     },
     "fight": {
       "selectWeapon": "selecionar arma"
@@ -2706,22 +2833,43 @@
       "structure": "Dano de Estrutura",
       "stress": "Estresse do Reator",
       "pending": "Marcado {type}",
-      "rollLabel": "Role {n}d{die}",
-      "rolled": "Rolagem",
+      "rollLabel": "Rolar {n}d{die}",
+      "rolled": "Rolado",
       "lowest": "Menor",
       "applyResolve": "Aplicar e Resolver",
-      "markResolved": "Resolvido",
+      "markResolved": "Marcar como Resolvido",
       "manualNote": "Esse resultado deve ser resolvido manualmente",
       "diceCount": "{n} ponto(s) marcados",
       "resolution": "Resolução",
       "success": "Sucesso",
       "fail": "Falha",
-      "saveCheck": "Salvamento de {check}",
-      "applyManual": "Aplicar manualmente",
+      "saveCheck": "Teste de {check}",
+      "saveSave": "Salvamento de {check}",
+      "applyManual": "aplicar manualmente",
       "chooseOne": "Escolha um",
-      "reroll": "Re-role",
+      "reroll": "Re-rolar",
       "rollCheck": "Rolar {check}",
-      "rollPrompt": "Role {n}d{die} e escolha o menor"
+      "rollPrompt": "Role {n}d{die} e escolha o menor",
+      "blocksTurn": "Resolva o teste de estrutura ou estresse pendente antes de terminar este turno",
+      "allWeaponsOnMountDestroyed": "Todas as armas em um encaixe são destruídas",
+      "oneSystemDestroyed": "Um sistema é destruído",
+      "structure3Plus": "3+ de Estrutura",
+      "structure2": "2 de Estrutura",
+      "structure1": "1 de Estrutura",
+      "stress3Plus": "3+ de Estresse",
+      "stress2": "2 de Estresse",
+      "stress1": "1 de Estresse",
+      "durationEndOfNextTurn": "até o final do seu próximo turno",
+      "durationRestOfScene": "pelo restante da cena",
+      "noteAfterDieTurns": "após 1d6 dos seus turnos",
+      "noteEndOfNextTurn": "ao final do seu próximo turno",
+      "withNote": "{label} ({note})",
+      "destroyed": "Destruído",
+      "reactorMeltdown": "Fusão do Reator",
+      "damage": "{roll} de dano {type}",
+      "nothingDestroyable": "Nada destrutível, sofre Acerto Direto",
+      "mountToDestroy": "Encaixe a destruir",
+      "systemToDestroy": "Sistema a destruir"
     },
     "burnCheck": {
       "title": "Salvamento de Queimadura",
@@ -2773,6 +2921,28 @@
       "showPortraitsTooltip": "Ocultar imagens dos retratos dos combatentes para caber mais informações na tela.",
       "showFlavor": "Mostar texto flavor",
       "showFlavorTooltip": "Mostre texto descritivo e de história em cartas de equipamentos e recursos. Desative para ver apenas as regras."
+    },
+    "pcEndEncounter": {
+      "confirm": "Finalizar este combate fechará a instância da ficha ativa, enviará uma cópia para o arquivo e a registrará no diário de bordo deste piloto. Tem certeza de que deseja continuar?"
+    },
+    "override": {
+      "prompt": "Isto não pode ser concluído: {reason}. Resolver mesmo assim?",
+      "promptNamed": "{action} não pode ser concluída: {reason}. Resolver mesmo assim?"
+    },
+    "targetedAction": {
+      "rollFirst": "Role o ataque corpo a corpo para resolver esta ação."
+    },
+    "weaponSelect": {
+      "hidingUnavailable": "Ocultando armas que não podem ser disparadas. Clique para exibi-las.",
+      "showingUnavailable": "Exibindo armas que não podem ser disparadas. Clique para ocultá-las.",
+      "unavailableCount": "indisponível"
+    },
+    "expiration": {
+      "start": "início",
+      "end": "fim",
+      "endsOnSelfTurn": "Termina no {when} do seu turno ({name})",
+      "endsOnOtherTurn": "Termina no {when} do turno de {name}",
+      "endsOnRound": "Termina no {when} da rodada {round}"
     }
   },
   "mainMenu": {
@@ -4084,6 +4254,8 @@
     "resumeRound": "Retomar rodada",
     "detachFloating": "Desprender como Janela Livre",
     "detachFloatingSubtitle": "Transformar em popover flutuante",
+    "dockToAction": "Acoplar na Barra do Owlbear",
+    "dockToActionSubtitle": "Renderizar atrás dos menus do Owlbear",
     "expandWideMode": "Expandir para Modo Amplo (1120px)",
     "compactSideMode": "Modo Compacto / Lateral (520px)",
     "minimizeCompactBar": "Minimizar para barra compacta (48px)",
@@ -4097,5 +4269,87 @@
     "back": "Voltar",
     "centerOnScreen": "Centralizar na Tela",
     "centerOnScreenDesc": "Centro do mapa"
+  },
+  "hud": {
+    "attack": "Ataque",
+    "damage": "Dano",
+    "attackTitle": "Ataque -- {name}",
+    "damageTitle": "Dano -- {name}",
+    "range": "Alcance",
+    "flatModifier": "Modificador Fixo",
+    "grit": "Brio",
+    "total": "Total",
+    "increaseFlatBonus": "Aumentar bônus fixo",
+    "decreaseFlatBonus": "Diminuir bônus fixo",
+    "accuracy": "Precisão",
+    "difficulty": "Dificuldade",
+    "accurateMod": "Precisa (+1)",
+    "smartMod": "Inteligente (*)",
+    "seekingMod": "Guiada (*)",
+    "lockOnMod": "Consumir Trava (+1)",
+    "inaccurateMod": "Imprecisa (-1)",
+    "impairedMod": "Debilitado (-1)",
+    "engagedMod": "Engajado (-1)",
+    "lightCoverMod": "Cobertura Leve (-1)",
+    "heavyCoverMod": "Cobertura Pesada (-2)",
+    "addGlobalAccuracy": "Adicionar precisão global",
+    "addGlobalDifficulty": "Adicionar dificuldade global",
+    "manualAdjust": "Ajuste Manual",
+    "talents": "Talentos ({name})",
+    "rankN": "Ranque {rank}",
+    "viewTalentDesc": "Ver descrição do talento",
+    "accDiffBalance": "Saldo de Precisão / Dificuldade",
+    "neutral": "Neutro",
+    "attackRollResult": "Resultado do Ataque",
+    "critical": "CRÍTICO (20+)",
+    "baseDamage": "Dano Base",
+    "addBaseDamageType": "Adicionar tipo de dano base",
+    "bonusDamage": "Dano Bônus",
+    "addBonusDamageType": "Adicionar tipo de dano bônus",
+    "removeDamageType": "Remover este tipo de dano",
+    "configuration": "Configuração",
+    "apDesc": "Perfurante de Armadura (PF)",
+    "overkill": "Exagero",
+    "paracausalDesc": "Não Pode Ser Reduzido",
+    "paracausalTooltip": "Para efeitos de 'não pode ser reduzido' como o mod Paracausal",
+    "halfDamageDesc": "Metade do Dano",
+    "halfDamageTooltip": "Para efeitos que causam metade do dano em adição à resistência",
+    "reliableDesc": "Confiável",
+    "knockback": "Empurrar",
+    "noBonusDmg": "Sem Dano Bônus",
+    "throttledDesc": "Limitado (Metade do Dano)",
+    "throttledTooltip": "Causa metade de dano, calor e queimadura em ataques",
+    "targeting": "Alvejar",
+    "selectTarget": "Selecione um Alvo",
+    "damageRollResult": "Resultado do Dano",
+    "overkillHeat": "(+{heat} Calor Exagero)",
+    "applyToTarget": "Aplicar ao Alvo",
+    "roll": "Rolar",
+    "cancel": "Cancelar",
+    "selectMount": "Selecione o Encaixe de Armas",
+    "mount": "Encaixe",
+    "skirmishMountTitle": "Alvejar - Encaixe de Armas",
+    "weaponNumber": "Arma {n}",
+    "finishSkirmish": "Concluir Alvejar",
+    "nextWeapon": "Próxima Arma",
+    "damageApplied": "Dano Aplicado!",
+    "skirmishCompleted": "Alvejar Concluído!",
+    "barrageMountTitle": "Barragem - 2 Encaixes de Armas",
+    "selectMount1": "Selecione o 1º Encaixe de Armas",
+    "selectMount2": "Selecione o 2º Encaixe de Armas",
+    "mount1": "1º Encaixe",
+    "mount2": "2º Encaixe",
+    "superheavyBarrageNotice": "Arma Superpesada selecionada — ocupa a Barragem completa.",
+    "finishBarrage": "Concluir Barragem",
+    "barrageCompleted": "Barragem Concluída!",
+    "finishGrapple": "Concluir Agarrar",
+    "finishRam": "Concluir Empurrão",
+    "grappleCompleted": "Agarrar Concluído!",
+    "ramCompleted": "Empurrão Concluído!",
+    "superheavyWarning": "Arma Superpesada",
+    "modifiers": "Modificadores",
+    "accNet": "Precisão",
+    "diffNet": "Dificuldade",
+    "finish": "Concluir"
   }
 }

@@ -32,7 +32,7 @@ const theme = {
     heatcap: '#EF5350',
     core: '#D4E157',
     dangerzone: '#FF1744',
-    overcharge: '#F50057',
+    overcharge: '#FF8A3D',
     tech: '#007674',
     reaction: '#37197e',
     skill: '#524f3b',

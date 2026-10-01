@@ -242,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue'
+  import { ref, computed, onMounted, onUnmounted } from 'vue'
   import { useDisplay } from 'vuetify'
   import { Sortable } from 'sortablejs-vue3'
   import Organizer from './components/Organizer.vue'
@@ -253,6 +253,7 @@
   import { startDragScroll, stopDragScroll } from '@/composables/useScrollOnDrag'
   import GroupFileImport from './components/add_panels/GroupFileImport.vue'
   import GroupShareDialog from './components/GroupShareDialog.vue'
+  import { obrBridge } from '@/services/obrBridge'
 
   const mobile = useDisplay().smAndDown
 
@@ -300,6 +301,23 @@
       (p: any) => p.Name.toLowerCase().includes(s) || p.Callsign.toLowerCase().includes(s)
     )
     return all.length - matching.length
+  })
+
+  async function refreshRoster() {
+    await PilotGroupStore().ImportUngroupedPilots()
+    rosterTransferKey.value++
+  }
+
+  onMounted(async () => {
+    window.addEventListener('compcon-pilot-synced', refreshRoster)
+    await refreshRoster()
+    if (obrBridge.getIsReady()) {
+      await obrBridge.requestSyncFromRoom()
+    }
+  })
+
+  onUnmounted(() => {
+    window.removeEventListener('compcon-pilot-synced', refreshRoster)
   })
 
   function onGroupReorder(event: any) {

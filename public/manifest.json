@@ -8,8 +8,8 @@
   "action": {
     "title": "COMP/CON Active Mode",
     "icon": "/icon.svg",
-    "popover": "/launcher.html",
-    "height": 1,
-    "width": 1
+    "popover": "/index.html#/table-chat",
+    "height": 720,
+    "width": 420
   }
 }

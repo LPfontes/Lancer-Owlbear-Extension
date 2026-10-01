@@ -143,7 +143,7 @@ class TalentsController
 
   public static Deserialize(parent: Pilot, data: ITalentsData) {
     assertController(parent.TalentsController, 'TalentsController')
-    parent.TalentsController._collection = data.talents.map((x: IRankedData) =>
+    parent.TalentsController._collection = (data?.talents || []).map((x: IRankedData) =>
       PilotTalent.Deserialize(x)
     )
   }

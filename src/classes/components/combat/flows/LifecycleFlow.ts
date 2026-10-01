@@ -88,6 +88,12 @@ const refreshTableReactions = step<IEndTurnState>('refresh-table-reactions', s =
   s.cc.RefreshTurnReactions(s.encounter)
 })
 
+const clearBraced = step<IEndTurnState>('clear-braced', s => {
+  if (s.cc.Braced) {
+    s.cc.SetBraced(false)
+  }
+})
+
 export const EndTurnFlow = new Flow<IEndTurnState>(
   'EndTurnFlow',
   [
@@ -97,6 +103,7 @@ export const EndTurnFlow = new Flow<IEndTurnState>(
     spendActivation,
     clearTurnUses,
     nextActivation,
+    clearBraced,
     refreshTableReactions,
   ],
   combatLogHooks
@@ -105,32 +112,11 @@ export const EndTurnFlow = new Flow<IEndTurnState>(
 const braceTeardown = step<IEndRoundState>('brace-teardown', s => {
   s.cc.Turn = 1
   s.cc.ClearBoost()
-  if (!s.cc.Braced) {
-    s.cc.StatController.setCurrentStat(StatKey.SPEED, s.cc.StatController.getMax(StatKey.SPEED))
-    s.cc.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }
-    return
-  }
-  s.cc.Braced = false
-  s.cc.CustomStatuses.push({
-    status: new EffectSpecial({
-      attribute: 'Brace Cooldown',
-      detail: '',
-      detailKey: BRACE_COOLDOWN_DETAIL_KEY,
-    }),
-    expires: markRaw(
-      new expiration('end_turn_self', s.cc.Parent.CombatController, s.cc, s.encounter)
-    ),
-  })
-  s.cc.ClearBraceResistance()
-  s.cc.CombatActions = {
-    ...DEFAULT_COMBAT_ACTIONS,
-    Protocol: false,
-    Full: false,
-    Quick2: false,
-    Overcharge: false,
-    Reaction: false,
-  }
+  s.cc.StatController.setCurrentStat(StatKey.SPEED, s.cc.StatController.getMax(StatKey.SPEED))
+  s.cc.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }
 })
+
+
 
 const spendRemainingActivation = step<IEndRoundState>('spend-remaining-activation', s => {
   if (s.cc.StatController.getCurrent(StatKey.ACTIVATIONS) < 1) return

@@ -100,6 +100,8 @@ function isEnhancedReportingEnabled(): boolean {
   return false
 }
 
+let sentryLastSent = 0
+
 if (
   import.meta.env.VITE_APP_ENV !== 'localhost' &&
   window.location.hostname !== 'cc-dev-preview.netlify.app'
@@ -123,9 +125,8 @@ if (
         return null
       }
       const now = Date.now()
-      const last = Number(sessionStorage.getItem('sentry_last_sent') || 0)
-      if (now - last < 10 * 60 * 1000) return null
-      sessionStorage.setItem('sentry_last_sent', String(now))
+      if (now - sentryLastSent < 10 * 60 * 1000) return null
+      sentryLastSent = now
       if (!isEnhancedReportingEnabled()) {
         // Strip PII when enhanced reporting is off
         delete event.user

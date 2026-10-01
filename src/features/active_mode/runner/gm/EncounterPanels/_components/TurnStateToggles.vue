@@ -2,6 +2,7 @@
   <v-row
     no-gutters
     align="stretch"
+    class="flex-nowrap"
   >
     <template
       v-for="(state, i) in visible"
@@ -10,11 +11,10 @@
       <v-divider
         v-if="i"
         vertical
-        class="d-none d-sm-block"
       />
       <v-col
-        cols="6"
-        sm=""
+        class="flex-grow-1 flex-shrink-1"
+        style="min-width: 0;"
       >
         <v-btn
           flat
@@ -78,5 +78,8 @@
 <style scoped>
   .turn-state-toggle {
     min-height: 32px;
+    min-width: 0 !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
   }
 </style>

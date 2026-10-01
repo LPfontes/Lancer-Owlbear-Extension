@@ -103,7 +103,7 @@ class CoreBonusController implements IFeatureContainer {
   public static Deserialize(parent: Pilot, data: ICoreBonusSaveData) {
     assertController(parent.CoreBonusController, 'CoreBonusController')
 
-    parent.CoreBonusController._core_bonuses = (data.core_bonuses as ICoreBonusData[])
+    parent.CoreBonusController._core_bonuses = (((data?.core_bonuses || []) as ICoreBonusData[]) || [])
       .filter(Boolean)
       .map((x: ICoreBonusData) => {
         if (CompendiumStore().has('CoreBonuses', x.id))

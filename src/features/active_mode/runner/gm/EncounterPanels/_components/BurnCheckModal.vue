@@ -98,6 +98,8 @@
   import AccuracyDifficultyRow from '@/ui/components/chips/_activeeffect/_shared/AccuracyDifficultyRow.vue'
   import { StatKey } from '@/classes/components/combat/stats/Stats'
   import type { CombatController } from '@/classes/components/combat/CombatController'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   const props = defineProps<{ modelValue: boolean; cc: CombatController }>()
   const emit = defineEmits<{
@@ -131,6 +133,29 @@
     detail.value = r.toString()
     rolled.value = r.total
     outcome.value = r.total >= 10 ? 'success' : 'fail'
+
+    void dddiceService.rollDice({
+      diceString: '1d20',
+      flatBonus: Number(bonus.value) || 0,
+      accuracy: acc.value || 0,
+      label: `Burn Check [${props.cc.CombatName || 'Combatant'}]`,
+      external_id: props.cc.CombatName || undefined,
+    })
+
+    const actorName = props.cc.CombatName || 'Combatente'
+    void useTableActionStore().postAction({
+      senderName: actorName,
+      category: 'roll',
+      title: 'Teste de Engenharia (Queimadura / Burn)',
+      detail: r.toString ? r.toString() : String(r.total),
+      roll: {
+        total: Number(r.total) || 0,
+        formula: `1d20${Number(bonus.value) >= 0 ? '+' : ''}${bonus.value || 0}`,
+        isCrit: false,
+        accuracy: acc.value || 0,
+      },
+      tags: ['Queimadura', outcome.value === 'success' ? 'Sucesso' : 'Falha'],
+    })
   }
 
   watch(

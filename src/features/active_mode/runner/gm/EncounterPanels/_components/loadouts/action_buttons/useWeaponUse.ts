@@ -12,6 +12,7 @@ import { isSuperheavy } from '@/classes/components/combat/AttackRules'
 import type { WeaponUseMode } from '@/classes/components/combat/AttackRules'
 import type { IFlowResult } from '@/classes/components/combat/flows/Flow'
 import { useEncounterContext } from '../../../encounterContext'
+import { useTableActionStore } from '@/stores/tableActionStore'
 
 export function useWeaponUse(opts: {
   mode: WeaponUseMode
@@ -58,6 +59,14 @@ export function useWeaponUse(opts: {
   }
 
   function apply() {
+    const actorName = (owner.value as any)?.actor?.Name || 'NPC'
+    const actionName = opts.mode === 'barrage' ? 'Barragem' : 'Alvejar'
+    const cat = opts.mode === 'barrage' ? 'full_action' : 'quick_action'
+    void useTableActionStore().broadcastCombatAction({
+      actorName,
+      actionName,
+      actionType: cat,
+    })
     run()
     reset()
   }

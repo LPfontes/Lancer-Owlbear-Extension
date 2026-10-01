@@ -8,9 +8,11 @@ import { itemRef } from './log/refs'
 import type { CombatController } from './CombatController'
 import type { IFlowRequest } from './flows/Flow'
 import { i18n } from '@/i18n'
+import pt from '@/i18n/locales/pt.json'
 
-const t = (key: string, params?: Record<string, unknown>): string =>
-  i18n.global.t(key, params || {})
+const t = (key: string, params?: Record<string, unknown>): string => {
+  return i18n.global.t(key, params || {}) as string
+}
 
 type CheckKind = 'structure' | 'stress'
 
@@ -578,10 +580,14 @@ function markedPoints(cc: CombatController, kind: CheckKind): number {
   return cc.StatController.getMax(key) - cc.StatController.getCurrent(key)
 }
 
-function rollCheck(table: RollableTable, marked: number): ICheckRollResult {
+function rollCheck(table: RollableTable, marked: number, overrideDice?: number[]): ICheckRollResult {
   const n = Math.max(1, marked)
-  const dice: number[] = []
-  for (let i = 0; i < n; i++) dice.push(DiceRoller.rollDie(table.Die))
+  let dice: number[] = []
+  if (overrideDice && overrideDice.length > 0) {
+    dice = [...overrideDice]
+  } else {
+    for (let i = 0; i < n; i++) dice.push(DiceRoller.rollDie(table.Die))
+  }
   const lowest = Math.min(...dice)
   const multipleOnes = dice.filter(d => d === 1).length >= 2
 

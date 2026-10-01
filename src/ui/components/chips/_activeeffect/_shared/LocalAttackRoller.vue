@@ -35,15 +35,27 @@
         <v-row
           v-else
           no-gutters
+          align="center"
+          class="ga-2"
         >
-          <v-col>
+          <v-col cols="auto">
+            <cc-button
+              size="small"
+              color="primary"
+              prepend-icon="mdi-dice-d20"
+              @click="rollAttack(s)"
+            >
+              {{ s.AttackRolledValue !== undefined ? $t('ui.combat.rerollAttack') : $t('ui.combat.rollAttack') }}
+            </cc-button>
+          </v-col>
+          <v-col cols="auto">
             <v-text-field
               :model-value="s.AttackRolledValue"
               density="compact"
               variant="outlined"
               :class="mobile ? 'short' : 'mb-1'"
               type="number"
-              :width="mobile ? 60 : 85"
+              :width="mobile ? 65 : 85"
               hide-spin-buttons
               flat
               :error="!s.AttackRolledValue"
@@ -175,19 +187,65 @@
     (props.event.DamageEvents || []).filter((de: any) => de.Reliable > 0)
   )
 
-  function setHitResult(s, val: 'hit' | 'miss') {
+  import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
+  import type { ActiveEventTarget } from '@/classes/components/feature/active_effects/effect_events/eventTarget'
+
+  function rollAttack(s: ActiveEventTarget) {
+    const lockOn = s.ConsumingLockOn ? 1 : 0
+    const totalAccuracy = (s.AttackAccuracy || 0) + (s.StatusAccuracy || 0) + lockOn
+
+    const rollResult = DiceRoller.rollSkillCheck(
+      Number(s.AttackBonus) || 0,
+      totalAccuracy
+    )
+    s.AttackRollResult = rollResult
+    s.AttackRolledValue = rollResult.total
+
+    if (Number(rollResult.total) >= 20 && props.event.Effect?.CanCrit) {
+      props.event.SetCrit()
+    } else {
+      props.event.UnsetCrit()
+    }
+
+    void dddiceService.rollDice({
+      diceString: '1d20',
+      flatBonus: Number(s.AttackBonus) || 0,
+      accuracy: totalAccuracy,
+      label: `Ataque vs ${s.TargetDefense || 'Alvo'}`,
+      external_id: s.Event?.Initiator?.actor?.CombatController?.CombatName || undefined,
+    })
+
+    const actorName = s.Event?.Initiator?.actor?.CombatController?.CombatName || 'Piloto'
+    const targetName = (s as any).Target?.actor?.Name || s.TargetDefense || 'Alvo'
+    void useTableActionStore().postAction({
+      senderName: actorName,
+      category: 'roll',
+      title: `Rolou Ataque vs ${targetName}`,
+      targetName,
+      roll: {
+        total: Number(rollResult.total),
+        formula: `1d20${Number(s.AttackBonus) >= 0 ? '+' : ''}${s.AttackBonus || 0}`,
+        isCrit: Number(rollResult.total) >= 20 && props.event.Effect?.CanCrit,
+        accuracy: totalAccuracy,
+      },
+    })
+  }
+
+  function setHitResult(s: ActiveEventTarget, val: 'hit' | 'miss') {
     s.OverrideHitResult(s.HitResultOverride === val ? undefined : val)
     if (s.HitResult === 'crit' && props.event.Effect?.CanCrit) props.event.SetCrit()
     else props.event.UnsetCrit()
   }
 
-  function handleAttackRoll(s, val) {
+  function handleAttackRoll(s: ActiveEventTarget, val: any) {
     s.AttackRolledValue = Number(val)
     if (Number(val) >= 20 && props.event.Effect?.CanCrit) props.event.SetCrit()
     else props.event.UnsetCrit()
   }
 
-  function onAttackRolled(val) {
+  function onAttackRolled(val: any) {
     if (Number(val) >= 20 && props.event.Effect?.CanCrit) props.event.SetCrit()
     else props.event.UnsetCrit()
   }

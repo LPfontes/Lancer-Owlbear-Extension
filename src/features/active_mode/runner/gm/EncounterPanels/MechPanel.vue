@@ -50,9 +50,7 @@
       </cc-alert>
     </template>
 
-    <template #action-palette>
-      <turn-state-toggles :states="turnStates" />
-    </template>
+
 
     <template #actions>
       <mech-actions-panel

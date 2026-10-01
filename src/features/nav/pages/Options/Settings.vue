@@ -53,7 +53,8 @@
           <cc-select
             v-model="theme"
             :items="themes"
-            :item-title="item => `${item.name}`"
+            item-title="name"
+            item-value="value"
             :item-subtitle="item => `${item.category}`"
           />
 
@@ -527,11 +528,12 @@
   })
 
   const theme = computed({
-    get: () => user.value.Theme,
+    get: () => user.value?.Theme || themeObj.global.name.value,
     set: (newVal: string) => {
-      user.value.Theme = newVal
+      if (!newVal) return
+      if (user.value) user.value.Theme = newVal
       themeObj.global.name.value = newVal
-      window.location.reload()
+      void SetValue('user_theme', newVal)
     },
   })
 

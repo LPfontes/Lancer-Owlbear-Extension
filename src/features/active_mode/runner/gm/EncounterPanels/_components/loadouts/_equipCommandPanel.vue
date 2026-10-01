@@ -4,43 +4,23 @@
     class="bg-panel"
     align="center"
   >
-    <v-col v-if="canDealDamage && item.ItemType === 'PilotWeapon'">
-      <pilot-fight-button
-        :action="fightAction"
-        :preset-weapon="asPilotWeapon"
-      />
-    </v-col>
-    <v-col v-if="canDealDamage && isFeature && !isSuperheavy">
-      <npc-skirmish-button
-        :action="skirmishAction"
-        :preset-weapon="asNpcWeapon"
-      />
-    </v-col>
-    <v-col v-if="canDealDamage && isFeature">
-      <npc-barrage-button
-        :action="barrageAction"
-        :preset-weapon="asNpcWeapon"
-      />
-    </v-col>
     <v-col
-      v-if="!isFeature && canDealDamage && canSkirmish"
+      v-if="canDealDamage"
       cols="auto"
     >
-      <mech-skirmish-button
-        v-if="canSkirmish"
-        :action="skirmishAction"
-        :preset-weapon="asMechWeapon"
+      <weapon-attack-hud-modal
+        :item="item"
+        :controller="controller"
       />
     </v-col>
     <v-col
-      v-if="!isFeature && canDealDamage && canBarrage"
+      v-if="canDealDamage"
       cols="auto"
       class="ml-1"
     >
-      <mech-barrage-button
-        v-if="canBarrage"
-        :action="barrageAction"
-        :preset-weapon="asMechWeapon"
+      <weapon-damage-hud-modal
+        :item="item"
+        :controller="controller"
       />
     </v-col>
     <v-col
@@ -262,6 +242,8 @@
   import { itemRef } from '@/classes/components/combat/log/refs'
   import { computed } from 'vue'
   import { useDisplay } from 'vuetify'
+  import WeaponAttackHudModal from './action_buttons/WeaponAttackHudModal.vue'
+  import WeaponDamageHudModal from './action_buttons/WeaponDamageHudModal.vue'
   import MechSkirmishButton from './action_buttons/mechSkirmishButton.vue'
   import { CompendiumStore } from '@/stores'
   import MechBarrageButton from './action_buttons/mechBarrageButton.vue'
@@ -317,7 +299,11 @@
     return true
   })
   const canDealDamage = computed(() => {
-    return 'Damage' in props.item && !!props.item.Damage
+    if ('Damage' in props.item && !!props.item.Damage) return true
+    if (props.item.ItemType === 'PilotWeapon') return true
+    if (props.item instanceof NpcWeapon) return true
+    if (props.item instanceof MechWeapon) return true
+    return false
   })
   const skirmishAction = computed(() => {
     return CompendiumStore().Actions.find(x => x.ID === 'act_skirmish')!
@@ -339,7 +325,7 @@
         t('active.equipCmd.undoEditItem', { name: props.item.Name })
       )
   }
-  function setUses(n) {
+  function setUses(n: number) {
     snapshotItemEdit()
     if (props.item.Uses === 1 && n === 1) {
       props.item.Uses = 0

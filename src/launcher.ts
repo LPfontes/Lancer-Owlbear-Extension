@@ -3,69 +3,29 @@ import OBR from '@owlbear-rodeo/sdk'
 
 export const OBR_POPOVER_ID = 'com.compcon.activemode.floating'
 
-function getSafeStorage(key: string): string | null {
+function prewarm() {
   try {
-    return typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(key) : null
+    fetch('/content/pt/lancer-data.json', { cache: 'force-cache' }).catch(() => {})
+    fetch('/content/pt/lancer-srd.json', { cache: 'force-cache' }).catch(() => {})
+    fetch('/index.html', { cache: 'force-cache' }).catch(() => {})
+    fetch('/src/main.ts').catch(() => {})
+    fetch('/src/features/active_mode/TableChatView.vue').catch(() => {})
   } catch {
-    return null
+    // ignore
   }
 }
 
+// Quando o launcher é invocado pelo menu esquerdo do Owlbear Rodeo,
+// expande o drawer nativo e redireciona imediatamente para o chat dentro do menu esquerdo
 OBR.onReady(async () => {
   try {
-    const saved = getSafeStorage('cc_window_state')
-    let left = 40
-    let top = 40
-    let isCompact = false
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (parsed.left !== undefined) left = parsed.left
-        if (parsed.top !== undefined) top = parsed.top
-        if (parsed.isCompact !== undefined) isCompact = parsed.isCompact
-      } catch {
-        // ignore
-      }
-    }
-
-    const width = isCompact ? 520 : 1120
-    const height = 760
-
-    // Verifica se a janela flutuante livre já está aberta
-    let isOpen = false
-    try {
-      const currentW = await OBR.popover.getWidth(OBR_POPOVER_ID)
-      if (currentW && currentW > 0) {
-        isOpen = true
-      }
-    } catch {
-      isOpen = false
-    }
-
-    if (isOpen) {
-      // Se já estava aberta, clicar no botão da barra fecha a janela (comportamento de toggle)
-      await OBR.popover.close(OBR_POPOVER_ID)
-    } else {
-      // Abre a janela flutuante livre no canvas do Owlbear Rodeo
-      await OBR.popover.open({
-        id: OBR_POPOVER_ID,
-        url: '/#/active-mode',
-        width,
-        height,
-        disableClickAway: true,
-        hidePaper: true,
-        anchorReference: 'POSITION',
-        anchorPosition: { left: Math.max(10, Math.round(left)), top: Math.max(10, Math.round(top)) },
-      })
-    }
+    prewarm()
+    await OBR.action.setWidth(420)
+    await OBR.action.setHeight(720)
+    window.location.replace('/index.html#/table-chat')
   } catch (err) {
-    console.error('[COMP/CON Launcher] Erro:', err)
-  } finally {
-    // Fecha o popover do dock imediatamente para não criar iframe duplicado
-    try {
-      await OBR.action.close()
-    } catch {
-      // ignore
-    }
+    console.warn('[COMP/CON Launcher] onReady:', err)
   }
 })
+
+prewarm()

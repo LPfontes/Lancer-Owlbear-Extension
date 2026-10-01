@@ -452,11 +452,19 @@ class DiceRoller {
 
       return new ParsedDieString([dieSet], modifier)
     } else if (simpleDieTest) {
-      const dieSet = new DieSet(parseInt(simpleDieTest[1]), parseInt(simpleDieTest[2]))
+      const count = simpleDieTest[1] === '' ? 1 : parseInt(simpleDieTest[1])
+      const sides = parseInt(simpleDieTest[2])
+      if (sides === 3) {
+        // Usa 1d4 - 1 para 1d3
+        return new ParsedDieString([new DieSet(count, 4)], -count)
+      }
+      const dieSet = new DieSet(count, sides)
       return new ParsedDieString([dieSet], 0)
     } else if (complexDieTest) {
-      const dieSet = new DieSet(parseInt(complexDieTest[1]), parseInt(complexDieTest[2]))
-      const modifier = parseInt(complexDieTest[3])
+      const count = complexDieTest[1] === '' ? 1 : parseInt(complexDieTest[1])
+      const sides = parseInt(complexDieTest[2])
+      let modifier = parseInt(complexDieTest[3])
+      const dieSet = new DieSet(count, sides)
 
       return new ParsedDieString([dieSet], modifier)
     } else {
@@ -531,6 +539,9 @@ class DiceRoller {
 
   public static rollDie(dieType: number): number {
     if (dieType <= 0) return 0
+    if (dieType === 3) {
+      return Math.max(0, Math.floor(rng() * 4) + 1 - 1)
+    }
     return Math.floor(rng() * Math.floor(dieType)) + 1
   }
 }

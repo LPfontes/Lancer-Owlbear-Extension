@@ -458,11 +458,13 @@
     },
   })
 
+  let lastCloudArchiveTime = 0
+
   async function createNew() {
     working.value = true
     const cooldownTime = 10 * 60 * 1000 // 10 minutes
 
-    const cooldown = Number(sessionStorage.getItem('cloud-archive-cooldown')) || 0
+    const cooldown = lastCloudArchiveTime || 0
 
     if (cooldown + cooldownTime > Date.now()) {
       notify({
@@ -477,7 +479,7 @@
       return
     }
 
-    sessionStorage.setItem('cloud-archive-cooldown', Date.now().toString())
+    lastCloudArchiveTime = Date.now()
 
     await PostCloudArchive('Manual')
     working.value = false

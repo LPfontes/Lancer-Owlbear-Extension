@@ -26,6 +26,16 @@
       </span>
       <v-spacer />
       <v-btn
+        icon="mdi-message-text"
+        variant="text"
+        size="small"
+        color="white"
+        title="Enviar para o chat"
+        class="mr-2"
+        style="height: inherit; opacity: 0.7;"
+        @click.stop="broadcastCoreSystem"
+      />
+      <v-btn
         icon
         flat
         tile
@@ -167,8 +177,11 @@
   import DeployButton from './_deployButton.vue'
   import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { Mech } from '@/classes/mech/Mech'
+  import { useTableActionStore } from '@/stores/tableActionStore'
+  import Tag from '@/classes/Tag'
 
   const { owner, encounterInstance } = useEncounterContext()
+  const tableActionStore = useTableActionStore()
 
   const props = defineProps({
     mech: {
@@ -183,4 +196,15 @@
   const active = computed(() => {
     return props.mech.CombatController.CoreActive
   })
+
+  function broadcastCoreSystem() {
+    const actorName = props.mech?.Name || props.mech?.Pilot?.Name || 'Piloto'
+    tableActionStore.broadcastCombatAction({
+      actorName,
+      actionName: `Core Power: ${cs.value.Name}`,
+      actionType: 'chat',
+      detail: cs.value.Description + (cs.value.ActiveEffect ? '<br/><br/>' + cs.value.ActiveEffect : ''),
+      tags: Tag.Serialize(cs.value.Tags),
+    })
+  }
 </script>

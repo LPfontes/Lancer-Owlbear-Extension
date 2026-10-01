@@ -128,6 +128,8 @@
   import { CombatController } from '@/classes/components/combat/CombatController'
   import { computed, ref } from 'vue'
   import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { dddiceService } from '@/services/dddiceService'
+  import { useTableActionStore } from '@/stores/tableActionStore'
   import {
     checkSources,
     totalBonus,
@@ -164,6 +166,32 @@
     roll.value = result.total
 
     rollResults.value = `Base Roll: ${baseRoll}${bonus.value ? ` ${bonus.value > 0 ? '+' : '-'} ${Math.abs(bonus.value)}` : ''}${finalAccDiff ? `, ${finalAccDiff > 0 ? 'Accuracy: +' : 'Difficulty: -'} ${Math.abs(finalAccDiff)}` : ''} = <strong>${roll.value}</strong>`
+
+    void dddiceService.rollDice({
+      diceString: '1d20',
+      flatBonus: Number(bonus.value) || 0,
+      accuracy: accDiff.value,
+      label: `${props.selectedHase ? props.selectedHase.toUpperCase() : 'Skill'} Check [${props.controller.CombatName || 'Mech'}]`,
+      external_id: props.controller.CombatName || undefined,
+    })
+
+    const haseName = props.selectedHase ? props.selectedHase.toUpperCase() : 'Perícia'
+    const actorName = props.controller.CombatName || 'Mech'
+    const isCrit = Number(roll.value) >= 20
+
+    void useTableActionStore().postAction({
+      senderName: actorName,
+      category: 'roll',
+      title: `Teste de ${haseName}`,
+      detail: `d20 (${baseRoll})${bonus.value ? ` ${bonus.value > 0 ? '+' : '-'} ${Math.abs(bonus.value)}` : ''}${finalAccDiff ? `, ${finalAccDiff > 0 ? 'Acerto: +' : 'Dificuldade: -'} ${Math.abs(finalAccDiff)}` : ''}`,
+      roll: {
+        total: Number(roll.value) || 0,
+        formula: `1d20${bonus.value >= 0 ? '+' : ''}${bonus.value}`,
+        isCrit,
+        accuracy: accDiff.value,
+      },
+      tags: [haseName, ...(isCrit ? ['CRÍTICO'] : [])],
+    })
   }
 
   function overrideRoll(target: number) {

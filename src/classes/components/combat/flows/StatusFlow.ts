@@ -57,10 +57,12 @@ const applyStatus = step<IAddStatusState>('apply-status', s => {
     })
     s.sc.LogStatusGained(s.status!, s.expires, s.selfInflicted)
     s.applied = true
+    s.sc.NotifyStatusChange()
     return
   }
   if (s.resolvedExpires) held[existing].expires = s.resolvedExpires
   if (!s.selfInflicted) held[existing].selfInflicted = false
+  s.sc.NotifyStatusChange()
 })
 
 const implications = step<IAddStatusState>('implications', s => {

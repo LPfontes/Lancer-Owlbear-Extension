@@ -3,12 +3,19 @@
     :title-color="color"
     :title="trait.Name"
   >
-    <template
-      v-if="trait.Use"
-      #toolbar-items
-    >
+    <template #toolbar-items>
+      <v-btn
+        icon="mdi-message-text"
+        variant="text"
+        size="small"
+        color="white"
+        title="Enviar para o chat"
+        class="mr-2"
+        style="opacity: 0.7;"
+        @click.stop="broadcastTrait"
+      />
       <v-chip
-        v-if="trait.Use !== 'Mission'"
+        v-if="trait.Use && trait.Use !== 'Mission'"
         size="small"
         flat
         tile
@@ -50,8 +57,10 @@
   import { useDisplay } from 'vuetify'
   import type { FrameTrait } from '@/classes/mech/components/frame/FrameTrait'
   import type { Mech } from '@/classes/mech/Mech'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   const { smAndDown: mobile } = useDisplay()
+  const tableActionStore = useTableActionStore()
 
   const props = withDefaults(
     defineProps<{
@@ -65,4 +74,14 @@
       mech: null,
     }
   )
+
+  function broadcastTrait() {
+    const actorName = props.mech?.Name || props.mech?.Pilot?.Name || 'Piloto'
+    tableActionStore.broadcastCombatAction({
+      actorName,
+      actionName: `Característica: ${props.trait.Name}`,
+      actionType: 'chat',
+      detail: props.trait.Description
+    })
+  }
 </script>

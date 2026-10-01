@@ -194,6 +194,8 @@
     },
   })
 
+  import { dddiceService } from '@/services/dddiceService'
+
   function reset() {
     props.rollData.DamageRollResult = undefined
     props.rollData.OverkillHeat = 0
@@ -213,5 +215,18 @@
       rollResult = { total: Number(plus.value), toString: () => plus.value.toString() }
     }
     props.rollData.ApplyRoll(rollResult)
+
+    if (count.value && die.value) {
+      void dddiceService.rollDice({
+        diceString: `${count.value}d${die.value}`,
+        flatBonus: Number(plus.value) || 0,
+        label: `Dano [${props.rollData.DamageType}]`,
+      })
+    }
   }
+
+  defineExpose({
+    rollDamage,
+    reset,
+  })
 </script>

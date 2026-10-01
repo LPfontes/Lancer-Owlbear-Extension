@@ -39,7 +39,7 @@
         </div>
       </div>
       <v-spacer />
-      <v-toolbar-items>
+      <v-toolbar-items class=" d-flex align-center h-full align-self-center">
         <slot name="toolbar-items" />
       </v-toolbar-items>
     </v-toolbar>

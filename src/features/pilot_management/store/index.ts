@@ -11,6 +11,7 @@ import type { IndexItem } from '@/stores/nav'
 import logger from '@/user/logger'
 import { PilotSheetStore } from './PilotSheetStore'
 import { PilotGroupStore } from './PilotGroupStore'
+import { obrBridge } from '@/services/obrBridge'
 
 export { PilotSheetStore } from './PilotSheetStore'
 export { PilotGroupStore } from './PilotGroupStore'
@@ -136,6 +137,7 @@ export const PilotStore = defineStore('pilot', {
       if (logbook) await this.RemovePilotLogbook(logbook as PilotLogbook)
 
       await RemoveItem('pilots', id)
+      void obrBridge.removePilotFromRoom(id)
 
       if (pilot.CloudController.ShareCode) {
         await CloudController.MarkCloudDeleted(pilot.CloudController.Metadata)
@@ -160,6 +162,7 @@ export const PilotStore = defineStore('pilot', {
           ...groups.map(x => SetItem('pilot_groups', PilotGroup.Serialize(x as PilotGroup))),
         ])
         logger.info('Pilot data saved')
+        void obrBridge.savePilotsToRoom(pilotsToSave)
       } catch (err) {
         logger.error('Error while saving Pilot data', this, err)
       }

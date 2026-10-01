@@ -99,6 +99,13 @@
 
       <v-col cols="auto">
         <v-btn
+          icon="mdi-message-text"
+          variant="text"
+          size="small"
+          title="Enviar para o chat"
+          @click.stop="broadcastFeature"
+        />
+        <v-btn
           icon
           flat
           tile
@@ -226,15 +233,26 @@
   import { NpcFeature } from '@/classes/npc/feature/NpcFeature'
   import { NpcWeapon } from '@/classes/npc/feature/NpcItem/NpcWeapon'
   import { NpcReaction } from '@/classes/npc/feature/NpcItem/NpcReaction'
+  import { useTableActionStore } from '@/stores/tableActionStore'
 
   defineOptions({ name: 'UnitFeatureCombatCard' })
 
   const { smAndDown: mobile } = useDisplay()
+  const tableActionStore = useTableActionStore()
 
   const props = defineProps<{
     item: NpcFeature
     unit: Unit
   }>()
+
+  function broadcastFeature() {
+    tableActionStore.broadcastCombatAction({
+      actorName: props.unit?.CombatName || props.unit?.Name || 'NPC',
+      actionName: `${(props.item as any).WeaponType ? 'Arma' : 'Característica'}: ${props.item.Name}`,
+      actionType: 'chat',
+      detail: props.item.EffectByTier ? props.item.EffectByTier(tier.value) : props.item.FlavorDescription
+    })
+  }
 
   defineEmits<{
     deploy: [value: any]
