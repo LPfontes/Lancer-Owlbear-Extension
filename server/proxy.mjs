@@ -131,3 +131,5 @@ if (process.argv[1]?.includes('proxy.mjs')) {
     console.log(`[COMP/CON Proxy] Servidor rodando na porta ${PORT}`);
   });
 }
+
+export default handleProxyRequest;
