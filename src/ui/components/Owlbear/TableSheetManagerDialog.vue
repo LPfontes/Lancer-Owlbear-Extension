@@ -1163,8 +1163,14 @@ function confirmRemoveFromRoom(type: 'pilot' | 'npc', id: string, name: string) 
   confirmMessage.value = `Deseja remover "${name}" da sala do Owlbear? A ficha não será mais transmitida aos outros jogadores, mas continuará salva no seu COMP/CON.`
   confirmActionCallback = async () => {
     if (type === 'pilot') {
+      const nextRoster = { ...tablePilotRoster.value }
+      delete nextRoster[id]
+      tablePilotRoster.value = nextRoster
       await obrBridge.removePilotFromRoom(id)
     } else {
+      const nextRoster = { ...tableNpcRoster.value }
+      delete nextRoster[id]
+      tableNpcRoster.value = nextRoster
       await obrBridge.removeNpcFromRoom(id)
     }
     await refreshTableData()
@@ -1180,6 +1186,9 @@ function confirmDeletePermanent(type: 'pilot' | 'npc', id: string, name: string)
   confirmMessage.value = `Atenção: Esta ação removerá a ficha da mesa E excluirá permanentemente os dados do seu COMP/CON local. Esta operação não pode ser desfeita.`
   confirmActionCallback = async () => {
     if (type === 'pilot') {
+      const nextRoster = { ...tablePilotRoster.value }
+      delete nextRoster[id]
+      tablePilotRoster.value = nextRoster
       await obrBridge.removePilotFromRoom(id)
       const pilot = PilotStore().Pilots.find((p: any) => p.ID === id)
       if (pilot) {
@@ -1188,6 +1197,9 @@ function confirmDeletePermanent(type: 'pilot' | 'npc', id: string, name: string)
         await PilotGroupStore().SaveGroupData()
       }
     } else {
+      const nextRoster = { ...tableNpcRoster.value }
+      delete nextRoster[id]
+      tableNpcRoster.value = nextRoster
       await obrBridge.removeNpcFromRoom(id)
       const npc = NpcStore().Npcs.find((n: any) => n.ID === id)
       if (npc) {
