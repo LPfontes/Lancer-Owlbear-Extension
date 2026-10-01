@@ -41,6 +41,8 @@ class OBRBridge {
   private lastSceneNpcMetadataHash: string = ''
   private lastRoomPilotRosterStr: string = ''
   private lastRoomNpcRosterStr: string = ''
+  private cachedPilotRoster: Record<string, any> = {}
+  private cachedNpcRoster: Record<string, any> = {}
 
   public async init(onReadyCallback?: () => void) {
     if (this.isReady) return
@@ -1027,6 +1029,7 @@ class OBRBridge {
       }
 
       if (Object.keys(rosterEntries).length > 0) {
+        this.cachedPilotRoster = { ...this.cachedPilotRoster, ...currentRoster, ...rosterEntries }
         // Atualiza roster no Room metadata (sem estourar cota de 16 kB)
         try {
           await OBR.room.setMetadata({
@@ -1044,6 +1047,11 @@ class OBRBridge {
           const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
           sceneUpdates[COMPCON_PILOT_INDEX_KEY] = Array.from(indexSet)
           await OBR.scene.setMetadata(sceneUpdates)
+        }
+
+        // Notifica componentes locais da janela atual imediatamente
+        for (const [id, entry] of Object.entries(rosterEntries)) {
+          window.dispatchEvent(new CustomEvent('compcon-pilot-synced', { detail: { pilotId: id, pilot: entry } }))
         }
       }
 
@@ -1086,6 +1094,10 @@ class OBRBridge {
         const roomUpdates: Record<string, any> = {}
 
         // Remove do Roster
+        delete this.cachedPilotRoster[pilotId]
+        for (const k of Object.keys(this.cachedPilotRoster)) {
+          if (k.toLowerCase() === pilotId.toLowerCase()) delete this.cachedPilotRoster[k]
+        }
         const roster = { ...((roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}) }
         let rosterChanged = false
         for (const k of Object.keys(roster)) {
@@ -1344,6 +1356,7 @@ class OBRBridge {
       }
 
       if (Object.keys(rosterEntries).length > 0) {
+        this.cachedNpcRoster = { ...this.cachedNpcRoster, ...currentRoster, ...rosterEntries }
         // Atualiza roster no Room metadata
         try {
           await OBR.room.setMetadata({
@@ -1360,6 +1373,11 @@ class OBRBridge {
           const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
           sceneUpdates[COMPCON_NPC_INDEX_KEY] = Array.from(indexSet)
           await OBR.scene.setMetadata(sceneUpdates)
+        }
+
+        // Notifica componentes locais da janela atual imediatamente
+        for (const [id, entry] of Object.entries(rosterEntries)) {
+          window.dispatchEvent(new CustomEvent('compcon-npc-synced', { detail: { npcId: id, npc: entry } }))
         }
       }
 
@@ -1401,6 +1419,10 @@ class OBRBridge {
         const roomUpdates: Record<string, any> = {}
 
         // Remove do Roster
+        delete this.cachedNpcRoster[npcId]
+        for (const k of Object.keys(this.cachedNpcRoster)) {
+          if (k.toLowerCase() === npcId.toLowerCase()) delete this.cachedNpcRoster[k]
+        }
         const roster = { ...((roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}) }
         let rosterChanged = false
         for (const k of Object.keys(roster)) {
@@ -1972,12 +1994,14 @@ class OBRBridge {
    * Obtém o catálogo/roster leve de pilotos da sala
    */
   public async getTablePilotRoster(): Promise<Record<string, any>> {
-    if (!this.isReady || !OBR.isAvailable) return {}
+    if (!this.isReady || !OBR.isAvailable) return this.cachedPilotRoster || {}
     try {
       const roomMeta = await OBR.room.getMetadata()
-      return (roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
+      const roster = (roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
+      this.cachedPilotRoster = { ...this.cachedPilotRoster, ...roster }
+      return this.cachedPilotRoster
     } catch {
-      return {}
+      return this.cachedPilotRoster || {}
     }
   }
 
@@ -1985,12 +2009,14 @@ class OBRBridge {
    * Obtém o catálogo/roster leve de NPCs da sala
    */
   public async getTableNpcRoster(): Promise<Record<string, any>> {
-    if (!this.isReady || !OBR.isAvailable) return {}
+    if (!this.isReady || !OBR.isAvailable) return this.cachedNpcRoster || {}
     try {
       const roomMeta = await OBR.room.getMetadata()
-      return (roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
+      const roster = (roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
+      this.cachedNpcRoster = { ...this.cachedNpcRoster, ...roster }
+      return this.cachedNpcRoster
     } catch {
-      return {}
+      return this.cachedNpcRoster || {}
     }
   }
 

@@ -785,16 +785,35 @@ const tableNpcRoster = ref<Record<string, any>>({})
 const isObrConnected = computed(() => obrBridge.getIsReady())
 const isGM = computed(() => obrBridge.getRole() === 'GM')
 
+function isSheetInRoster(sheet: any, roster: Record<string, any>): boolean {
+  if (!sheet || !roster) return false
+  const id = sheet.ID || sheet.id
+  if (!id) return false
+  if (roster[id]) return true
+  const lower = id.toLowerCase()
+  return Object.keys(roster).some(k => 
+    k.toLowerCase() === lower || 
+    roster[k]?.id?.toLowerCase() === lower || 
+    roster[k]?.ID?.toLowerCase() === lower
+  )
+}
+
 // Lista de pilotos na mesa (filtra local database pelo roster da sala)
 const pilotsList = computed(() => {
   const allPilots = PilotStore().Pilots || []
-  return allPilots.filter((p: any) => !!tablePilotRoster.value[p.ID])
+  if (!isObrConnected.value) {
+    return allPilots
+  }
+  return allPilots.filter((p: any) => isSheetInRoster(p, tablePilotRoster.value))
 })
 
 // Lista de NPCs na mesa (filtra local database pelo roster da sala)
 const npcsList = computed(() => {
   const allNpcs = NpcStore().Npcs || []
-  return allNpcs.filter((n: any) => !!tableNpcRoster.value[n.ID])
+  if (!isObrConnected.value) {
+    return allNpcs
+  }
+  return allNpcs.filter((n: any) => isSheetInRoster(n, tableNpcRoster.value))
 })
 
 // Filtragem de pilotos por busca
@@ -824,14 +843,14 @@ const filteredNpcs = computed(() => {
 // Opções para o select de publicação
 const localPilotsOptions = computed(() => {
   return (PilotStore().Pilots || []).map((p: any) => ({
-    id: p.ID,
+    id: p.ID || p.id,
     title: `${p.Callsign || p.Name} (${p.ActiveMech ? p.ActiveMech.Name : 'Sem Mech'}) - LL ${p.Level ?? 0}`,
   }))
 })
 
 const localNpcsOptions = computed(() => {
   return (NpcStore().Npcs || []).map((n: any) => ({
-    id: n.ID,
+    id: n.ID || n.id,
     title: `${n.Name} (${n.Class || 'NPC'}) ${n.Tier ? '- Tier ' + n.Tier : ''}`,
   }))
 })
@@ -845,6 +864,15 @@ async function refreshTableData() {
     boundTokens.value = await obrBridge.getSceneTokensWithBindings()
     tablePilotRoster.value = await obrBridge.getTablePilotRoster()
     tableNpcRoster.value = await obrBridge.getTableNpcRoster()
+
+    // Se o roster da sala tiver fichas não carregadas no store local, sincroniza da sala
+    const localPilotIds = new Set((PilotStore().Pilots || []).map((p: any) => (p.ID || p.id)?.toLowerCase()))
+    const hasMissingPilots = Object.keys(tablePilotRoster.value).some(id => !localPilotIds.has(id.toLowerCase()))
+    const localNpcIds = new Set((NpcStore().Npcs || []).map((n: any) => (n.ID || n.id)?.toLowerCase()))
+    const hasMissingNpcs = Object.keys(tableNpcRoster.value).some(id => !localNpcIds.has(id.toLowerCase()))
+    if (hasMissingPilots || hasMissingNpcs) {
+      await obrBridge.syncFromRoom().catch(() => {})
+    }
   } catch (err) {
     console.warn('[TableSheetManager] Erro ao atualizar lista de tokens/roster:', err)
   }
@@ -1116,12 +1144,12 @@ async function unbindSceneToken(tokenId: string) {
 // Publicar piloto selecionado
 async function publishSelectedPilot() {
   if (!selectedLocalPilotId.value) return
-  const pilot = PilotStore().Pilots.find((p: any) => p.ID === selectedLocalPilotId.value)
+  const pilot = PilotStore().Pilots.find((p: any) => (p.ID || p.id) === selectedLocalPilotId.value)
   if (!pilot) return
 
   isPublishingPilot.value = true
   try {
-    await obrBridge.savePilotToRoom(pilot)
+    await obrBridge.savePilotToRoom(pilot, true)
     await refreshTableData()
     activeTab.value = 'pilots'
     selectedLocalPilotId.value = null
@@ -1138,12 +1166,12 @@ async function publishSelectedPilot() {
 // Publicar NPC selecionado
 async function publishSelectedNpc() {
   if (!selectedLocalNpcId.value) return
-  const npc = NpcStore().Npcs.find((n: any) => n.ID === selectedLocalNpcId.value)
+  const npc = NpcStore().Npcs.find((n: any) => (n.ID || n.id) === selectedLocalNpcId.value)
   if (!npc) return
 
   isPublishingNpc.value = true
   try {
-    await obrBridge.saveNpcToRoom(npc)
+    await obrBridge.saveNpcToRoom(npc, true)
     await refreshTableData()
     activeTab.value = 'npcs'
     selectedLocalNpcId.value = null
@@ -1232,20 +1260,38 @@ function triggerImportDialog() {
   showImportModal.value = true
 }
 
-async function handleSheetImported(payload: { type: 'pilot' | 'npc' | 'encounter'; id: string }) {
+async function handleSheetImported(payload: { type: 'pilot' | 'npc' | 'encounter'; id: string; sheetId?: string }) {
   try {
     if (payload.type === 'pilot') {
-      const pilot = PilotStore().Pilots.find((p: any) => p.ID === payload.id)
+      let pilot: any = PilotStore().Pilots.find((p: any) => (p.ID || p.id) === payload.id)
+      if (!pilot && payload.sheetId) {
+        const sheet = PilotSheetStore().PilotSheets.find((s: any) => s.ID === payload.sheetId)
+        if (sheet?.Combatant?.actor) {
+          pilot = sheet.Combatant.actor
+        }
+      }
+      if (!pilot) {
+        const sheet = PilotSheetStore().PilotSheets.find((s: any) => s.ID === payload.id)
+        if (sheet?.Combatant?.actor) {
+          pilot = sheet.Combatant.actor
+        }
+      }
+      if (!pilot && PilotStore().Pilots.length > 0) {
+        pilot = PilotStore().Pilots[PilotStore().Pilots.length - 1]
+      }
       if (pilot) {
-        await obrBridge.savePilotToRoom(pilot)
+        await obrBridge.savePilotToRoom(pilot, true)
         if (OBR.isAvailable) {
           await OBR.notification.show(`Piloto ${pilot.Callsign || pilot.Name} importado e publicado na mesa!`)
         }
       }
     } else if (payload.type === 'npc') {
-      const npc = NpcStore().Npcs.find((n: any) => n.ID === payload.id)
+      let npc: any = NpcStore().Npcs.find((n: any) => (n.ID || n.id) === payload.id)
+      if (!npc && NpcStore().Npcs.length > 0) {
+        npc = NpcStore().Npcs[NpcStore().Npcs.length - 1]
+      }
       if (npc) {
-        await obrBridge.saveNpcToRoom(npc)
+        await obrBridge.saveNpcToRoom(npc, true)
         if (OBR.isAvailable) {
           await OBR.notification.show(`NPC ${npc.Name} importado e publicado na mesa!`)
         }
@@ -1286,6 +1332,7 @@ onMounted(async () => {
   window.addEventListener('compcon-npc-synced', handleSyncEvent)
   window.addEventListener('compcon-pilot-removed', handleSyncEvent)
   window.addEventListener('compcon-npc-removed', handleSyncEvent)
+  await obrBridge.syncFromRoom().catch(() => {})
   await refreshTableData()
 })
 

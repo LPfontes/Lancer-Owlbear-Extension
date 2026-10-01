@@ -118,7 +118,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'imported', payload: { type: 'pilot' | 'npc' | 'encounter'; id: string }): void
+  (e: 'imported', payload: { type: 'pilot' | 'npc' | 'encounter'; id: string; sheetId?: string }): void
 }>()
 
 const router = useRouter()
@@ -230,7 +230,17 @@ async function processImportPayload(data: any) {
     try {
       const sheet = PilotSheet.Deserialize(payload)
       await PilotSheetStore().ImportPilotSheet(sheet)
-      emit('imported', { type: 'pilot', id: sheet.ID })
+      const actor: any = sheet.Combatant?.actor
+      let targetId = sheet.ID
+      if (actor) {
+        const pilotStore = PilotStore()
+        targetId = actor.ID || actor.id || sheet.ID
+        const existingIdx = pilotStore.Pilots.findIndex((p: any) => (p.ID || p.id) === targetId)
+        if (existingIdx === -1 && actor.Callsign) {
+          await pilotStore.AddPilot(actor as Pilot)
+        }
+      }
+      emit('imported', { type: 'pilot', id: targetId, sheetId: sheet.ID })
       close()
       notify({ type: 'success', text: `Ficha ${sheet.Name || ''} importada com sucesso!` })
       if (props.redirect) {
@@ -252,8 +262,9 @@ async function processImportPayload(data: any) {
       await PilotStore().AddPilot(pilot)
       await PilotSheetStore().AddPilotSheet(pilot)
       const sheetId = PilotSheetStore().CurrentActiveID
+      const pilotId = pilot.ID || (pilot as any).id
       
-      emit('imported', { type: 'pilot', id: sheetId })
+      emit('imported', { type: 'pilot', id: pilotId, sheetId })
       close()
       notify({ type: 'success', text: `Ficha de ${pilot.Callsign || pilot.Name} importada com sucesso!` })
       if (props.redirect) {
@@ -270,8 +281,9 @@ async function processImportPayload(data: any) {
     try {
       const unit = Unit.Deserialize(payload)
       await NpcStore().AddNpc(unit)
+      const unitId = unit.ID || (unit as any).id
       
-      emit('imported', { type: 'npc', id: unit.ID })
+      emit('imported', { type: 'npc', id: unitId })
       close()
       notify({ type: 'success', text: `NPC ${unit.Name || ''} importado com sucesso!` })
       if (props.redirect) {
