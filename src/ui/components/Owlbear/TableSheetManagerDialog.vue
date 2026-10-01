@@ -785,14 +785,16 @@ const tableNpcRoster = ref<Record<string, any>>({})
 const isObrConnected = computed(() => obrBridge.getIsReady())
 const isGM = computed(() => obrBridge.getRole() === 'GM')
 
-// Lista de pilotos conhecidos (do PilotStore)
+// Lista de pilotos na mesa (filtra local database pelo roster da sala)
 const pilotsList = computed(() => {
-  return PilotStore().Pilots || []
+  const allPilots = PilotStore().Pilots || []
+  return allPilots.filter((p: any) => !!tablePilotRoster.value[p.ID])
 })
 
-// Lista de NPCs conhecidos (do NpcStore)
+// Lista de NPCs na mesa (filtra local database pelo roster da sala)
 const npcsList = computed(() => {
-  return NpcStore().Npcs || []
+  const allNpcs = NpcStore().Npcs || []
+  return allNpcs.filter((n: any) => !!tableNpcRoster.value[n.ID])
 })
 
 // Filtragem de pilotos por busca

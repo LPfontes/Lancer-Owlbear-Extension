@@ -799,11 +799,13 @@ const isObrConnected = computed(() => obrBridge.getIsReady())
 const isGM = computed(() => obrBridge.getRole() === 'GM')
 
 const pilotsList = computed(() => {
-  return PilotStore().Pilots || []
+  const allPilots = PilotStore().Pilots || []
+  return allPilots.filter((p: any) => !!tablePilotRoster.value[p.ID])
 })
 
 const npcsList = computed(() => {
-  return NpcStore().Npcs || []
+  const allNpcs = NpcStore().Npcs || []
+  return allNpcs.filter((n: any) => !!tableNpcRoster.value[n.ID])
 })
 
 const filteredPilots = computed(() => {
