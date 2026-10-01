@@ -5,11 +5,21 @@ import { parseApiError, NotFoundError, BadRequestError } from './apiErrors'
 
 export { NotFoundError, BadRequestError } from './apiErrors'
 
-const invoke = `${(import.meta as any).env.VITE_APP_INVOKE_URL || ''}`
+const invoke = `${(import.meta as any).env.VITE_APP_INVOKE_URL || 'https://idu55qr85i.execute-api.us-east-1.amazonaws.com/prod'}`
 
 const baseHeaders: Record<string, string> = {
   'Content-Type': 'application/json',
-  'x-api-key': (import.meta as any).env.VITE_APP_API_KEY || '',
+  'x-api-key': (import.meta as any).env.VITE_APP_API_KEY || 'Y5DnZ4miJi30iazqn9VV73A253Db7HRxamHEQeMr',
+}
+
+function buildApiUrl(endpoint: string): URL {
+  const base = invoke || 'https://idu55qr85i.execute-api.us-east-1.amazonaws.com/prod'
+  const cleanPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
+  try {
+    return new URL(cleanPath, base.startsWith('http') ? base : `${window.location.origin}${base}`)
+  } catch {
+    return new URL(cleanPath, 'https://idu55qr85i.execute-api.us-east-1.amazonaws.com/prod')
+  }
 }
 
 export async function getHeaders(forceRefresh = false): Promise<Record<string, string>> {
@@ -132,7 +142,7 @@ async function fetchWithRetry(
 }
 
 export const getUser = async (id: string): Promise<any> => {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', id)
   url.searchParams.append('scope', 'meta')
 
@@ -151,7 +161,7 @@ export const getUser = async (id: string): Promise<any> => {
 }
 
 export const getUserData = async (id: string): Promise<any> => {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', id)
   url.searchParams.append('scope', 'all')
 
@@ -169,7 +179,7 @@ export async function getUserDataChanged(
   id: string,
   since: number
 ): Promise<{ items: any[]; serverTime: number }> {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', id)
   url.searchParams.append('scope', 'changed')
   url.searchParams.append('since', String(since))
@@ -185,7 +195,7 @@ export async function getUserDataChanged(
 
 export async function updateItem(metadata: any, scope = 'item'): Promise<any> {
   logger.info('Updating item with metadata:', metadata)
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', UserStore().Cognito.userId ?? '')
   url.searchParams.append('scope', scope)
 
@@ -204,7 +214,7 @@ export async function updateItem(metadata: any, scope = 'item'): Promise<any> {
 }
 
 export async function getUploadPresigns(uris: string[]): Promise<Record<string, string>> {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', UserStore().Cognito.userId ?? '')
   url.searchParams.append('scope', 'presign')
 
@@ -220,7 +230,7 @@ export async function getUploadPresigns(uris: string[]): Promise<Record<string, 
 }
 
 export async function batchUpsert(items: any[]): Promise<any> {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', UserStore().Cognito.userId ?? '')
   url.searchParams.append('scope', 'batch')
 
@@ -235,7 +245,7 @@ export async function batchUpsert(items: any[]): Promise<any> {
 }
 
 export async function patchItem(sortkey: string, fields: Record<string, any>): Promise<any> {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', UserStore().Cognito.userId ?? '')
   url.searchParams.append('scope', 'patch')
 
@@ -250,7 +260,7 @@ export async function patchItem(sortkey: string, fields: Record<string, any>): P
 }
 
 export async function updateUser(id: string, payload: any): Promise<any> {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', id)
   url.searchParams.append('scope', 'meta')
 
@@ -292,7 +302,7 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export async function uploadToS3(data, presignedUrl, type = 'application/json') {
+export async function uploadToS3(data: any, presignedUrl: string, type = 'application/json') {
   const isPreSerialized = typeof data === 'string'
   logger.info(`Uploading data to S3, size=${isPreSerialized ? data.length : 'object'}`)
 
@@ -375,7 +385,7 @@ export async function downloadFromS3(s3Url: string) {
   }
 }
 
-export async function getFromPresignDirect(url) {
+export async function getFromPresignDirect(url: string) {
   try {
     const response = await fetch(url)
     if (response.ok) {
@@ -390,7 +400,7 @@ export async function getFromPresignDirect(url) {
 }
 
 export async function cloudDelete(user_id: string, sortkey: string, uri?: string) {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', user_id)
   url.searchParams.append('sortkey', sortkey)
   if (uri) url.searchParams.append('uri', uri)
@@ -408,7 +418,7 @@ export async function bulkDelete(
   sortkeys: string[],
   uris?: string[]
 ): Promise<any> {
-  const url = new URL(`${invoke}/user`)
+  const url = buildApiUrl('/user')
   url.searchParams.append('user_id', user_id)
   url.searchParams.append('scope', 'bulk')
 
@@ -427,7 +437,25 @@ export async function bulkDelete(
 
 // sends auth token when logged in so the response includes the is_own flag.
 export async function DownloadViaCode(code: string): Promise<any> {
-  const url = new URL(`${invoke}/code`)
+  // 1. Tenta via proxy /api/share (evita bloqueios de CORS e resolve fallbacks)
+  try {
+    const proxyRes = await fetch(`/api/share/${encodeURIComponent(code)}`)
+    if (proxyRes.ok) {
+      const data = await proxyRes.json()
+      if (data && (data.callsign || data.pilot || data.mechs || data.id || data.ID || data.save)) {
+        if (data.save) {
+          delete data.save.remote_code
+          delete data.save.remote_author
+          delete data.save.remote_collection
+        }
+        return data
+      }
+    }
+  } catch {
+    // continua para a rota oficial
+  }
+
+  const url = buildApiUrl('/code')
   url.searchParams.append('scope', 'item')
   url.searchParams.append('codes', JSON.stringify([code]))
 
@@ -447,27 +475,46 @@ export async function DownloadViaCode(code: string): Promise<any> {
 }
 
 export async function GetFromCode(codes: string | string[]) {
-  const url = new URL(`${invoke}/code`)
   const isArray = Array.isArray(codes)
+  const singleCode = !isArray ? codes : (codes.length === 1 ? codes[0] : null)
+
+  const url = buildApiUrl('/code')
   url.searchParams.append('scope', isArray ? 'items' : 'item')
   url.searchParams.append('codes', JSON.stringify(isArray ? codes : [codes]))
 
-  // share code lookups are public. send only the API key, not the auth token.
-  const response = await fetchWithRetry(url.toString(), {
-    method: 'GET',
-    headers: { ...baseHeaders },
-  })
+  try {
+    // share code lookups are public. send only the API key, not the auth token.
+    const response = await fetchWithRetry(url.toString(), {
+      method: 'GET',
+      headers: { ...baseHeaders },
+    })
 
-  const data = await response.json()
-
-  return data
+    const data = await response.json()
+    return data
+  } catch (err) {
+    if (singleCode) {
+      try {
+        const proxyRes = await fetch(`/api/share/${encodeURIComponent(singleCode)}`)
+        if (proxyRes.ok) {
+          const payload = await proxyRes.json()
+          return {
+            code: singleCode,
+            name: payload.name || payload.callsign || payload.Callsign || singleCode,
+            itemType: payload.itemType || 'pilot',
+            _payload: payload,
+          }
+        }
+      } catch {}
+    }
+    throw err
+  }
 }
 
 export async function redeemKeycode(
   userId: string,
   keycode: string
 ): Promise<{ granted: string[] }> {
-  const url = new URL(`${invoke}/keycode`)
+  const url = buildApiUrl('/keycode')
   url.searchParams.append('user_id', userId)
 
   const response = await fetchWithRetry(url.toString(), {
@@ -480,7 +527,7 @@ export async function redeemKeycode(
 }
 
 export async function GetAchievement(code: string) {
-  const url = new URL(`${invoke}/achievement`)
+  const url = buildApiUrl('/achievement')
   url.searchParams.append('code', code)
 
   const response = await fetchWithRetry(url.toString(), {

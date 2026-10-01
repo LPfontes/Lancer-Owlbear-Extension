@@ -8,9 +8,10 @@ export const OBR_TABLE_SHEETS_MODAL_ID = 'com.compcon.table_sheets.modal'
 export async function openTableSheetsWindow(): Promise<void> {
   if (OBR.isAvailable) {
     try {
+      const modalUrl = typeof window !== 'undefined' ? new URL('/#/table-sheets', window.location.href).href : '/#/table-sheets'
       await OBR.modal.open({
         id: OBR_TABLE_SHEETS_MODAL_ID,
-        url: '/#/table-sheets',
+        url: modalUrl,
         width: 980,
         height: 680,
       })
@@ -106,9 +107,10 @@ export async function openStandardWindow(targetRoute: string = '/#/active-mode')
 
   if (OBR.isAvailable) {
     try {
+      const popoverUrl = typeof window !== 'undefined' ? new URL(fullTargetUrl, window.location.href).href : fullTargetUrl
       await OBR.popover.open({
         id: OBR_STANDARD_POPOVER_ID,
-        url: fullTargetUrl,
+        url: popoverUrl,
         width,
         height,
         disableClickAway: true,

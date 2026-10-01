@@ -96,9 +96,9 @@ export async function handleProxyRequest(req, res) {
   
   if (reqUrl.pathname.startsWith('/api/share')) {
     const parts = reqUrl.pathname.split('/');
-    let code = parts[parts.length - 1];
+    let code = req.query?.code || parts[parts.length - 1];
 
-    if (!code || code === 'share') {
+    if (!code || code === 'share' || code === '[code]') {
       code = reqUrl.searchParams.get('code') || '';
     }
 
