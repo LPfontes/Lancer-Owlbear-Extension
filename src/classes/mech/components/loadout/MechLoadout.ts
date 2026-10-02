@@ -101,6 +101,19 @@ class MechLoadout {
   }
 
   public SetAllIntegrated() {
+    // Integrations are granted by raw ids, not by resolved items: a saved mech
+    // can carry the full data of an integrated weapon whose content pack is not
+    // installed (e.g. the Caliban's HHS-075 "Flayer" Shotgun from Long Rim).
+    // Pruning by resolved items would silently delete it on load.
+    const granted = new Set<string>([
+      ...this.Parent.FeatureController.IntegratedIDs,
+      ...this.Parent.Pilot.FeatureController.IntegratedIDs,
+      ...this.Systems.flatMap(x => x.IntegratedIDs || []),
+    ])
+
+    this._integratedSystems = this._integratedSystems.filter(x => x && granted.has(x.ID))
+    this._integratedMounts = this._integratedMounts.filter(x => x && granted.has(x.ID))
+
     const is = Array.from(
       new Set([
         ...this.Parent.FeatureController.IntegratedSystems,
@@ -115,8 +128,6 @@ class MechLoadout {
       }
     })
 
-    this._integratedSystems = is
-
     const im = Array.from(
       new Set([
         ...this.Parent.FeatureController.IntegratedWeapons,
@@ -130,8 +141,6 @@ class MechLoadout {
         this._integratedMounts.push(item)
       }
     })
-
-    this._integratedMounts = this._integratedMounts.filter(x => im.some(y => y.ID === x.ID))
   }
 
   public get IntegratedMounts(): IntegratedMount[] {
@@ -372,6 +381,17 @@ class MechLoadout {
     ml.ID = loadoutData.id
     ml._name = loadoutData.name
     ml._systems = loadoutData.systems.map(x => MechSystem.Deserialize(x))
+    // Integrations saved by older versions (and by v2 imports) may have no
+    // embedded data at all: a missing pack must never abort the whole loadout.
+    ml._integratedSystems = (loadoutData.integratedSystems ?? [])
+      .map(x => {
+        try {
+          return MechSystem.Deserialize(x)
+        } catch {
+          return null
+        }
+      })
+      .filter((x): x is MechSystem => x !== null)
     ml._equippableMounts = loadoutData.mounts.map(x => EquippableMount.Deserialize(x, ml))
     ml._integratedMounts = !loadoutData.integratedMounts
       ? mech.Frame.IntegratedWeapons.map(x => new IntegratedMount(x, ml))

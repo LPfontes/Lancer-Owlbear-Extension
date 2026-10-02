@@ -43,7 +43,7 @@
             {{ $t('ow.tabAppearance') }}
           </v-tab>
           <v-tab value="dddice" prepend-icon="mdi-dice-multiple" class="font-weight-bold text-uppercase">
-            Dados 3D (dddice)
+            Dados 3D (Dice+ / dddice)
           </v-tab>
         </v-tabs>
       </div>

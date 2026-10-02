@@ -15,6 +15,19 @@ const DEFAULT_COMBAT_ACTIONS = {
   InOvercharge: false,
 }
 
+// The cost of BRACE (LANCER core, see T-ACTION-brace-01 in
+// src/__tests__/rules/LANCER-RULES.md): until the end of its next turn the
+// braced character may take no reactions, and on that turn only a single quick
+// action — no protocol, no full actions, no second quick action, no overcharge.
+const BRACED_COMBAT_ACTIONS = {
+  ...DEFAULT_COMBAT_ACTIONS,
+  Protocol: false,
+  Full: false,
+  Quick2: false,
+  Overcharge: false,
+  Reaction: false,
+}
+
 const QUICK_ACTIVATIONS = ['quick', 'quicktech', 'invade']
 
 const normalizeActivation = (activation: string): string =>
@@ -23,7 +36,12 @@ const normalizeActivation = (activation: string): string =>
 const isQuickActivation = (activation: string): boolean =>
   QUICK_ACTIVATIONS.includes(normalizeActivation(activation))
 
-export { DEFAULT_COMBAT_ACTIONS, isQuickActivation, normalizeActivation }
+export {
+  DEFAULT_COMBAT_ACTIONS,
+  BRACED_COMBAT_ACTIONS,
+  isQuickActivation,
+  normalizeActivation,
+}
 
 interface IActionUseRecord {
   used: number
@@ -83,6 +101,9 @@ class ActionPoolController {
   }
 
   public RefreshReactions(): void {
+    // A braced character may take no reactions until the end of its next turn,
+    // so a turn start must not hand them back (T-ACTION-brace-01).
+    if (this._parent.Braced) return
     this.CombatActions.Reaction = true
   }
 

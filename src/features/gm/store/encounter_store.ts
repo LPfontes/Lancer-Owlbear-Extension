@@ -12,6 +12,56 @@ import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
 import { EncounterArchive } from '@/classes/encounter/EncounterArchive'
 import { clearUndoStack } from '@/classes/encounter/EncounterUndoStack'
 import { PilotStore } from '@/features/pilot_management/store'
+import { TAB_ID } from '@/services/tabId'
+
+function idOf(item: any): string {
+  return item?.ID || item?.id || item?._id || ''
+}
+
+// A stored copy may only replace a live object when it is strictly newer.
+// Otherwise a reload would swap objects out from under the components and the
+// encounter runner, which hold references across awaits — the "my edit
+// vanished" bug class. Equal or older on disk means the in-memory object is
+// authoritative (it is either freshly written or holds unsaved changes).
+function storedCopyIsNewer(live: any, stored: any): boolean {
+  const storedTime = Number(stored?.save?.lastModified ?? 0)
+  const liveTime = Number(live?.SaveController?.LastModified ?? live?.LastModified ?? 0)
+  return storedTime > liveTime
+}
+
+// Reconcile a stored collection into the live list by ID:
+//  - an ID in both keeps the live object unless the stored copy is newer;
+//  - an ID only in storage is deserialized and added;
+//  - an ID only in memory is dropped, so a deletion made in another window
+//    sticks instead of being resurrected from memory.
+function mergeByID<T>(
+  live: T[],
+  stored: any[],
+  deserialize: (data: any) => T,
+  onError: (err: unknown) => void
+): T[] {
+  const liveByID = new Map<string, T>()
+  for (const item of live) {
+    const id = idOf(item)
+    if (id) liveByID.set(id, item)
+  }
+
+  const merged: T[] = []
+  for (const data of stored) {
+    const id = idOf(data)
+    const current = id ? liveByID.get(id) : undefined
+    if (current && !storedCopyIsNewer(current, data)) {
+      merged.push(current)
+      continue
+    }
+    try {
+      merged.push(deserialize(data))
+    } catch (err) {
+      onError(err)
+    }
+  }
+  return merged
+}
 
 export const EncounterStore = defineStore('encounter', {
   state: () => ({
@@ -53,34 +103,56 @@ export const EncounterStore = defineStore('encounter', {
   },
   actions: {
     getActiveEncounter(id: string): EncounterInstance | undefined {
-      return this.ActiveEncounters.find(x => x.ID === id) as EncounterInstance
+      return this.ActiveEncounters.find(
+        (x: any) => x?.ID === id || x?._id === id || x?.id === id
+      ) as EncounterInstance
     },
     async LoadEncounters(): Promise<void> {
       const all = await GetAll('encounters')
-      this.Encounters = all.map(x => {
-        const enc = Encounter.Deserialize(x as IEncounterData)
-        return enc
-      })
+      this.Encounters = mergeByID(
+        this.Encounters,
+        all,
+        x => Encounter.Deserialize(x as IEncounterData),
+        err => logger.error('Failed to deserialize encounter, skipping', this, err)
+      )
       await this.LoadActiveEncounters()
       await this.LoadArchivedEncounters()
     },
 
+    // Local mutations update this store in place, so the only thing left to do
+    // is tell the OTHER windows that their copy of the encounter storage is
+    // stale. The sender tab id makes the bridge skip the echo in this window,
+    // which used to re-enter LoadEncounters in the middle of a mutation.
+    notifyEncounterChange(): void {
+      if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return
+      try {
+        const ch = new BroadcastChannel('compcon_obr_local_tabs')
+        ch.postMessage({ type: 'ENCOUNTER_STORAGE_UPDATED', senderTabId: TAB_ID })
+        ch.close()
+      } catch {
+        // BroadcastChannel unavailable: there is no other window to notify.
+      }
+    },
+
     async LoadActiveEncounters(): Promise<void> {
       const all = await GetAll('active_encounters')
-      this.ActiveEncounters = all.reduce((acc, x) => {
-        try {
-          acc.push(EncounterInstance.Deserialize(x))
-        } catch (err) {
-          logger.error('Failed to deserialize active encounter, skipping', this, err)
-        }
-        return acc
-      }, [] as EncounterInstance[])
+      this.ActiveEncounters = mergeByID(
+        this.ActiveEncounters,
+        all,
+        x => EncounterInstance.Deserialize(x),
+        err => logger.error('Failed to deserialize active encounter, skipping', this, err)
+      )
       await this.LoadActiveEncounterID()
     },
 
     async LoadArchivedEncounters(): Promise<void> {
       const all = await GetAll('encounter_archives')
-      this.ArchivedEncounters = all.map(x => EncounterArchive.Deserialize(x))
+      this.ArchivedEncounters = mergeByID(
+        this.ArchivedEncounters,
+        all,
+        x => EncounterArchive.Deserialize(x),
+        err => logger.error('Failed to deserialize encounter archive, skipping', this, err)
+      )
     },
 
     async LoadActiveEncounterID(): Promise<void> {
@@ -103,7 +175,7 @@ export const EncounterStore = defineStore('encounter', {
     async AddEncounter(payload: Encounter): Promise<void> {
       if (this.Encounters.some(x => x.ID === payload.ID)) {
         logger.warn(`Encounter with ID ${payload.ID} already exists, updating instead.`, this)
-        this.SetEncounter(
+        await this.SetEncounter(
           this.Encounters.findIndex(x => x.ID === payload.ID),
           payload
         )
@@ -113,11 +185,15 @@ export const EncounterStore = defineStore('encounter', {
       this.Encounters.push(payload)
       NavStore().updateEncounterEntry(payload)
       await SetItem('encounters', payload.Serialize())
+      this.notifyEncounterChange()
     },
 
     async SetEncounter(index: number, payload: Encounter): Promise<void> {
       if (!this.Encounters[index]) return
       this.Encounters.splice(index, 1, payload)
+      NavStore().updateEncounterEntry(payload)
+      await SetItem('encounters', payload.Serialize())
+      this.notifyEncounterChange()
     },
 
     async AddEncounterInstance(payload: EncounterInstance): Promise<void> {
@@ -132,6 +208,7 @@ export const EncounterStore = defineStore('encounter', {
         this.ActiveEncounters.push(payload)
       }
       await SetItem('active_encounters', toRaw(payload).Serialize())
+      this.notifyEncounterChange()
     },
 
     ReplaceActiveEncounter(payload: EncounterInstance): void {
@@ -149,6 +226,7 @@ export const EncounterStore = defineStore('encounter', {
         await RemoveItem('active_encounters', id)
         this.SaveActiveEncounterData()
         clearUndoStack(id)
+        this.notifyEncounterChange()
       }
     },
 
@@ -165,6 +243,7 @@ export const EncounterStore = defineStore('encounter', {
         this.CurrentActiveID = ''
         await SetValue('current_active_encounter_id', '')
       }
+      this.notifyEncounterChange()
     },
 
     // the common case is a GM running local-roster pilots, which needs no share code and no import
@@ -210,17 +289,20 @@ export const EncounterStore = defineStore('encounter', {
     async SetActiveEncounter(id: string): Promise<void> {
       this.CurrentActiveID = id
       await SetValue('current_active_encounter_id', id)
+      this.notifyEncounterChange()
     },
 
     async AssignActiveEncounter(payload: EncounterInstance): Promise<void> {
       this.CurrentActiveID = payload.ID
       await SetValue('current_active_encounter_id', payload.ID)
+      this.notifyEncounterChange()
     },
 
     async CloneEncounter(payload: Encounter): Promise<void> {
       const clone = toRaw(payload).Clone()
       this.Encounters.push(clone)
       await SetItem('encounters', clone.Serialize())
+      this.notifyEncounterChange()
     },
 
     async DeleteEncounterPermanent(payload: Encounter): Promise<void> {
@@ -233,10 +315,12 @@ export const EncounterStore = defineStore('encounter', {
       if (payload.CloudController.ShareCode) {
         await CloudController.MarkCloudDeleted(payload.CloudController.Metadata)
       }
+      this.notifyEncounterChange()
     },
 
     async SaveEncounterData(): Promise<void> {
       await saveAll('encounters', this.Encounters, y => toRaw(y).Serialize(), 'Encounter data')
+      this.notifyEncounterChange()
     },
 
     async SaveActiveEncounterData(): Promise<void> {
@@ -246,6 +330,7 @@ export const EncounterStore = defineStore('encounter', {
         y => toRaw(y).Serialize(),
         'Active Encounter data'
       )
+      this.notifyEncounterChange()
     },
   },
 })

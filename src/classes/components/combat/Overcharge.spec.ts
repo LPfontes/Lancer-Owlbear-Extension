@@ -196,7 +196,7 @@ describe('overcharge state', () => {
     expect(cc().CombatActions.Quick1).toBe(false)
   })
 
-  it('clears through the brace cooldown branch of EndRound', () => {
+  it('keeps overcharge locked while braced', () => {
     cc().StartOvercharge()
     cc().Braced = true
     cc().EndRound(null)

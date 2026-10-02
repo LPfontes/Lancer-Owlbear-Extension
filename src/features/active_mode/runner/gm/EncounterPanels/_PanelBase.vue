@@ -102,7 +102,7 @@
             <timed-effect-panel :item="item" />
 
             <v-row
-              class="my-2 flex-nowrap align-center overflow-x-auto stats-row"
+              class="my-2 align-center overflow-x-auto stats-row"
               dense
             >
               <v-col
@@ -312,10 +312,7 @@
             </v-row>
 
             <div class="mb-2">
-              <lancer-foundry-stats-hud
-                v-if="item.ItemType === 'pilot' || item.ItemType === 'mech'"
-                :item="item"
-              >
+              <lancer-foundry-stats-hud :item="item">
                 <template #dmg>
                   <damage-menu
                     v-if="item.CombatController.StatController.MaxStats['hp']"
@@ -324,19 +321,6 @@
                   />
                 </template>
               </lancer-foundry-stats-hud>
-              <component
-                :is="trackableStatsComponent"
-                v-else
-                :item="item"
-              >
-                <template #dmg>
-                  <damage-menu
-                    v-if="item.CombatController.StatController.MaxStats['hp']"
-                    :encounter="encounterInstance.Encounter"
-                    :controller="item.CombatController"
-                  />
-                </template>
-              </component>
               <custom-stat-editor :item="item" />
             </div>
 

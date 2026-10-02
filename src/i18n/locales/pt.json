@@ -177,6 +177,8 @@
     "hase_e": "E",
     "alert": "Alerta",
     "ok": "OK",
+    "tools": "Ferramentas",
+    "encounter": "Encontro",
     "a11y": {
       "mainNavigation": "Menu Principal",
       "toggleNavigation": "Alternar painel de navegação"
@@ -2138,7 +2140,11 @@
     "newEnc": {
       "title": "Novo Encontro Ativo Local",
       "encounterData": "Dados do encontro",
-      "additionalNpcs": "PNJs adicionais podem ser adicionados no Gerenciador de Encontros após a criação."
+      "additionalNpcs": "PNJs adicionais podem ser adicionados no Gerenciador de Encontros após a criação.",
+      "loadFromJson": "Carregar de JSON / Sharecode",
+      "jsonOrSharecode": "Sharecode",
+      "jsonOrSharecodePlaceholder": "Cole o JSON do encontro ou insira um Sharecode do COMP/CON (ex: J9LJUQ9PCJA6)",
+      "loadEncounter": "Carregar Encontro"
     },
     "tableManager": {
       "published": "lista de tabelas publicadas",
@@ -2352,6 +2358,7 @@
       "selectTable": "Selecione uma tabela para visualizar seu conteúdo."
     },
     "initiative": {
+      "title": "Iniciativa & Reforços",
       "reinforcementsN": "reforços ({n})",
       "destroyedN": "Destruído ({n})",
       "statusGroupN": "{status} ({n})"

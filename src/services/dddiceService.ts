@@ -1,6 +1,9 @@
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
 import { windowManager } from '@/services/windowManager'
+import { dicePlusService } from '@/services/dicePlusService'
+
+export type DiceProvider = 'dice-plus' | 'dddice' | 'none'
 
 export interface DddiceDie {
   type: string // e.g. 'd20', 'd6', 'd4', 'd8', 'd10', 'd12', 'd100', 'mod'
@@ -29,6 +32,7 @@ export interface DddiceRollData {
 export interface DddiceConfig {
   version?: number
   enabled: boolean
+  provider: DiceProvider
   roomSlug: string
   passcode?: string
   apiKey: string
@@ -60,6 +64,7 @@ class DddiceService {
   public config = reactive<DddiceConfig>({
     version: CONFIG_VERSION,
     enabled: true,
+    provider: 'dice-plus',
     roomSlug: '',
     passcode: '',
     apiKey: '',
@@ -71,7 +76,8 @@ class DddiceService {
   })
 
   public isConnected = ref<boolean>(false)
-  public isRolling = ref<boolean>(false)
+  private _isRolling = ref<boolean>(false)
+  public isRolling = computed<boolean>(() => this._isRolling.value || dicePlusService.isRolling.value)
   public lastRoll = ref<any>(null)
   public lastError = ref<string | null>(null)
   public availableThemes = ref<Array<{ id: string; name: string }>>([
@@ -93,7 +99,9 @@ class DddiceService {
     this.loadConfig()
     this.guestToken = localStorage.getItem(STORAGE_KEY_GUEST_TOKEN)
 
-    if (this.config.autoDetectRoom && this.config.enabled && OBR.isAvailable) {
+    dicePlusService.init()
+
+    if (this.config.autoDetectRoom && this.config.enabled && this.config.provider === 'dddice' && OBR.isAvailable) {
       void this.detectRoomFromObr()
     }
   }
@@ -107,9 +115,13 @@ class DddiceService {
           parsed.enabled = true
           parsed.version = CONFIG_VERSION
         }
+        if (!parsed.provider) {
+          parsed.provider = parsed.roomSlug ? 'dddice' : 'dice-plus'
+        }
         Object.assign(this.config, parsed)
       } else {
         this.config.enabled = true
+        this.config.provider = 'dice-plus'
         this.config.version = CONFIG_VERSION
         this.saveConfig()
       }
@@ -391,16 +403,45 @@ class DddiceService {
     return dice
   }
 
+  public hasDiceToRoll(params: DddiceRollParams): boolean {
+    if (params.accuracy && params.accuracy !== 0) {
+      return true
+    }
+    if (params.dice && params.dice.length > 0) {
+      const physicalDice = params.dice.filter(d => d.type && d.type.toLowerCase() !== 'mod')
+      if (physicalDice.length > 0) return true
+    }
+    if (params.diceString && /\d*d\d+/i.test(params.diceString)) {
+      return true
+    }
+    return false
+  }
+
   /**
    * Dispara a rolagem 3D no dddice com fallback resiliente
    */
   public async rollDice(params: DddiceRollParams): Promise<DddiceRollData | false> {
+    if (!this.config.enabled) return false
+    if (!this.hasDiceToRoll(params)) return false
+
+    if (this.config.provider === 'none') {
+      return false
+    }
+
+    if (this.config.provider === 'dice-plus') {
+      const res = await dicePlusService.rollDice(params)
+      if (res) {
+        this.lastRoll.value = res
+        return res
+      }
+      return false
+    }
+
     // Minimiza temporariamente a janela durante a rolagem para exibir os dados 3D na mesa
     if (this.config.minimizeOnRoll) {
       windowManager.minimizeForRoll(this.config.minimizeDuration || 4)
     }
 
-    if (!this.config.enabled) return false
     if (!this.config.roomSlug) {
       // Se não tiver sala configurada, tenta autodetectar uma vez
       if (this.config.autoDetectRoom) {
@@ -456,7 +497,7 @@ class DddiceService {
       await this.joinRoom(this.config.roomSlug)
     }
 
-    this.isRolling.value = true
+    this._isRolling.value = true
     this.lastError.value = null
 
     try {
@@ -521,7 +562,7 @@ class DddiceService {
       console.warn('[dddice] Exceção ao rolar dados:', e)
       return false
     } finally {
-      this.isRolling.value = false
+      this._isRolling.value = false
     }
   }
 
@@ -541,6 +582,10 @@ class DddiceService {
    * Rolagem de teste para validação de conectividade
    */
   public async testRoll(): Promise<{ success: boolean; message: string }> {
+    if (this.config.provider === 'dice-plus') {
+      return dicePlusService.testRoll()
+    }
+
     if (!this.config.roomSlug) {
       return { success: false, message: 'Informe ou detecte o código da sala (Room Slug) antes de testar.' }
     }

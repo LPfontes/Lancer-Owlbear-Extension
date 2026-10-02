@@ -264,6 +264,16 @@ abstract class CompendiumItem {
     return this.IntegratedEquipment.filter(x => x.ItemType === ItemType.MechWeapon) as MechWeapon[]
   }
 
+  /**
+   * The raw `integrated` ids declared by this item, before they are resolved
+   * against the compendium. Integrations whose content pack is not installed
+   * cannot be resolved, but they are still granted - see
+   * {@link MechLoadout.SetAllIntegrated}.
+   */
+  public get IntegratedIDs(): string[] {
+    return this._integrated ? [...this._integrated] : []
+  }
+
   public get IntegratedSystems(): MechSystem[] {
     return this.IntegratedEquipment.filter(x => x.ItemType === ItemType.MechSystem) as MechSystem[]
   }

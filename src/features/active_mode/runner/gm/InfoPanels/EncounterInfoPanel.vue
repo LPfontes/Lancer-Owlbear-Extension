@@ -145,45 +145,53 @@
     </v-card-text>
 
     <v-card-text>
-      <div class="text-cc-overline text-disabled">{{ $t('active.encInfo.reinforcements') }}</div>
-      <span
-        v-if="!reinforcementsByTurn.length"
-        class="text-disabled"
-      >
-        {{ $t('active.encInfo.noReinforcements') }}
-      </span>
-      <cc-panel
-        v-else
-        variant="outlined"
-        class="ml-2"
-      >
-        <v-row
-          v-for="reinforcement in reinforcementsByTurn"
-          :key="reinforcement.turn"
-          dense
-          align="center"
+      <div class="text-cc-overline text-disabled">{{ $t('active.initiative.title') }}</div>
+      <div v-if="encounterInstance" class="mt-2">
+        <gm-initiative-panel
+          :encounter-instance="encounterInstance"
+          :expanded="true"
+        />
+      </div>
+      <div v-else>
+        <span
+          v-if="!reinforcementsByTurn.length"
+          class="text-disabled"
         >
-          <v-col
-            cols="auto"
-            class="text-accent heading"
+          {{ $t('active.encInfo.noReinforcements') }}
+        </span>
+        <cc-panel
+          v-else
+          variant="outlined"
+          class="ml-2"
+        >
+          <v-row
+            v-for="reinforcement in reinforcementsByTurn"
+            :key="reinforcement.turn"
+            dense
+            align="center"
           >
-            <span v-if="reinforcement.turn">
-              {{ $t('active.encInfo.turnN', { n: reinforcement.turn }) }}
-            </span>
-            <span v-else>{{ $t('active.encInfo.freeDeployment') }}</span>
-          </v-col>
-          <v-col>
-            <ul class="text-text">
-              <li
-                v-for="combatant in reinforcement.combatants"
-                :key="combatant.id"
-              >
-                {{ combatant.actor.Name }}
-              </li>
-            </ul>
-          </v-col>
-        </v-row>
-      </cc-panel>
+            <v-col
+              cols="auto"
+              class="text-accent heading"
+            >
+              <span v-if="reinforcement.turn">
+                {{ $t('active.encInfo.turnN', { n: reinforcement.turn }) }}
+              </span>
+              <span v-else>{{ $t('active.encInfo.freeDeployment') }}</span>
+            </v-col>
+            <v-col>
+              <ul class="text-text">
+                <li
+                  v-for="combatant in reinforcement.combatants"
+                  :key="combatant.id"
+                >
+                  {{ combatant.actor.Name }}
+                </li>
+              </ul>
+            </v-col>
+          </v-row>
+        </cc-panel>
+      </div>
     </v-card-text>
   </v-card>
 </template>
@@ -197,6 +205,7 @@
   import { useI18n } from 'vue-i18n'
   const { t } = useI18n()
   import * as _ from 'lodash-es'
+  import GmInitiativePanel from '../_components/GmInitiativePanel.vue'
 
   defineOptions({ name: 'EncounterInfo' })
 

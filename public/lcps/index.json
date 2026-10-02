@@ -1,0 +1,150 @@
+[
+  {
+    "file": "ktb.lcp",
+    "id": "l2LyED6bpwu6FATD80SCqegdxvE=",
+    "name": "Lancer KTB Data",
+    "author": "Massif Press",
+    "version": "2.0.2",
+    "itemPrefix": "ktb",
+    "v3": true,
+    "collections": [
+      "bonds",
+      "frames",
+      "statuses",
+      "systems",
+      "tags",
+      "talents",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/ktb-data/tree/master"
+  },
+  {
+    "file": "long-rim.lcp",
+    "id": "eK3m5/lSUgllpz12ZjWcfL/TC2c=",
+    "name": "Lancer Long Rim Data",
+    "author": "Massif Press",
+    "version": "2.0.2",
+    "itemPrefix": "msf-tlr-",
+    "v3": true,
+    "collections": [
+      "downtime_actions",
+      "frames",
+      "mods",
+      "systems",
+      "talents",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/long-rim-data/tree/v3"
+  },
+  {
+    "file": "wallflower.lcp",
+    "id": "MMhitef+jvmY2uy9kdaCSXKJSeA=",
+    "name": "Lancer Wallflower Data",
+    "author": "Massif Press",
+    "version": "3.0.4",
+    "itemPrefix": "wf-act1",
+    "v3": true,
+    "collections": [
+      "frames",
+      "pilot_gear",
+      "reserves",
+      "systems",
+      "talents",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/wallflower-data/tree/v3"
+  },
+  {
+    "file": "dustgrave.lcp",
+    "id": "05B2PGxewZ193c4GaHDBoE2sl8U=",
+    "name": "LANCER: Dustgrave",
+    "author": "Ralf Ziegler",
+    "version": "2.0.2",
+    "itemPrefix": "dustgrave-",
+    "v3": true,
+    "collections": [
+      "core_bonuses",
+      "environments",
+      "frames",
+      "npc_features",
+      "npc_templates",
+      "pilot_gear",
+      "reserves",
+      "systems",
+      "talents",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/dustgrave-data/tree/master"
+  },
+  {
+    "file": "osr.lcp",
+    "id": "GWG3TKHfJGNXeO3U3Q+CgjhS/Os=",
+    "name": "Operation Solstice Rain Data",
+    "author": "Massif Press",
+    "version": "2.0.1",
+    "itemPrefix": "osr",
+    "v3": true,
+    "collections": [
+      "environments",
+      "frames",
+      "reserves",
+      "systems",
+      "talents",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/osr-data/tree/v3"
+  },
+  {
+    "file": "ows.lcp",
+    "id": "xX6hfQwgnreJ8BLny07FueBFWrg=",
+    "name": "Operation Winter Scar",
+    "author": "Massif Press",
+    "version": "2.0.1",
+    "itemPrefix": "winterscar",
+    "v3": true,
+    "collections": [
+      "core_bonuses",
+      "frames",
+      "mods",
+      "systems",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/ows-data/tree/master"
+  },
+  {
+    "file": "sotw.lcp",
+    "id": "w2IDRl6mAY9Emo6d1CTb6TnQgj8=",
+    "name": "Shadow of the Wolf",
+    "author": "Katherine Stark",
+    "version": "2.0.0",
+    "itemPrefix": "sotw",
+    "v3": true,
+    "collections": [
+      "backgrounds",
+      "bonds",
+      "frames",
+      "npc_features",
+      "pilot_gear",
+      "systems"
+    ],
+    "repo": "https://github.com/massif-press/sotw-data/tree/v3"
+  },
+  {
+    "file": "ssmr.lcp",
+    "id": "B/5RiGRmQef6GvXMnoE51htsja4=",
+    "name": "Siren's Song, A Mountain's Remorse",
+    "author": "NHP SHAKA",
+    "version": "2.0.0",
+    "itemPrefix": "ssmr1",
+    "v3": true,
+    "collections": [
+      "frames",
+      "pilot_gear",
+      "reserves",
+      "systems",
+      "talents",
+      "weapons"
+    ],
+    "repo": "https://github.com/massif-press/ssmr-data/tree/v3"
+  }
+]

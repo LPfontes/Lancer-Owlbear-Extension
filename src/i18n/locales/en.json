@@ -179,6 +179,8 @@
     "hase_e": "E",
     "alert": "Alert",
     "ok": "OK",
+    "tools": "Tools",
+    "encounter": "Encounter",
     "a11y": {
       "mainNavigation": "Main navigation",
       "toggleNavigation": "Toggle navigation panel"
@@ -1290,7 +1292,11 @@
     "newEnc": {
       "title": "New Local Active Encounter",
       "encounterData": "Encounter data",
-      "additionalNpcs": "Additional NPCs can be added in the Encounter Runner after creation."
+      "additionalNpcs": "Additional NPCs can be added in the Encounter Runner after creation.",
+      "loadFromJson": "Load from JSON / Sharecode",
+      "jsonOrSharecode": "JSON or Sharecode",
+      "jsonOrSharecodePlaceholder": "Paste encounter JSON or enter a COMP/CON Sharecode (e.g., J9LJUQ9PCJA6)",
+      "loadEncounter": "Load Encounter"
     },
     "tableManager": {
       "published": "list of published tables",
@@ -1504,6 +1510,7 @@
       "selectTable": "Select a table to view its contents."
     },
     "initiative": {
+      "title": "Initiative & Reinforcements",
       "reinforcementsN": "reinforcements ({n})",
       "destroyedN": "Destroyed ({n})",
       "statusGroupN": "{status} ({n})"

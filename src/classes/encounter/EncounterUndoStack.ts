@@ -94,7 +94,12 @@ function serializeJson(instance: EncounterInstance): string {
 
 function trySerializeJson(instance: EncounterInstance): string | null {
   try {
-    return serializeJson(instance)
+    const data = EncounterInstance.Serialize(instance)
+    // A broken instance serializes to a shell with no id (Serialize fills in
+    // the defaults rather than throwing), and a snapshot like that could never
+    // be restored onto anything, so treat it as unserializable.
+    if (!data || !(data as any).id) return null
+    return JSON.stringify(data)
   } catch (err) {
     logger.error('Failed to serialize encounter undo snapshot', instance, err)
     return null

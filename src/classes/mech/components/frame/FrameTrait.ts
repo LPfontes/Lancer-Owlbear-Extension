@@ -107,6 +107,10 @@ class FrameTrait {
       .filter(x => !!x) as MechWeapon[]
   }
 
+  public get IntegratedIDs(): string[] {
+    return this._integrated ? [...this._integrated] : []
+  }
+
   public get IntegratedSystems(): MechSystem[] {
     return this._integrated
       .map(x => CompendiumStore().MechSystems.find(item => item.ID === x))

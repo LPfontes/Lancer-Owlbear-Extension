@@ -50,6 +50,8 @@
   import { UserStore } from '@/stores'
   import ShareCodeResult from './ShareCodeResult.vue'
 
+  import { notify } from '@/util/notify'
+
   withDefaults(
     defineProps<{
       importType?: string
@@ -115,15 +117,24 @@
         const { obrBridge } = await import('@/services/obrBridge')
         if (itemType === 'pilot') {
           await obrBridge.savePilotToRoom(item, true)
-        } else if (itemType === 'npc') {
+        } else if (['npc', 'unit', 'doodad', 'eidolon'].includes(itemType)) {
           await obrBridge.saveNpcToRoom(item, true)
         }
       } catch {}
+
+      notify({
+        type: 'success',
+        text: `${item.Name || (item as any).Callsign || 'Ficha'} adicionada com sucesso!`,
+      })
 
       importer.value?.reset()
       importer.value?.close()
     } catch (err: any) {
       console.error('Erro ao adicionar cópia da ficha:', err)
+      notify({
+        type: 'error',
+        text: err?.message || 'Erro ao adicionar cópia da ficha',
+      })
     } finally {
       dlLoading.value = false
     }

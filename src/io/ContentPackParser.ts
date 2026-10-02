@@ -65,8 +65,11 @@ async function getZipData<T>(zip: JSZip, filename: string): Promise<T[]> {
   return readResult || []
 }
 
-const parseContentPack = async function (binString: string): Promise<IContentPack> {
-  const zip = await JSZip.loadAsync(binString)
+/** A `.lcp` archive: a zip, either already read as text or as raw bytes. */
+type PackSource = string | ArrayBuffer | Uint8Array
+
+const parseContentPack = async function (source: PackSource): Promise<IContentPack> {
+  const zip = await JSZip.loadAsync(source)
 
   const manifest = await readZipJSON<IContentPackManifest>(zip, 'lcp_manifest.json')
   if (!manifest) throw new Error('Content pack has no manifest')
@@ -281,8 +284,8 @@ const parseContentPack = async function (binString: string): Promise<IContentPac
 
 // Language patches (.llp) an LCP author bundled inside the .lcp zip for single-file distribution.
 // Returns the raw parsed JSON objects; the caller validates them.
-const getBundledPatches = async function (binString: string): Promise<unknown[]> {
-  const zip = await JSZip.loadAsync(binString)
+const getBundledPatches = async function (source: PackSource): Promise<unknown[]> {
+  const zip = await JSZip.loadAsync(source)
   const names = await getZipFiles(zip)
   const out: unknown[] = []
   for (const name of names) {

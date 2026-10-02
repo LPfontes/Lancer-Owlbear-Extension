@@ -287,7 +287,7 @@ async function processImportPayload(data: any) {
       close()
       notify({ type: 'success', text: `NPC ${unit.Name || ''} importado com sucesso!` })
       if (props.redirect) {
-        router.push('/active-mode/manage-encounters')
+        router.push('/active-mode/npcs')
       }
       return
     } catch (e) {

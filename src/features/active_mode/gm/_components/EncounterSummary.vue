@@ -1,264 +1,305 @@
 <template>
-  <v-row>
-    <v-col
-      cols="1"
-      class="text-center"
-    >
-      <v-icon
-        icon="mdi-checkbox-marked-circle-auto-outline"
-        :color="pilots.length || placeholders.length ? 'success' : 'panel'"
-        size="50"
-      />
-    </v-col>
-    <v-col>
-      <div class="text-cc-overline mb-1">
-        <cc-slashes class="pr-1" />
-        <span class="text-disabled">{{ $t('common.overview') }}</span>
-      </div>
-      <cc-panel>
-        <div class="heading h2">{{ encounter.Name }}</div>
-        <div class="text-cc-overline">
-          <span class="text-disabled">
-            {{ $t('common.environment') }}
-            <cc-slashes />
-          </span>
-          {{ encounter.Environment.Name }} &mdash;
-          <span class="text-disabled">
-            {{ $t('common.sitrep') }}
-            <cc-slashes />
-          </span>
-          {{ encounter.Sitrep.Name }}
+  <div>
+    <v-row>
+      <v-col cols="12">
+        <div class="text-cc-overline mb-1">
+          <cc-slashes class="pr-1" />
+          <span class="text-disabled">{{ $t('common.overview') }}</span>
         </div>
-        <v-row class="mt-1 mb-2">
-          <v-col>
-            <cc-panel
-              color="panel"
-              flat
-              tile
-              class="pb-4"
-            >
-              <div
-                class="heading"
-                h3
-              >
-                <cc-slashes />
-                <span class="text-lowercase">{{ $t('pm.roster.pilots') }}</span>
-              </div>
-              <v-divider class="mb-2" />
-              <v-row
-                v-for="(p, i) in participants"
-                :key="p.key"
-                :class="i % 2 === 0 ? 'bg-background' : 'bg-surface'"
+        <cc-panel color="transparent" density="no-gutters">
+          <div class="heading h2">{{ encounter.Name }}</div>
+          <div class="text-cc-overline">
+            <span class="text-disabled">
+              {{ $t('common.environment') }}
+              <cc-slashes />
+            </span>
+            {{ encounter.Environment.Name }} &mdash;
+            <span class="text-disabled">
+              {{ $t('common.sitrep') }}
+              <cc-slashes />
+            </span>
+            {{ encounter.Sitrep.Name }}
+          </div>
+          <v-row class="mt-1 mb-2">
+            <v-col cols="12">
+              <cc-panel
+                color="panel"
                 flat
                 tile
-                dense
-                class="px-2"
+                class="pb-4"
               >
-                <v-col
-                  cols="auto"
-                  class="mr-1"
-                >
-                  <cc-avatar
-                    v-if="p.avatar"
-                    :avatar="p.avatar"
-                    size="48"
-                  />
-                  <cc-img
-                    v-else-if="p.portrait"
-                    :src="p.portrait"
-                    height="48"
-                    width="48"
-                  />
-                  <v-icon
-                    v-else
-                    size="48"
-                    icon="cc:pilot"
-                    class="text-primary"
-                  />
-                </v-col>
-                <v-col>
-                  <div class="heading h3">
-                    {{ p.title }}
-                    <span
-                      v-if="p.player"
-                      class="text-cc-overline text-disabled"
-                    >
-                      ({{ p.player }})
-                    </span>
-                  </div>
-                  <div class="text-cc-overline">
-                    <cc-slashes />
-                    <span v-if="p.mechName">{{ p.mechName }}</span>
-                    {{ p.frameInfo }}
-                  </div>
-                </v-col>
-              </v-row>
-            </cc-panel>
-          </v-col>
-          <v-col>
-            <cc-panel
-              color="panel"
-              flat
-              tile
-              class="pb-4"
-            >
-              <div
-                class="heading"
-                h3
-              >
-                <cc-slashes />
-                {{ $t('common.npcs') }}
-              </div>
-              <v-divider class="mb-2" />
-              <v-row
-                v-for="(n, i) in encounter.Combatants.sort((a, b) =>
-                  a.side.localeCompare(b.side)
-                ).filter(c => (c.playerCount ?? 1) <= 1 || (c.playerCount ?? 1) <= pilots.length)"
-                :key="n.id"
-                :class="Number(i) % 2 === 0 ? 'bg-background' : 'bg-surface'"
-                flat
-                tile
-                dense
-                class="px-2"
-              >
-                <v-col
-                  cols="auto"
-                  class="mr-n2"
-                >
-                  <v-icon
-                    size="48"
-                    :icon="n.actor.Icon"
-                  />
-                </v-col>
-                <v-col
-                  cols="auto"
-                  class="mr-1"
-                >
-                  <cc-img
-                    v-if="n.actor.Portrait"
-                    :src="n.actor.Portrait"
-                    height="48"
-                    width="48"
-                  />
-                  <v-icon
-                    v-else
-                    size="48"
-                    :icon="n.actor.TagIcon"
-                  />
-                </v-col>
-                <v-col>
-                  <div class="heading h3">{{ n.actor.Name }}</div>
-                  <div class="text-cc-overline">
-                    <span
-                      v-if="n.actor.NpcClassController?.Tier"
-                      class="pr-1"
-                    >
-                      {{ $t('common.tierN', { n: n.actor.NpcClassController?.Tier }) }}
-                    </span>
-                    <span
-                      v-if="n.actor.NpcClassController?.Class"
-                      class="pr-1"
-                    >
-                      {{ n.actor.NpcClassController?.Class.Name }}
-                    </span>
-                    <span
-                      v-if="n.actor.Tag"
-                      class="pr-1"
-                    >
-                      {{ n.actor.Tag }}
-                    </span>
-                    <span v-if="n.actor.NpcTemplateController?.Templates.length">
-                      <cc-slashes />
-                      {{ n.actor.NpcTemplateController?.Templates.map(t => t.Name).join(', ') }}
-                    </span>
-                  </div>
+                <div class="d-flex align-center justify-space-between mb-1">
                   <div
-                    v-if="n.reinforcement"
-                    class="bg-panel text-center text-cc-overline pa-0"
+                    class="heading"
+                    h3
                   >
-                    {{ $t('common.reinforcement') }}
-                    <span v-if="n.reinforcementTurn">
-                      {{ $t('active.encSummary.turnN', { n: n.reinforcementTurn }) }}
-                    </span>
+                    <cc-slashes />
+                    <span class="text-lowercase">{{ $t('pm.roster.pilots') }}</span>
                   </div>
-                </v-col>
-                <v-col
-                  cols="auto"
-                  class="pr-0"
+                  <add-from-roster
+                    :encounter="encounter"
+                    :pilots="pilots"
+                  />
+                </div>
+                <v-divider class="mb-2" />
+                <div
+                  v-if="!participants.length"
+                  class="text-disabled text-caption text-center py-2"
                 >
-                  <v-chip
-                    size="x-small"
-                    flat
-                    tile
-                    class="text-cc-overline"
-                    :color="n.side"
+                  {{ $t('common.none') }}
+                </div>
+                <v-row
+                  v-for="(p, i) in participants"
+                  :key="p.key"
+                  :class="i % 2 === 0 ? 'bg-background' : 'bg-surface'"
+                  flat
+                  tile
+                  dense
+                  class="px-2"
+                >
+                  <v-col
+                    cols="auto"
+                    class="mr-1"
                   >
-                    {{ n.side }}
-                  </v-chip>
-                </v-col>
-              </v-row>
-            </cc-panel>
-          </v-col>
-        </v-row>
-        <cc-button
-          block
-          color="success"
-          :disabled="!pilots.length && !placeholders.length"
-          :prepend-icon="
-            pilots.length && placeholders.length
-              ? 'mdi-arrow-right-bold-hexagon-outline'
-              : 'mdi-alert'
-          "
-          @click="emit('create', true)"
-        >
-          <span v-if="!pilots.length && !placeholders.length">
-            {{ $t('active.encSummary.requiresPilot') }}
-          </span>
-          <span v-else>{{ $t('active.encSummary.createAndLaunch') }}</span>
-        </cc-button>
-        <v-row
-          v-if="pilots.length || placeholders.length"
-          dense
-          class="mt-1"
-        >
-          <v-col cols="3">
-            <cc-button
-              block
-              size="small"
-              color="error"
-              prepend-icon="mdi-close"
-              @click="emit('cancel')"
-            >
-              {{ $t('common.cancel') }}
-            </cc-button>
-          </v-col>
-          <v-col>
-            <cc-button
-              block
-              size="small"
-              color="primary"
-              prepend-icon="mdi-content-save"
-              @click="emit('create', false)"
-            >
-              {{ $t('active.encSummary.createReturnLibrary') }}
-            </cc-button>
-          </v-col>
-        </v-row>
-      </cc-panel>
-    </v-col>
-  </v-row>
+                    <cc-avatar
+                      v-if="p.avatar"
+                      :avatar="p.avatar"
+                      size="48"
+                    />
+                    <cc-img
+                      v-else-if="p.portrait"
+                      :src="p.portrait"
+                      height="48"
+                      width="48"
+                    />
+                    <v-icon
+                      v-else
+                      size="48"
+                      icon="cc:pilot"
+                      class="text-primary"
+                    />
+                  </v-col>
+                  <v-col>
+                    <div class="heading h3">
+                      {{ p.title }}
+                      <span
+                        v-if="p.player"
+                        class="text-cc-overline text-disabled"
+                      >
+                        ({{ p.player }})
+                      </span>
+                    </div>
+                    <div class="text-cc-overline">
+                      <cc-slashes />
+                      <span v-if="p.mechName">{{ p.mechName }}</span>
+                      {{ p.frameInfo }}
+                    </div>
+                  </v-col>
+                  <v-col cols="auto" class="d-flex align-center">
+                    <v-btn
+                      icon="mdi-close"
+                      size="x-small"
+                      variant="text"
+                      color="error"
+                      @click="removeParticipant(p.key)"
+                    />
+                  </v-col>
+                </v-row>
+              </cc-panel>
+            </v-col>
+            <v-col cols="12">
+              <cc-panel
+                color="panel"
+                flat
+                tile
+                class="pb-4"
+              >
+                <div class="d-flex align-center justify-space-between mb-1">
+                  <div class="heading h3">
+                    <cc-slashes />
+                    {{ $t('common.npcs') }}
+                  </div>
+                  <cc-button
+                    size="small"
+                    color="accent"
+                    prepend-icon="mdi-plus"
+                    @click="addNpcDialog = true"
+                  >
+                    {{ $t('gm.combatant.addNpc') }}
+                  </cc-button>
+                </div>
+                <v-divider class="mb-2" />
+                <v-row
+                  v-for="(n, i) in encounter.Combatants.sort((a, b) =>
+                    a.side.localeCompare(b.side)
+                  ).filter(c => !pilots.length || (c.playerCount ?? 1) <= 1 || (c.playerCount ?? 1) <= pilots.length)"
+                  :key="n.id"
+                  :class="Number(i) % 2 === 0 ? 'bg-background' : 'bg-surface'"
+                  flat
+                  tile
+                  dense
+                  class="px-2"
+                >
+                  <v-col
+                    cols="auto"
+                    class="mr-n2"
+                  >
+                    <v-icon
+                      size="48"
+                      :icon="n.actor.Icon"
+                    />
+                  </v-col>
+                  <v-col
+                    cols="auto"
+                    class="mr-1"
+                  >
+                    <cc-img
+                      v-if="n.actor.Portrait"
+                      :src="n.actor.Portrait"
+                      height="48"
+                      width="48"
+                    />
+                    <v-icon
+                      v-else
+                      size="48"
+                      :icon="n.actor.TagIcon"
+                    />
+                  </v-col>
+                  <v-col>
+                    <div class="heading h3">{{ n.actor.Name }}</div>
+                    <div class="text-cc-overline">
+                      <span
+                        v-if="n.actor.NpcClassController?.Tier"
+                        class="pr-1"
+                      >
+                        {{ $t('common.tierN', { n: n.actor.NpcClassController?.Tier }) }}
+                      </span>
+                      <span
+                        v-if="n.actor.NpcClassController?.Class"
+                        class="pr-1"
+                      >
+                        {{ n.actor.NpcClassController?.Class.Name }}
+                      </span>
+                      <span
+                        v-if="n.actor.Tag"
+                        class="pr-1"
+                      >
+                        {{ n.actor.Tag }}
+                      </span>
+                      <span v-if="n.actor.NpcTemplateController?.Templates.length">
+                        <cc-slashes />
+                        {{ n.actor.NpcTemplateController?.Templates.map(t => t.Name).join(', ') }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="n.reinforcement"
+                      class="bg-panel text-center text-cc-overline pa-0"
+                    >
+                      {{ $t('common.reinforcement') }}
+                      <span v-if="n.reinforcementTurn">
+                        {{ $t('active.encSummary.turnN', { n: n.reinforcementTurn }) }}
+                      </span>
+                    </div>
+                  </v-col>
+                  <v-col
+                    cols="auto"
+                    class="pr-0"
+                  >
+                    <v-chip
+                      size="x-small"
+                      flat
+                      tile
+                      class="text-cc-overline"
+                      :color="n.side"
+                    >
+                      {{ n.side }}
+                    </v-chip>
+                  </v-col>
+                </v-row>
+              </cc-panel>
+            </v-col>
+          </v-row>
+          <cc-button
+            block
+            color="success"
+            prepend-icon="mdi-arrow-right-bold-hexagon-outline"
+            @click="emit('create', true)"
+          >
+            <span>{{ $t('active.encSummary.createAndLaunch') }}</span>
+          </cc-button>
+          <v-row
+            dense
+            class="mt-1"
+          >
+            <v-col>
+              <cc-button
+                block
+                size="small"
+                color="primary"
+                prepend-icon="mdi-content-save"
+                @click="emit('create', false)"
+              >
+                {{ $t('active.encSummary.createReturnLibrary') }}
+              </cc-button>
+            </v-col>
+          </v-row>
+        </cc-panel>
+      </v-col>
+    </v-row>
+  
+    <!-- Dialog para adicionar NPC ao Encontro -->
+    <v-dialog
+      v-model="addNpcDialog"
+      fullscreen
+    >
+      <v-card>
+        <v-toolbar density="compact">
+          <v-toolbar-title class="heading h3">
+            <span>{{ $t('gm.combatant.selectNpc') }}</span>
+          </v-toolbar-title>
+          <v-spacer />
+          <v-btn
+            icon
+            @click="addNpcDialog = false"
+          >
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-toolbar>
+        <combatant-selector
+          :encounter="encounter"
+          mode="list"
+          @select="handleAddNpc"
+        />
+      </v-card>
+    </v-dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue'
+  import { computed, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
+  import { notify } from '@/util/notify'
   import type { Placeholder } from '@/classes/encounter/Placeholder'
   import type { Pilot } from '@/classes/pilot/Pilot'
   import type { Encounter } from '@/classes/encounter/Encounter'
+  import AddFromRoster from './AddFromRoster.vue'
+  import CombatantSelector from '@/features/gm/encounters/_components/combatants/CombatantSelector.vue'
+
+  const { t } = useI18n()
+
   const props = defineProps<{
     encounter: Encounter
     pilots: Pilot[]
     placeholders: Placeholder[]
   }>()
+
+  const emit = defineEmits<{
+    create: [launch: boolean]
+    cancel: []
+    'remove-pilot': [key: string]
+  }>()
+
+  const addNpcDialog = ref(false)
 
   const participants = computed(() => [
     ...props.pilots.map(p => ({
@@ -284,8 +325,29 @@
     })),
   ])
 
-  const emit = defineEmits<{
-    create: [launch: boolean]
-    cancel: []
-  }>()
+  function removeParticipant(key: string) {
+    const pilotIdx = props.pilots.findIndex(p => p.ID === key)
+    if (pilotIdx !== -1) {
+      props.pilots.splice(pilotIdx, 1)
+      emit('remove-pilot', key)
+      return
+    }
+    const phIdx = props.placeholders.findIndex(p => p.ID === key)
+    if (phIdx !== -1) {
+      props.placeholders.splice(phIdx, 1)
+    }
+  }
+
+  function handleAddNpc(npc: any) {
+    props.encounter.AddCombatant(npc)
+    notify({
+      title: t('gm.encounter.combatantAddedTitle', { name: npc.Name }),
+      text: t('gm.encounter.combatantAddedText', {
+        name: npc.Name,
+        encounterName: props.encounter.Name,
+      }),
+      icon: 'cc:encounter',
+    })
+    addNpcDialog.value = false
+  }
 </script>

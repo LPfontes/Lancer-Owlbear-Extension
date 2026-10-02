@@ -139,7 +139,9 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
       this.Combatants.sort((a, b) => a.index - b.index)
 
       const playerCount = pilots.length + placeholders.length
-      this.Combatants = this.Combatants.filter(c => !c.playerCount || c.playerCount <= playerCount)
+      if (playerCount > 0) {
+        this.Combatants = this.Combatants.filter(c => !c.playerCount || c.playerCount <= playerCount)
+      }
 
       this.StampLogContext()
       this.ApplyPassiveResistances()
@@ -157,8 +159,8 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
               l.CombatController.StatController,
               this
             )
-            l.ResetHp(playerCount, true)
-            l.SetActivations(playerCount)
+            l.ResetHp(Math.max(1, playerCount), true)
+            l.SetActivations(Math.max(1, playerCount))
             l.CombatController.StatController.resetCurrentStats()
             l.CombatController.Reset()
           })
@@ -402,22 +404,38 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
       return {} as IEncounterInstanceData
     }
 
+    const inst = instance as any
+    const id = inst.ID || inst.id || inst._id
+    const combatants = (inst.Combatants || inst.combatants || []).map((c: any) =>
+      Encounter.SerializeCombatant(c)
+    )
+    const round = inst._round ?? inst.Round ?? inst.round ?? 1
+    const enc = inst._cachedEncounterData ?? (inst.Encounter ? Encounter.Serialize(inst.Encounter) : inst.encounter ? Encounter.Serialize(inst.encounter) : null)
+
     const data = {
       itemType: 'EncounterInstance',
-      id: instance.ID,
-      combatants: instance.Combatants.map(c => Encounter.SerializeCombatant(c)),
-      round: instance._round,
-      encounter: instance._cachedEncounterData ?? Encounter.Serialize(instance.Encounter),
-      isActive: instance.IsActive,
-      autosave: instance.Autosave,
-      simple_tickbars: instance.SimpleTickbars,
-      force_complex_tickbars: instance.ForceComplexTickbars,
-      layout_columns: instance.LayoutColumns,
-      max_masonry_columns: instance.MaxMasonryColumns,
+      id,
+      combatants,
+      round,
+      encounter: enc,
+      isActive: inst.IsActive ?? inst.isActive ?? false,
+      autosave: inst.Autosave ?? inst.autosave ?? true,
+      simple_tickbars: inst.SimpleTickbars ?? inst.simple_tickbars ?? false,
+      force_complex_tickbars: inst.ForceComplexTickbars ?? inst.force_complex_tickbars ?? false,
+      layout_columns: inst.LayoutColumns ?? inst.layout_columns ?? true,
+      max_masonry_columns: inst.MaxMasonryColumns ?? inst.max_masonry_columns ?? 1,
     } as IEncounterInstanceData
 
-    SaveController.Serialize(instance, data)
-    CloudController.Serialize(instance, data)
+    if (inst.SaveController) {
+      SaveController.Serialize(inst, data)
+    } else if (inst.save) {
+      data.save = inst.save
+    }
+    if (inst.CloudController) {
+      CloudController.Serialize(inst, data)
+    } else if (inst.cloud) {
+      data.cloud = inst.cloud
+    }
 
     return data as IEncounterInstanceData
   }

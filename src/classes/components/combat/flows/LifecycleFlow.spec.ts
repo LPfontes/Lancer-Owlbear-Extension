@@ -24,6 +24,7 @@ describe('EndTurnFlow', () => {
       'spend-activation',
       'clear-turn-uses',
       'next-activation',
+      'clear-braced',
       'refresh-table-reactions',
     ])
   })

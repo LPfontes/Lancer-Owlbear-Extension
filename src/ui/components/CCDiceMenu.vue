@@ -567,12 +567,14 @@
         dicePayload.push({ type: `d${sides}` })
       }
     }
-    void dddiceService.rollDice({
-      dice: dicePayload,
-      flatBonus: (flat.value || 0) + extraMod,
-      accuracy: accuracy.value,
-      label: props.title || 'Roll',
-    })
+    if (dicePayload.length > 0 || accuracy.value !== 0) {
+      void dddiceService.rollDice({
+        dice: dicePayload,
+        flatBonus: (flat.value || 0) + extraMod,
+        accuracy: accuracy.value,
+        label: props.title || 'Roll',
+      })
+    }
 
     const formulaStr =
       dice.value.map(d => `${d.count}d${d.sides}`).join(' + ') +

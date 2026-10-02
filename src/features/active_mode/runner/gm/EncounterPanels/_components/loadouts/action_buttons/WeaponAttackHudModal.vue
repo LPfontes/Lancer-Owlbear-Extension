@@ -226,8 +226,12 @@
   })
 
   const rangeString = computed(() => {
-    if (props.item?.Range && props.item.Range.length) {
-      return props.item.Range.map((r: any) => {
+    let rangeData = props.item?.Range
+    if (typeof rangeData === 'function') {
+      try { rangeData = rangeData(1, []) } catch(e) { rangeData = [] }
+    }
+    if (rangeData && Array.isArray(rangeData) && rangeData.length) {
+      return rangeData.map((r: any) => {
         let typeLabel = r.Type ? enumLabel('rangeType', r.Type) : ''
         if (r.Type === 'Threat' || typeLabel === 'Threat') typeLabel = 'Ameaça'
         if (r.Type === 'Sensors' || typeLabel === 'Sensors') typeLabel = 'Sensores'
@@ -238,8 +242,12 @@
   })
 
   const damageString = computed(() => {
-    if (props.item?.Damage && props.item.Damage.length) {
-      return props.item.Damage.map((d: any) => {
+    let damageData = props.item?.Damage
+    if (typeof damageData === 'function') {
+      try { damageData = damageData(1, []) } catch(e) { damageData = [] }
+    }
+    if (damageData && Array.isArray(damageData) && damageData.length) {
+      return damageData.map((d: any) => {
         let typeLabel = d.Type ? enumLabel('damageType', d.Type) : ''
         if (d.Type === 'Heat' || typeLabel?.toLowerCase() === 'heat') typeLabel = 'Calor'
         return `${typeLabel ? typeLabel + ' ' : ''}${d.Value}`

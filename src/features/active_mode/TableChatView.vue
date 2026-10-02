@@ -74,102 +74,175 @@
       </div>
     </div>
 
-    <!-- Botão para Abrir a Janela da Ficha (COMP/CON na lateral direita) -->
-    <div class="px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
-      <v-btn
-        block
-        color="accent"
-        variant="tonal"
-        size="small"
-        class="font-weight-bold text-uppercase rounded-0"
-        prepend-icon="mdi-card-account-details-outline"
-        append-icon="mdi-dock-window"
-        title="Abrir a Janela da Ficha do COMP/CON na lateral direita"
-        @click="handleOpenMainWindow"
-      >
-        Abrir Janela da Ficha
-      </v-btn>
-    </div>
-
-    <!-- Barra de Filtros e Busca -->
-    <div class="filter-bar px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
-      <div class="d-flex align-center ga-1 overflow-x-auto pb-1 category-chips-scroll">
-        <v-chip
-          v-for="cat in filterOptions"
-          :key="cat.value"
-          size="x-small"
-          rounded="0"
-          :color="tableActionStore.filterCategory === cat.value ? 'accent' : 'default'"
-          :variant="tableActionStore.filterCategory === cat.value ? 'flat' : 'text'"
-          class="font-weight-bold cursor-pointer flex-shrink-0 rounded-0"
-          @click="tableActionStore.filterCategory = cat.value"
-        >
-          {{ cat.label }}
-        </v-chip>
-      </div>
-
-      <div class="d-flex align-center ga-2 mt-1">
-        <!-- Seletor de Ator (se houver mais de 1) -->
-        <v-select
-          v-if="tableActionStore.actorsList.length > 1"
-          v-model="tableActionStore.filterActor"
-          :items="[{ title: 'Todos os Pilotos', value: 'all' }, ...actorSelectItems]"
-          density="compact"
-          variant="outlined"
-          hide-details
-          class="actor-select flex-grow-1"
-          style="font-size: 11px;"
-        />
-
-        <!-- Campo de Busca Rápida -->
-        <v-text-field
-          v-model="tableActionStore.searchQuery"
-          density="compact"
-          variant="outlined"
-          placeholder="Filtrar ações..."
-          prepend-inner-icon="mdi-magnify"
-          hide-details
-          clearable
-          class="search-input flex-grow-1"
-          style="font-size: 11px;"
-        />
-      </div>
-    </div>
-
-    <!-- Feed de Mensagens e Ações (Scrollável) -->
-    <div
-      ref="feedContainer"
-      class="chat-feed-container flex-grow-1 px-3 py-2 overflow-y-auto"
+    <!-- Abas de Navegação Superior: Tracker de Combate vs Ações & Chat -->
+    <v-tabs
+      v-model="currentTab"
+      density="compact"
+      color="accent"
+      bg-color="grey-darken-4"
+      class="border-b border-grey-darken-3 flex-shrink-0"
     >
-      <div v-if="!tableActionStore.filteredActions.length" class="empty-state text-center py-10 px-4">
-        <v-icon icon="mdi-clipboard-text-clock-outline" size="44" color="grey-darken-1" class="mb-2" />
-        <div class="text-subtitle-2 text-grey-lighten-1">
-          Nenhuma ação encontrada
-        </div>
-      </div>
+      <v-tab value="tracker" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
+        <v-icon icon="cc:encounter" class="mr-1" size="18" />
+        Tracker
+        <v-chip
+          v-if="encounterRound"
+          size="x-small"
+          color="accent"
+          class="ml-1 px-1 font-weight-bold text-black"
+          style="height: 16px; font-size: 9.5px;"
+        >
+          R{{ encounterRound }}
+        </v-chip>
+      </v-tab>
+      <v-tab value="chat" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
+        <v-icon icon="mdi-sword-cross" class="mr-1" size="18" />
+        Ações & Chat
+        <v-chip
+          v-if="tableActionStore.actions.length > 0"
+          size="x-small"
+          color="grey-darken-2"
+          class="ml-1 px-1"
+          style="height: 16px; font-size: 9.5px;"
+        >
+          {{ tableActionStore.actions.length }}
+        </v-chip>
+      </v-tab>
+    </v-tabs>
 
-      <TableActionCard
-        v-for="action in tableActionStore.filteredActions"
-        :key="action.id"
-        :action="action"
+    <!-- Aba 1: Tracker de Combate -->
+    <div
+      v-show="currentTab === 'tracker'"
+      class="flex-grow-1 overflow-hidden flex-column"
+      :class="currentTab === 'tracker' ? 'd-flex' : 'd-none'"
+    >
+      <CombatTrackerTab
+        :active-filter="trackerActiveFilter"
+        @update:side-filters="trackerSideFilters = $event"
+        @update:active-filter="trackerActiveFilter = $event"
       />
     </div>
 
-    <!-- Rodapé de Ações Rápidas e Input de Chat -->
-    <TableActionInput class="flex-shrink-0" />
+    <!-- Aba 2: Feed de Mensagens e Ações da Mesa -->
+    <div
+      v-show="currentTab === 'chat'"
+      class="flex-grow-1 overflow-hidden flex-column"
+      :class="currentTab === 'chat' ? 'd-flex' : 'd-none'"
+    >
+      <!-- Botão para Abrir a Janela da Ficha (COMP/CON na lateral direita) -->
+      <div class="px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
+        <v-btn
+          block
+          color="accent"
+          variant="tonal"
+          size="small"
+          class="font-weight-bold text-uppercase rounded-0"
+          prepend-icon="mdi-card-account-details-outline"
+          append-icon="mdi-dock-window"
+          title="Abrir a Janela da Ficha do COMP/CON na lateral direita"
+          @click="handleOpenMainWindow"
+        >
+          Abrir Janela da Ficha
+        </v-btn>
+      </div>
+
+      <!-- Barra de Filtros e Busca -->
+      <div class="filter-bar px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
+        <div class="d-flex align-center ga-1 overflow-x-auto pb-1 category-chips-scroll">
+          <v-chip
+            v-for="cat in filterOptions"
+            :key="cat.value"
+            size="x-small"
+            rounded="0"
+            :color="tableActionStore.filterCategory === cat.value ? 'accent' : 'default'"
+            :variant="tableActionStore.filterCategory === cat.value ? 'flat' : 'text'"
+            class="font-weight-bold cursor-pointer flex-shrink-0 rounded-0"
+            @click="tableActionStore.filterCategory = cat.value"
+          >
+            {{ cat.label }}
+          </v-chip>
+        </div>
+
+        <div class="d-flex align-center ga-2 mt-1">
+          <!-- Seletor de Ator (se houver mais de 1) -->
+          <v-select
+            v-if="tableActionStore.actorsList.length > 1"
+            v-model="tableActionStore.filterActor"
+            :items="[{ title: 'Todos os Pilotos', value: 'all' }, ...actorSelectItems]"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="actor-select flex-grow-1"
+            style="font-size: 11px;"
+          />
+
+          <!-- Campo de Busca Rápida -->
+          <v-text-field
+            v-model="tableActionStore.searchQuery"
+            density="compact"
+            variant="outlined"
+            placeholder="Filtrar ações..."
+            prepend-inner-icon="mdi-magnify"
+            hide-details
+            clearable
+            class="search-input flex-grow-1"
+            style="font-size: 11px;"
+          />
+        </div>
+      </div>
+
+      <!-- Feed de Mensagens e Ações (Scrollável) -->
+      <div
+        ref="feedContainer"
+        class="chat-feed-container flex-grow-1 px-3 py-2 overflow-y-auto"
+      >
+        <div v-if="!tableActionStore.filteredActions.length" class="empty-state text-center py-10 px-4">
+          <v-icon icon="mdi-clipboard-text-clock-outline" size="44" color="grey-darken-1" class="mb-2" />
+          <div class="text-subtitle-2 text-grey-lighten-1">
+            Nenhuma ação encontrada
+          </div>
+        </div>
+
+        <TableActionCard
+          v-for="action in tableActionStore.filteredActions"
+          :key="action.id"
+          :action="action"
+        />
+      </div>
+
+      <!-- Rodapé de Ações Rápidas e Input de Chat -->
+      <TableActionInput class="flex-shrink-0" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useTableActionStore } from '@/stores/tableActionStore'
+import { EncounterStore } from '@/stores'
 import { closeTableChatWindow, detachTableChatWindow } from '@/services/tableChatWindow'
 import { openMainWindow, isMainWindowOpen } from '@/services/mainWindow'
 import TableActionCard from '@/ui/components/TableActionDrawer/TableActionCard.vue'
 import TableActionInput from '@/ui/components/TableActionDrawer/TableActionInput.vue'
+import CombatTrackerTab from '@/ui/components/TableActionDrawer/CombatTrackerTab.vue'
 
 const tableActionStore = useTableActionStore()
+const encounterStore = EncounterStore()
 const feedContainer = ref<HTMLElement | null>(null)
+const currentTab = ref<'tracker' | 'chat'>('tracker')
+const trackerSideFilters = ref<{ label: string; value: string; count: number }[]>([])
+const trackerActiveFilter = ref<'all' | 'enemy' | 'ally' | 'neutral' | 'pending'>('all')
+
+const encounterRound = computed(() => {
+  if (encounterStore.CurrentActiveID) {
+    const enc = encounterStore.getActiveEncounter(encounterStore.CurrentActiveID)
+    if (enc) return enc.Round
+  }
+  if (encounterStore.ActiveEncounters?.length > 0) {
+    return encounterStore.ActiveEncounters[0].Round
+  }
+  return null
+})
 
 function handleOpenMainWindow() {
   void openMainWindow(false)
@@ -214,6 +287,7 @@ function confirmClearHistory() {
 onMounted(async () => {
   try {
     await tableActionStore.init()
+    await encounterStore.LoadEncounters().catch(() => {})
   } catch (e) {
     console.warn('[TableChatView] Erro ao inicializar store:', e)
   }
@@ -233,6 +307,14 @@ watch(
     })
   }
 )
+
+watch(currentTab, (tab) => {
+  if (tab === 'chat') {
+    nextTick(() => {
+      scrollToBottom()
+    })
+  }
+})
 </script>
 
 <style scoped>
@@ -276,6 +358,14 @@ watch(
 
 .chat-feed-container::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--v-theme-accent), 0.6);
+}
+
+.filter-chips-scroll {
+  scrollbar-width: none;
+}
+
+.filter-chips-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .category-chips-scroll::-webkit-scrollbar {

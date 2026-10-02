@@ -196,9 +196,12 @@ const panelMap: Record<string, any> = {
     if (targetId) {
       let targetSheet = sheetStore.GetSheet(targetId)
       if (!targetSheet) {
-        targetSheet = sheetStore.PilotSheets.find(
+        // The Pinia store's inferred PilotSheets type is structurally weaker
+        // than the PilotSheet class (it loses the private SaveController
+        // members), so cast the collection and keep the runtime lookup as-is.
+        targetSheet = (sheetStore.PilotSheets as any[]).find(
           (s: any) => !s.SaveController?.IsDeleted && (s.PilotID === targetId || s.ID === targetId)
-        )
+        ) ?? null
         if (targetSheet?.Archived) {
           targetSheet.Unarchive()
         }

@@ -1,9 +1,10 @@
 <template>
   <div class="text-overline">{{ $t('common.sitrep') }}</div>
   <v-card
-    class="py-2 px-4"
-    variant="outlined"
-    style="border-color: rgb(var(--v-theme-panel))"
+    class="pa-0"
+    flat
+    variant="flat"
+    color="transparent"
   >
     <v-row align="center">
       <v-col>

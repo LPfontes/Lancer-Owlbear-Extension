@@ -212,23 +212,10 @@
     ],
     [
       {
-        title: t('active.titles.localEncounters'),
-        subtitle: t('active.subtitles.createManageAndRunLocalEncounters'),
-        icon: 'cc:encounter',
-        to: '/active-mode/manage-encounters',
-      },
-      {
         title: t('gm.titles.npcRoster'),
         subtitle: t('gm.subtitles.manageNonPlayerCombatUnits'),
         icon: 'cc:npc',
         to: '/active-mode/npcs',
-      },
-      {
-        id: 'last-local',
-        small: true,
-        subtitle: t('active.subtitles.resumeLast'),
-        icon: 'mdi-restart',
-        to: '',
       },
     ],
   ])

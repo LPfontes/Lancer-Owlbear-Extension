@@ -3,10 +3,8 @@ import { Flow, step } from './Flow'
 import type { IFlowStep } from './Flow'
 import { StatKey } from '../stats/Stats'
 import { ActivePeriod } from '@/classes/Frequency'
-import { DEFAULT_COMBAT_ACTIONS } from '../ActionPoolController'
-import { EffectSpecial } from '../../feature/active_effects/effect_subtype/EffectSpecial'
+import { BRACED_COMBAT_ACTIONS, DEFAULT_COMBAT_ACTIONS } from '../ActionPoolController'
 import { TimedEffect } from '../../feature/active_effects/TimedEffect'
-import { expiration } from '../Expiration'
 import { expiredIn } from '../Duration'
 import { statusRef } from '../log/refs'
 import type { CombatController } from '../CombatController'
@@ -23,8 +21,6 @@ interface IEndRoundState {
   encounter?: any
   silent?: boolean
 }
-
-const BRACE_COOLDOWN_DETAIL_KEY = 'active.statusCond.braceCooldownDetail'
 
 const burnCheck: IFlowStep<IEndTurnState> = {
   Name: 'burn-check',
@@ -89,9 +85,10 @@ const refreshTableReactions = step<IEndTurnState>('refresh-table-reactions', s =
 })
 
 const clearBraced = step<IEndTurnState>('clear-braced', s => {
-  if (s.cc.Braced) {
-    s.cc.SetBraced(false)
-  }
+  if (!s.cc.Braced) return
+  // The braced turn is over: release the brace and hand the action pool back.
+  s.cc.SetBraced(false)
+  s.cc.ResetCombatActions()
 })
 
 export const EndTurnFlow = new Flow<IEndTurnState>(
@@ -112,11 +109,16 @@ export const EndTurnFlow = new Flow<IEndTurnState>(
 const braceTeardown = step<IEndRoundState>('brace-teardown', s => {
   s.cc.Turn = 1
   s.cc.ClearBoost()
-  s.cc.StatController.setCurrentStat(StatKey.SPEED, s.cc.StatController.getMax(StatKey.SPEED))
-  s.cc.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }
+  // A character still braced keeps paying for it: no refreshed movement, and
+  // only a single quick action until its turn ends (see clearBraced above).
+  // A character that is not braced gets a clean pool and its speed back.
+  s.cc.CombatActions = s.cc.Braced
+    ? { ...BRACED_COMBAT_ACTIONS }
+    : { ...DEFAULT_COMBAT_ACTIONS }
+  if (!s.cc.Braced) {
+    s.cc.StatController.setCurrentStat(StatKey.SPEED, s.cc.StatController.getMax(StatKey.SPEED))
+  }
 })
-
-
 
 const spendRemainingActivation = step<IEndRoundState>('spend-remaining-activation', s => {
   if (s.cc.StatController.getCurrent(StatKey.ACTIVATIONS) < 1) return

@@ -312,11 +312,15 @@
     const combatants = encounterInstance.value?.Combatants || []
     for (const c of combatants) {
       if (c.actor?.CombatController?.RootActor?.ID === currentId) continue
-      const name = c.actor?.Callsign || c.actor?.Name || c.name || 'Alvo'
-      const eDef = c.actor?.CombatController?.Edefense || c.actor?.Edefense || c.actor?.StatController?.getCurrent?.('edef') || 8
-      const heat = c.actor?.CombatController?.CurrentHeat ?? c.actor?.CurrentHeat ?? 0
-      const maxHeat = c.actor?.CombatController?.MaxHeat ?? c.actor?.MaxHeat ?? 0
-      const frame = c.actor?.Frame?.Name || c.actor?.Class || (c.side ? `Lado ${c.side}` : 'Combatente')
+      const name = c.actor?.Callsign || c.actor?.Name || 'Alvo'
+      // In COMP/CON, Heat and E-Defense live on StatController (StatKey.EDEF /
+      // StatKey.HEATCAP): there are no Edefense/CurrentHeat/MaxHeat properties
+      // on the actor classes, so those probes never resolved.
+      const eDef = c.actor?.StatController?.getCurrent?.('edef') || 8
+      const heat = c.actor?.StatController?.getCurrent?.('heatcap') ?? 0
+      const maxHeat = c.actor?.StatController?.getMax?.('heatcap') ?? 0
+      // Frame only exists on Mech instances, not on the ICombatant interface.
+      const frame = (c.actor as any)?.Frame?.Name || c.actor?.Class || (c.side ? `Lado ${c.side}` : 'Combatente')
 
       list.push({
         id: c.id,

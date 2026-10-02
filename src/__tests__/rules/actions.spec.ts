@@ -391,7 +391,9 @@ describe('action economy defects', () => {
     cc().Brace()
     expect(cc().DifficultyAgainst()).toBe(1)
 
-    cc().EndRound(undefined)
+    // The +1 difficulty lasts until the end of the braced character's next
+    // turn, not until the end of the round.
+    cc().EndTurn()
     expect(cc().DifficultyAgainst()).toBe(0)
   })
 
@@ -421,7 +423,8 @@ describe('action economy defects', () => {
     expect(cc().GetResistance('kinetic')).toBe('immunity')
     expect(cc().GetResistance('energy')).toBe('resistance')
 
-    cc().EndRound(undefined)
+    // Released at the end of the braced character's next turn, not end of round.
+    cc().EndTurn()
     expect(cc().GetResistance('kinetic')).toBe('immunity')
     expect(cc().GetResistance('energy')).toBe('none')
   })

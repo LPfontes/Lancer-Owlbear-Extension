@@ -347,7 +347,7 @@
   import { ref, computed, watch } from 'vue'
   import { Npc } from '@/classes/npc/Npc'
   import CombatantSelector from './CombatantSelector.vue'
-  import { NpcStore, UserStore } from '@/stores'
+  import { EncounterStore, NpcStore, UserStore } from '@/stores'
   import { notify } from '@/util/notify'
   import { useI18n } from 'vue-i18n'
   const { t } = useI18n()
@@ -420,6 +420,7 @@
 
   function addUnit(item: Npc) {
     props.encounter.AddCombatant(item)
+    void EncounterStore().SaveEncounterData()
     notify({
       title: t('gm.encounter.combatantAddedTitle', { name: item.Name }),
       text: t('gm.encounter.combatantAddedText', {

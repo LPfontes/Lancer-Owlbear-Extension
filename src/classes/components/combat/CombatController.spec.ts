@@ -271,13 +271,22 @@ describe('CombatController.EndRound', () => {
     expect(stat(StatKey.SPEED)).toBe(cc().StatController.getMax(StatKey.SPEED))
   })
 
-  it('drops Braced and leaves a cooldown status behind', () => {
+  it('keeps the brace cost until the braced turn ends', () => {
     cc().Braced = true
     cc().EndRound(null)
 
-    expect(cc().Braced).toBe(false)
-    expect(cc().CustomStatuses.some(s => s.status.Attribute === 'Brace Cooldown')).toBe(true)
+    // Still braced across the round boundary, and still paying for it: no
+    // reactions and only a single quick action.
+    expect(cc().Braced).toBe(true)
     expect(cc().CombatActions.Full).toBe(false)
+    expect(cc().CombatActions.Reaction).toBe(false)
+    expect(cc().CanActivate('quick')).toBe(true)
+
+    cc().EndTurn()
+
+    expect(cc().Braced).toBe(false)
+    expect(cc().CombatActions.Full).toBe(true)
+    expect(cc().CombatActions.Reaction).toBe(true)
   })
 })
 

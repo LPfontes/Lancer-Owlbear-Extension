@@ -5,121 +5,127 @@
   >
     <equipment-destroyed-overlay :destroyed="item.Destroyed" />
 
-    <v-row
-      align="center"
-      no-gutters
-      justify="end"
-      :style="item.Used ? 'opacity: 0.4' : ''"
-    >
-      <v-col :class="mobile ? 'text-cc-overline line-short' : 'heading h3 text-uppercase'">
-        <div>
-          <v-tooltip
-            v-if="item.ActiveEffects.length > 0"
-            location="top"
-            :text="$t('active.actions.activeEffect')"
-          >
-            <template #activator="{ props }">
-              <v-icon
-                v-bind="props"
-                icon="cc:trait"
-                color="accent"
-                size="x-small"
-                class="mt-n1"
-              />
-            </template>
-          </v-tooltip>
-          <v-tooltip
-            v-if="item.Bonuses.length > 0"
-            location="top"
-            :text="$t('active.actions.passiveBonus')"
-          >
-            <template #activator="{ props }">
-              <v-icon
-                v-bind="props"
-                icon="cc:accuracy"
-                color="accent"
-                size="x-small"
-                class="mt-n1"
-              />
-            </template>
-          </v-tooltip>
-          {{ item.Name }}
-          <span
-            v-if="(item as NpcWeapon).WeaponType"
-            class="text-cc-overline px-1"
-          >
-            <cc-slashes class="mx-1" />
-            {{ (item as NpcWeapon).WeaponType }}
-          </span>
-          <span
-            v-else
-            class="text-cc-overline text-disabled"
-          >
-            <cc-slashes class="mx-1" />
-            {{ (item as NpcWeapon).FeatureType }}
-          </span>
-        </div>
-      </v-col>
-
-      <v-col
-        v-if="item.Accuracy(tier) || item.AttackBonus(tier)"
-        cols="auto"
+    <div :style="item.Used ? 'opacity: 0.4' : ''">
+      <v-row
+        align="center"
+        no-gutters
+        justify="space-between"
       >
-        <cc-npc-attack-bonus
-          :attack-bonus="item.AttackBonus(tier)"
-          small
-        />
-        <cc-npc-accuracy-element
-          :accuracy="item.Accuracy(tier)"
-          small
-        />
-      </v-col>
-
-      <cc-slashes
-        v-if="(item as NpcWeapon).WeaponType"
-        class="pl-2 pr-1"
-      />
-
-      <v-col cols="auto">
-        <cc-range-element
-          v-if="(item as NpcWeapon).Range"
-          small
-          :range="(item as NpcWeapon).Range(tier, mods as NpcWeapon[])"
-        />
-        <cc-slashes
-          v-if="(item as NpcWeapon).Range && (item as NpcWeapon).Damage"
-          class="pr-1"
-        />
-        <cc-damage-element
-          v-if="(item as NpcWeapon).Damage"
-          small
-          :damage="(item as NpcWeapon).Damage(tier, mods as NpcWeapon[])"
-        />
-      </v-col>
-
-      <v-col cols="auto">
-        <v-btn
-          icon="mdi-message-text"
-          variant="text"
-          size="small"
-          title="Enviar para o chat"
-          @click.stop="broadcastFeature"
-        />
-        <v-btn
-          icon
-          flat
-          tile
-          size="x-small"
-          variant="text"
-          @click="collapsed = !collapsed"
-        >
-          <v-icon
-            size="30"
-            :icon="collapsed ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+        <v-col :class="mobile ? 'text-cc-overline line-short' : 'heading h3 text-uppercase'">
+          <div>
+            <v-tooltip
+              v-if="item.ActiveEffects.length > 0"
+              location="top"
+              :text="$t('active.actions.activeEffect')"
+            >
+              <template #activator="{ props }">
+                <v-icon
+                  v-bind="props"
+                  icon="cc:trait"
+                  color="accent"
+                  size="x-small"
+                  class="mt-n1"
+                />
+              </template>
+            </v-tooltip>
+            <v-tooltip
+              v-if="item.Bonuses.length > 0"
+              location="top"
+              :text="$t('active.actions.passiveBonus')"
+            >
+              <template #activator="{ props }">
+                <v-icon
+                  v-bind="props"
+                  icon="cc:accuracy"
+                  color="accent"
+                  size="x-small"
+                  class="mt-n1"
+                />
+              </template>
+            </v-tooltip>
+            {{ item.Name }}
+            <span
+              v-if="(item as NpcWeapon).WeaponType"
+              class="text-cc-overline px-1"
+            >
+              <cc-slashes class="mx-1" />
+              {{ (item as NpcWeapon).WeaponType }}
+            </span>
+            <span
+              v-else
+              class="text-cc-overline text-disabled"
+            >
+              <cc-slashes class="mx-1" />
+              {{ (item as NpcWeapon).FeatureType }}
+            </span>
+          </div>
+        </v-col>
+        <v-col cols="auto">
+          <v-btn
+            icon="mdi-message-text"
+            variant="text"
+            size="small"
+            title="Enviar para o chat"
+            @click.stop="broadcastFeature"
           />
-        </v-btn>
-      </v-col>
-    </v-row>
+          <v-btn
+            icon
+            flat
+            tile
+            size="x-small"
+            variant="text"
+            @click="collapsed = !collapsed"
+          >
+            <v-icon
+              size="30"
+              :icon="collapsed ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+            />
+          </v-btn>
+        </v-col>
+      </v-row>
+
+      <v-row
+        align="center"
+        no-gutters
+        class="mt-1"
+      >
+        <v-col
+          v-if="item.Accuracy(tier) || item.AttackBonus(tier)"
+          cols="auto"
+        >
+          <cc-npc-attack-bonus
+            :attack-bonus="item.AttackBonus(tier)"
+            small
+          />
+          <cc-npc-accuracy-element
+            :accuracy="item.Accuracy(tier)"
+            small
+          />
+        </v-col>
+
+        <cc-slashes
+          v-if="(item.Accuracy(tier) || item.AttackBonus(tier)) && ((item as NpcWeapon).Range || (item as NpcWeapon).Damage)"
+          class="pl-2 pr-1"
+        />
+
+        <v-col cols="auto">
+          <cc-range-element
+            v-if="(item as NpcWeapon).Range"
+            small
+            :range="(item as NpcWeapon).Range(tier, mods as NpcWeapon[])"
+          />
+          <cc-slashes
+            v-if="(item as NpcWeapon).Range && (item as NpcWeapon).Damage"
+            class="pr-1"
+          />
+          <cc-damage-element
+            v-if="(item as NpcWeapon).Damage"
+            small
+            :damage="(item as NpcWeapon).Damage(tier, mods as NpcWeapon[])"
+          />
+        </v-col>
+      </v-row>
+    </div>
 
     <v-slide-y-transition>
       <div
@@ -247,7 +253,7 @@
 
   function broadcastFeature() {
     tableActionStore.broadcastCombatAction({
-      actorName: props.unit?.CombatName || props.unit?.Name || 'NPC',
+      actorName: props.unit?.CombatController?.CombatName || props.unit?.Name || 'NPC',
       actionName: `${(props.item as any).WeaponType ? 'Arma' : 'Característica'}: ${props.item.Name}`,
       actionType: 'chat',
       detail: props.item.EffectByTier ? props.item.EffectByTier(tier.value) : props.item.FlavorDescription

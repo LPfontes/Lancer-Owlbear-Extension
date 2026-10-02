@@ -46,7 +46,6 @@
     <v-card-text
       :class="[densityClass, variantClass]"
       :style="[height && `height: ${height}`]"
-      style="overflow-y: auto"
     >
       <slot />
     </v-card-text>

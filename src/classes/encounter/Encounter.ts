@@ -143,23 +143,25 @@ class Encounter implements INarrativeElement, ISaveable, IFolderPlaceable {
 
   private _combatants: CombatantData[] = []
 
-  public constructor(data?: IEncounterData) {
-    this._id = data?.id || crypto.randomUUID()
-    this._name = data?.name || ''
-    this._note = data?.note || ''
-    this._description = data?.description || ''
-    this._gmDescription = data?.gmDescription || ''
+  public constructor(data?: IEncounterData | any) {
+    this._id = data?.ID || data?.id || data?._id || crypto.randomUUID()
+    this._name = data?.name || data?._name || ''
+    this._note = data?.note || data?._note || ''
+    this._description = data?.description || data?._description || ''
+    this._gmDescription = data?.gmDescription || data?._gmDescription || ''
 
-    if (data?.sitrep) {
-      this._sitrep = SitrepInstance.Deserialize(data.sitrep, this)
+    if (data?.sitrep || data?._sitrep) {
+      this._sitrep = SitrepInstance.Deserialize(data.sitrep || data._sitrep, this)
     }
 
-    if (data?.environment) {
-      this._environment = new EnvironmentInstance(this, new Environment(data.environment))
+    if (data?.environment || data?._environment) {
+      const envData = data.environment || data._environment
+      this._environment = new EnvironmentInstance(this, new Environment(envData))
     }
 
-    if (data?.combatants) {
-      this._combatants = data.combatants.map(c => Encounter.DeserializeCombatant(c))
+    const combatantsList = data?.combatants || data?._combatants
+    if (combatantsList && Array.isArray(combatantsList)) {
+      this._combatants = combatantsList.map(c => Encounter.DeserializeCombatant(c))
       this.renumber()
     }
 
@@ -308,42 +310,75 @@ class Encounter implements INarrativeElement, ISaveable, IFolderPlaceable {
     this.save()
   }
 
-  public static Serialize(enc: Encounter): IEncounterData {
-    if (!(enc instanceof Encounter)) return (enc ?? {}) as IEncounterData
+  public static Serialize(enc: any): IEncounterData {
+    if (!enc || typeof enc !== 'object') return {} as IEncounterData
+
+    // Only an encounter is serialized as one. Anything else is handed back
+    // untouched instead of being coerced into an empty encounter: callers rely
+    // on that pass-through for payloads that turn out not to be encounters.
+    const isLive = enc.ItemType === ItemType.Encounter
+    const isSerialized = enc.itemType === 'Encounter'
+    if (!isLive && !isSerialized) return enc as IEncounterData
+
+    // If it is already a serialized plain JSON object with id and save
+    if (isSerialized && !enc.SaveController && enc.save && (enc.id || enc.ID)) {
+      return enc as IEncounterData
+    }
+
+    const combatantsList = enc.Combatants || enc._combatants || []
+    const sitrepVal = enc.Sitrep || enc._sitrep
+    const envVal = enc.Environment || enc._environment
 
     const data = {
       itemType: 'Encounter',
-      id: enc.ID,
-      name: enc.Name,
-      note: enc.Note,
-      description: enc.Description,
-      gmDescription: enc.GmDescription,
-      sitrep: SitrepInstance.Serialize(enc.Sitrep),
-      environment: EnvironmentInstance.Serialize(enc.Environment),
-      combatants: enc.Combatants.map(c => Encounter.SerializeCombatant(c)),
+      id: enc.ID || enc._id || enc.id || crypto.randomUUID(),
+      name: enc.Name || enc._name || (typeof enc.DefaultName === 'string' ? enc.DefaultName : '') || 'Novo Encontro',
+      note: enc.Note || enc._note || '',
+      description: enc.Description || enc._description || '',
+      gmDescription: enc.GmDescription || enc._gmDescription || '',
+      sitrep: sitrepVal ? SitrepInstance.Serialize(sitrepVal) : undefined,
+      environment: envVal ? EnvironmentInstance.Serialize(envVal) : undefined,
+      combatants: combatantsList.map((c: any) => Encounter.SerializeCombatant(c)),
     } as IEncounterData
 
-    SaveController.Serialize(enc, data)
-    CloudController.Serialize(enc, data)
-    PortraitController.Serialize(enc, data)
-    NarrativeController.Serialize(enc, data)
-    FolderController.Serialize(enc, data)
+    if (enc.SaveController) SaveController.Serialize(enc, data)
+    else if (enc.save) data.save = enc.save
+
+    if (enc.CloudController) CloudController.Serialize(enc, data)
+    else if (enc.cloud) data.cloud = enc.cloud
+
+    if (enc.PortraitController) PortraitController.Serialize(enc, data)
+    else if (enc.img) data.img = enc.img
+
+    if (enc.NarrativeController) NarrativeController.Serialize(enc, data)
+    else if (enc.narrative) data.narrative = enc.narrative
+
+    if (enc.FolderController) FolderController.Serialize(enc, data)
+    else if (enc.folder) data.folder = enc.folder
 
     return data as IEncounterData
   }
 
-  public static SerializeCombatant(combatant: CombatantData): CombatantSaveData {
+  public static SerializeCombatant(combatant: any): CombatantSaveData {
+    const actorData = typeof combatant.actor?.Serialize === 'function'
+      ? combatant.actor.Serialize(true)
+      : (combatant.actor || combatant.npc || {})
+
+    const deployablesList = combatant.deployables || []
+
     return {
-      id: combatant.id,
-      index: combatant.index,
-      type: combatant.type,
-      actor: combatant.actor.Serialize!(true),
-      side: combatant.side,
-      playerCount: combatant.playerCount,
-      reinforcement: combatant.reinforcement,
-      reinforcementTurn: combatant.reinforcementTurn,
-      deployables: combatant.deployables.map(d => DeployableInstance.Serialize(d)),
-      number: combatant.number,
+      id: combatant.id || crypto.randomUUID(),
+      index: combatant.index ?? 0,
+      type: combatant.type || 'unit',
+      actor: actorData,
+      side: combatant.side || 'enemy',
+      playerCount: combatant.playerCount || 1,
+      reinforcement: combatant.reinforcement || false,
+      reinforcementTurn: Number(combatant.reinforcementTurn) || 0,
+      deployables: deployablesList.map((d: any) =>
+        typeof DeployableInstance.Serialize === 'function' ? DeployableInstance.Serialize(d) : d
+      ),
+      number: combatant.number || 1,
       status: combatant.status || NpcStatus.Operational,
       pilotStatus: combatant.pilotStatus || PilotStatus.Active,
       mechStatus: combatant.mechStatus || MechStatus.Operational,
@@ -360,24 +395,30 @@ class Encounter implements INarrativeElement, ISaveable, IFolderPlaceable {
     return clone
   }
 
-  public static Deserialize(data: IEncounterData): Encounter {
+  public static Deserialize(data: IEncounterData | any): Encounter {
+    if (!data) return new Encounter()
+    if (data instanceof Encounter) return data
+
     const encounter = new Encounter(data)
-    SaveController.Deserialize(encounter, data.save)
-    CloudController.Deserialize(encounter, data.cloud)
-    PortraitController.Deserialize(encounter, data.img)
-    NarrativeController.Deserialize(encounter, data.narrative)
-    FolderController.Deserialize(encounter, data.folder)
+    if (data.save) SaveController.Deserialize(encounter, data.save)
+    if (data.cloud) CloudController.Deserialize(encounter, data.cloud)
+    if (data.img) PortraitController.Deserialize(encounter, data.img)
+    if (data.narrative) NarrativeController.Deserialize(encounter, data.narrative)
+    if (data.folder) FolderController.Deserialize(encounter, data.folder)
 
     return encounter
   }
 
-  public static DeserializeCombatant(data: CombatantSaveData): CombatantData {
+  public static DeserializeCombatant(data: CombatantSaveData | any): CombatantData {
     const deserialize = DESERIALIZE_ACTOR[data.type]
     if (!deserialize) throw new Error('Invalid combatant type')
 
-    const item = makeCombatant(deserialize(data.npc ?? data.actor), data.type, {
+    const rawActor = data.npc ?? data.actor
+    const actor = rawActor?.ItemType || rawActor?.CombatController ? rawActor : deserialize(rawActor)
+
+    const item = makeCombatant(actor, data.type, {
       id: data.id || crypto.randomUUID(),
-      index: data.index,
+      index: data.index ?? 0,
       number: data.number || 1,
       side: (data.side?.toLowerCase() as CombatantSide) || 'enemy',
       playerCount: data.playerCount || 1,
@@ -388,8 +429,8 @@ class Encounter implements INarrativeElement, ISaveable, IFolderPlaceable {
       mechStatus: data.mechStatus || MechStatus.Operational,
     })
 
-    if (data.deployables)
-      item.deployables = data.deployables.map(d => DeployableInstance.Deserialize(d, item))
+    if (data.deployables && Array.isArray(data.deployables))
+      item.deployables = data.deployables.map((d: any) => DeployableInstance.Deserialize(d, item))
 
     return item
   }

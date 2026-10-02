@@ -209,6 +209,10 @@ class CoreSystem {
       .filter(x => !!x) as MechWeapon[]
   }
 
+  public get IntegratedIDs(): string[] {
+    return this._integrated ? [...this._integrated] : []
+  }
+
   public get PassiveIntegratedSystems(): MechSystem[] {
     return this.IntegratedSystems
   }

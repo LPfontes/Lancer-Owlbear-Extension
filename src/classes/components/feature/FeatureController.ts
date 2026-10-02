@@ -167,6 +167,11 @@ class FeatureController {
     return this.collectAll('IntegratedWeapons')
   }
 
+  /** Ids of every integration granted by these containers, resolved or not. */
+  public get IntegratedIDs(): string[] {
+    return this.collectAll('IntegratedIDs')
+  }
+
   public get IntegratedSystems(): MechSystem[] {
     return this.collectAll('IntegratedSystems')
   }

@@ -5,10 +5,8 @@
   >
     <equipment-destroyed-overlay :destroyed="item.Destroyed" />
     <v-row
-      align="center"
       no-gutters
-      justify="end"
-      class="pr-1"
+      class="pr-1 flex-column align-start"
       :style="item.Used ? 'opacity: 0.4' : ''"
     >
       <v-col :class="mobile ? 'text-cc-overline ' : 'heading h3 text-uppercase'">

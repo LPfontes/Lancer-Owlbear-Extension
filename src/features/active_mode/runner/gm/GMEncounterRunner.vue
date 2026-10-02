@@ -20,64 +20,57 @@
       style="overflow: hidden"
     >
       <v-layout style="height: 100%; flex: 1 1 auto; min-height: 0">
-        <cc-panel-toggle
-          v-model="showLeft"
-          side="left"
-          :open-offset="419"
-          :closed-offset="91"
-          :bottom-inset="36"
-        />
-        <div
-          location="left"
-          class="bg-background border-sm"
-          :style="`width: ${showLeft ? '420' : '92'}px;`"
-          style="position: absolute; z-index: 3; height: calc(100% - 35px); overflow-y: auto"
-        >
-          <gm-initiative-panel
-            :encounter-instance="instance"
-            :selected="selected"
-            :expanded="showLeft"
-            @select="selectActor($event)"
-          />
-        </div>
-
         <v-main
           tabindex="0"
-          style="overflow-y: auto"
-          :style="`padding-left:${mainLeftOffset}`"
+          style="overflow-y: auto; padding-left: 0 !important;"
         >
-          <div class="d-flex align-center justify-center bg-panel pa-1">
-            <cc-button
-              icon="mdi-undo"
-              size="x-small"
-              color="primary"
-              class="mr-2"
-              :disabled="!undoMeta.canUndo"
-              :tooltip="
-                undoMeta.canUndo
-                  ? $t('active.gmRunner.undoTooltip', { label: undoMeta.undoLabel })
-                  : $t('active.gmRunner.undo')
-              "
-              @click="doUndo"
-            />
-            <div class="text-center heading h3 mx-3">
+          <!-- Cabeçalho de Rodada / Undo / Redo e Ferramentas -->
+          <div class="d-flex align-center justify-space-between bg-panel px-2 py-1 border-b">
+            <div class="d-flex align-center">
+              <cc-button
+                icon="mdi-undo"
+                size="x-small"
+                color="primary"
+                class="mr-1"
+                :disabled="!undoMeta.canUndo"
+                :tooltip="
+                  undoMeta.canUndo
+                    ? $t('active.gmRunner.undoTooltip', { label: undoMeta.undoLabel })
+                    : $t('active.gmRunner.undo')
+                "
+                @click="doUndo"
+              />
+              <cc-button
+                icon="mdi-redo"
+                size="x-small"
+                color="primary"
+                :disabled="!undoMeta.canRedo"
+                :tooltip="
+                  undoMeta.canRedo
+                    ? $t('active.gmRunner.redoTooltip', { label: undoMeta.redoLabel })
+                    : $t('active.gmRunner.redo')
+                "
+                @click="doRedo"
+              />
+            </div>
+            <div class="text-center heading h4 mx-2 text-truncate" style="font-size: 0.95rem;">
               {{ instance.Name }} &mdash; {{ $t('active.gmRunner.roundN', { n: instance.Round }) }}
             </div>
-            <cc-button
-              icon="mdi-redo"
-              size="x-small"
-              color="primary"
-              class="ml-2"
-              :disabled="!undoMeta.canRedo"
-              :tooltip="
-                undoMeta.canRedo
-                  ? $t('active.gmRunner.redoTooltip', { label: undoMeta.redoLabel })
-                  : $t('active.gmRunner.redo')
-              "
-              @click="doRedo"
-            />
+            <div class="d-flex align-center">
+            </div>
           </div>
-          <v-container>
+
+          <!-- Barra Horizontal de Combatentes (Opção A) -->
+          <gm-combatant-horizontal-bar
+            :encounter-instance="instance"
+            :selected-combatant="selected"
+            :is-encounter-info-active="panel === 'encounter-info'"
+            @select-combatant="selectActor($event)"
+            @select-panel="selectPanel($event)"
+            @toggle-initiative="panel = panel === 'encounter-info' ? undefined : 'encounter-info'"
+          />
+
+          <v-container fluid class="pa-2">
             <div v-if="panel && instance">
               <component
                 :is="panelMap[panel]"
@@ -127,43 +120,46 @@
             </div>
           </v-container>
         </v-main>
-        <cc-panel-toggle
-          v-if="!mobile"
-          v-model="showRight"
-          side="right"
-          :open-offset="249"
-          :closed-offset="55"
-          :bottom-inset="36"
-        />
 
+        <!-- Drawer de Ferramentas como Overlay Temporário -->
         <v-navigation-drawer
-          :rail="!showRight"
-          :width="250"
+          v-model="showRight"
           location="right"
-          permanent
+          temporary
+          :width="250"
+          style="z-index: 100"
         >
+          <div class="d-flex align-center justify-space-between pa-2 bg-panel border-b">
+            <span class="heading h4">{{ $t('common.tools') }}</span>
+            <v-btn
+              icon="mdi-close"
+              size="x-small"
+              variant="text"
+              @click="showRight = false"
+            />
+          </div>
           <gm-tool-palette
-            :expanded="showRight"
+            :expanded="true"
             :selected="panel"
-            @select-panel="selectPanel"
-            @open-dice-roller="diceDialog = true"
-            @open-table-index="tableDialog = true"
+            @select-panel="selectPanel($event); showRight = false"
+            @open-dice-roller="diceDialog = true; showRight = false"
+            @open-table-index="tableDialog = true; showRight = false"
           />
         </v-navigation-drawer>
         <v-footer
-          app
-          height="36"
-          style="border-top: 1px solid rgba(255, 255, 255, 0.1)"
+          height="40"
+          class="bg-surface px-2 position-fixed bottom-0 w-100"
+          style="border-top: 1px solid rgba(255, 255, 255, 0.12); z-index: 100;"
         >
           <v-row
             justify="space-between"
             align="center"
             no-gutters
           >
-            <v-col>
+            <v-col class="mr-1">
               <gm-end-round-panel :encounter-instance="instance" />
             </v-col>
-            <v-col>
+            <v-col class="ml-1">
               <gm-end-encounter-panel :encounter-instance="instance" />
             </v-col>
           </v-row>
@@ -241,6 +237,7 @@ import {
   import RunnerLeaveDialog from '../_shared/_RunnerLeaveDialog.vue'
   import { consumeLeaveGuardBypass } from '../_shared/useRunnerOptions'
   import CcPanelToggle from '@/ui/components/buttons/CCPanelToggle.vue'
+  import GmCombatantHorizontalBar from './_components/GmCombatantHorizontalBar.vue'
 
 const panelMap: Record<string, any> = {
   'encounter-info': EncounterInfoPanel,
@@ -271,6 +268,7 @@ const typeMap: Record<string, any> = {
   const diceDialog = ref(false)
   const tableDialog = ref(false)
   const leaveDialog = ref(false)
+  const showInitiativeDrawer = ref(false)
   let resolveLeaveDialog: ((value: string) => void) | null = null
   const panel = ref<string | undefined>('encounter-info')
   const sort = ref('')
@@ -390,6 +388,10 @@ function handleUndoRedoKeydown(e: KeyboardEvent) {
       setEidolonHp()
       actors.value.forEach((a: any) => (a.CombatController.Round = instance.value!.Round))
       recacheUndoBaseline()
+      if (!selected.value && instance.value?.Combatants?.length) {
+        selected.value = instance.value.Combatants[0]
+        panel.value = undefined
+      }
     },
     { immediate: true }
   )
@@ -399,7 +401,7 @@ watch(actorCount, (newval, oldval) => {
   })
 
 watch(instance, (newVal, oldVal) => {
-    if (oldVal && !newVal) router.replace('/active-mode/manage-encounters')
+    if (oldVal && !newVal) router.replace('/active-mode')
   })
 
 onMounted(() => {
@@ -410,7 +412,10 @@ onMounted(() => {
   })
 
 function setEidolonHp() {
-    const playerCount = instance.value!.Combatants.filter((c: any) => c.type === 'pilot').length
+    const playerCount = Math.max(
+      1,
+      instance.value!.Combatants.filter((c: any) => c.type === 'pilot').length
+    )
     instance
       .value!.Combatants.filter((c: any) => c.type === 'eidolon')
       .forEach((e: any) =>

@@ -311,6 +311,12 @@
     loading.value = true
     await nextTick()
     await props.encounterInstance.EndRound()
+    try {
+      const { obrBridge } = await import('@/services/obrBridge')
+      await obrBridge.broadcastActiveEncounter(props.encounterInstance)
+    } catch (e) {
+      console.warn('[GmEndRoundPanel] Erro ao sincronizar rodada:', e)
+    }
     loading.value = false
     isActive.value = false
   }

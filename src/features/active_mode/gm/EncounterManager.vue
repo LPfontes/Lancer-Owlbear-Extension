@@ -35,18 +35,7 @@
         class="lighten-select"
         :class="mobile ? 'mb-2' : 'mb-4'"
       >
-        <v-col
-          cols="auto"
-          style="border: rgb(var(--v-theme-primary)) 3px double"
-        >
-          <v-img
-            v-if="e.Encounter.Portrait"
-            :src="e.Encounter.Portrait"
-            height="100%"
-            width="120px"
-            cover
-          />
-        </v-col>
+
         <v-col style="position: relative">
           <v-toolbar
             density="compact"
@@ -106,26 +95,25 @@
               no-gutters
             >
               <v-col
-                cols="auto"
-                class="pb-0 my-1"
+                cols="12"
+                class="pb-0 mt-1 d-flex flex-wrap align-center"
               >
-                <div>
+                <div class="mr-4 mb-1">
                   <span class="text-disabled mr-1">
                     {{ $t('common.created') }}
                     <cc-slashes />
                   </span>
                   <b>{{ new Date(e.SaveController.Created).toLocaleDateString() }}</b>
                 </div>
-                <div v-if="e.SaveController.LastModified">
+                <div v-if="e.SaveController.LastModified" class="mr-4 mb-1">
                   <span class="text-disabled mr-1">
                     {{ $t('active.labels.lastUpdate') }}
                     <cc-slashes />
                   </span>
                   <b>{{ new Date(e.SaveController.LastModified).toLocaleDateString() }}</b>
                 </div>
-              </v-col>
-              <v-col class="mb-0 pb-0 mt-1">
-                <div>
+
+                <div class="mr-4 mb-1">
                   <span class="text-disabled mr-1">
                     {{ $t('common.environment') }}
                     <cc-slashes />
@@ -133,7 +121,7 @@
                   <b>{{ e.Encounter.Environment.Name }}</b>
                 </div>
 
-                <div>
+                <div class="mb-1">
                   <span class="text-disabled mr-1">
                     {{ $t('common.sitrep') }}
                     <cc-slashes />
@@ -144,12 +132,11 @@
 
               <v-col
                 cols="12"
-                class="mt-1 py-0"
+                class="mt-1 mb-2 py-0 d-flex flex-wrap"
               >
-                <div
+                <template
                   v-for="side in ['ally', 'enemy', 'neutral']"
                   :key="side"
-                  class="mb-2"
                 >
                   <v-chip
                     v-for="item in e.Combatants.filter(c => c.side === side)"
@@ -172,8 +159,7 @@
                       &nbsp;({{ (item.actor as any).PlayerName }})
                     </span>
                   </v-chip>
-                </div>
-                <br />
+                </template>
               </v-col>
             </v-row>
           </div>
@@ -564,6 +550,20 @@
 
   async function launch(encounter: EncounterInstance) {
     await EncounterStore().AssignActiveEncounter(encounter)
+    try {
+      const { obrBridge } = await import('@/services/obrBridge')
+      await obrBridge.broadcastActiveEncounter(encounter)
+
+      const { useTableActionStore } = await import('@/stores/tableActionStore')
+      void useTableActionStore().postAction({
+        senderName: 'COMP/CON',
+        category: 'full_action',
+        title: `Combate Sincronizado — ${encounter.Name}`,
+        detail: `O encontro foi aberto e sincronizado com o Combat Tracker na Rodada ${encounter.Round}.`,
+      })
+    } catch (e) {
+      console.warn('[EncounterManager] Erro ao sincronizar encontro:', e)
+    }
     router.push(`gm-encounter-runner/${encounter.ID}`)
   }
 

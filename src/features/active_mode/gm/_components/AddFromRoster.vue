@@ -19,114 +19,21 @@
         {{ $t('active.roster.addFromRoster') }}
       </cc-button>
     </template>
-    <CCSidebarLayout ref="sidebar">
-      <template #sidebar>
-        <v-text-field
-          v-model="search"
-          density="compact"
-          hide-details
-          clearable
-          flat
-          tile
-          :placeholder="$t('common.search')"
-          class="my-1"
-          prepend-inner-icon="mdi-magnify"
-        />
-
-        <v-list
-          class="mb-n3"
-          style="height: 100%; min-height: calc(100vh - 86px); overflow-y: scroll"
-        >
-          <v-list-item
-            v-for="group in Object.keys(pilotsByGroup)"
-            :key="group"
-          >
-            <div
-              class="d-flex align-center"
-              style="cursor: pointer"
-              role="button"
-              tabindex="0"
-              @click="toggleGroup(group)"
-              @keydown.enter="toggleGroup(group)"
-              @keydown.space="toggleGroup(group)"
-            >
-              <v-icon
-                icon="mdi-folder"
-                start
-                size="small"
-                class="mt-n1"
-              />
-              <span class="text-cc-overline text-disabled flex-grow-1">
-                {{ group || 'No Group' }}
-              </span>
-              <v-icon
-                :icon="collapsedGroups[group] ? 'mdi-chevron-right' : 'mdi-chevron-down'"
-                size="small"
-              />
-            </div>
-            <v-divider />
-            <template v-if="!collapsedGroups[group]">
-              <v-list-item
-                v-for="p in pilotsByGroup[group]"
-                :key="p.ID"
-                @click="selected = p"
-              >
-                <div class="heading h3">{{ p.Callsign }}</div>
-                <v-divider class="mb-1 mr-4" />
-                <div class="text-cc-overline text-disabled">{{ p.Name }}</div>
-                <div class="text-cc-overline text-disabled">
-                  {{
-                    $t('active.roster.ll', {
-                      n: p.Level,
-                    })
-                  }}
-                </div>
-                <template #prepend>
-                  <v-avatar
-                    size="64"
-                    flat
-                    tile
-                    class="clipped"
-                  >
-                    <cc-avatar
-                      v-if="p.PortraitController.Avatar"
-                      :avatar="p.PortraitController.Avatar"
-                      size="64"
-                    />
-                    <cc-img
-                      v-else-if="p.Portrait"
-                      :src="p.Portrait"
-                      height="64"
-                      width="64"
-                    />
-                  </v-avatar>
-                </template>
-                <template #append>
-                  <v-tooltip>
-                    <template #activator="{ props: activatorProps }">
-                      <cc-button
-                        v-bind="activatorProps"
-                        variant="outlined"
-                        :icon="!isInEncounter(p) ? 'mdi-plus' : 'mdi-check-bold'"
-                        size="small"
-                        :color="!isInEncounter(p) ? 'secondary' : 'success'"
-                        @click.stop="addPilot(p)"
-                      ></cc-button>
-                    </template>
-                    <span>{{ $t('active.roster.addToEncounter') }}</span>
-                  </v-tooltip>
-                </template>
-              </v-list-item>
-            </template>
-          </v-list-item>
-        </v-list>
-      </template>
-
+    <div style="height: calc(100vh - 100px); overflow-y: auto; overflow-x: hidden;" class="mt-2">
       <div
         v-if="selected"
-        class="pl-12 pr-3 mb-12 pb-2"
+        class="px-3 mb-12 pb-2"
         style="position: relative"
       >
+        <cc-button
+          variant="text"
+          prepend-icon="mdi-arrow-left"
+          size="small"
+          class="mb-2 ml-n2"
+          @click="selected = null"
+        >
+          {{ $t('common.back') }}
+        </cc-button>
         <v-row
           dense
           class="mb-2"
@@ -482,7 +389,6 @@
         <div
           v-if="selected"
           style="position: fixed; bottom: 8px; right: 18px; left: 18px; padding: 12px"
-          :style="`left: ${($refs.sidebar as any)?.showNav ? 380 : 20}px`"
         >
           <cc-button
             :color="isInEncounter(selected) ? 'error' : 'success'"
@@ -500,18 +406,105 @@
           </cc-button>
         </div>
       </div>
-      <div v-else>
-        <v-row
-          justify="center"
-          align="center"
-          style="height: calc(100vh - 60px)"
-        >
-          <v-col cols="auto">
-            <i class="text-disabled">{{ $t('active.roster.selectPilot') }}</i>
-          </v-col>
-        </v-row>
+      <div v-else class="pa-2">
+        <v-text-field
+          v-model="search"
+          density="compact"
+          hide-details
+          clearable
+          flat
+          tile
+          :placeholder="$t('common.search')"
+          class="my-1"
+          prepend-inner-icon="mdi-magnify"
+        />
+
+        <v-list class="mb-n3">
+          <v-list-item
+            v-for="group in Object.keys(pilotsByGroup)"
+            :key="group"
+          >
+            <div
+              class="d-flex align-center"
+              style="cursor: pointer"
+              role="button"
+              tabindex="0"
+              @click="toggleGroup(group)"
+              @keydown.enter="toggleGroup(group)"
+              @keydown.space="toggleGroup(group)"
+            >
+              <v-icon
+                icon="mdi-folder"
+                start
+                size="small"
+                class="mt-n1"
+              />
+              <span class="text-cc-overline text-disabled flex-grow-1">
+                {{ group || 'No Group' }}
+              </span>
+              <v-icon
+                :icon="collapsedGroups[group] ? 'mdi-chevron-right' : 'mdi-chevron-down'"
+                size="small"
+              />
+            </div>
+            <v-divider />
+            <template v-if="!collapsedGroups[group]">
+              <v-list-item
+                v-for="p in pilotsByGroup[group]"
+                :key="p.ID"
+                @click="selected = p"
+              >
+                <div class="heading h3">{{ p.Callsign }}</div>
+                <v-divider class="mb-1 mr-4" />
+                <div class="text-cc-overline text-disabled">{{ p.Name }}</div>
+                <div class="text-cc-overline text-disabled">
+                  {{
+                    $t('active.roster.ll', {
+                      n: p.Level,
+                    })
+                  }}
+                </div>
+                <template #prepend>
+                  <v-avatar
+                    size="64"
+                    flat
+                    tile
+                    class="clipped"
+                  >
+                    <cc-avatar
+                      v-if="p.PortraitController.Avatar"
+                      :avatar="p.PortraitController.Avatar"
+                      size="64"
+                    />
+                    <cc-img
+                      v-else-if="p.Portrait"
+                      :src="p.Portrait"
+                      height="64"
+                      width="64"
+                    />
+                  </v-avatar>
+                </template>
+                <template #append>
+                  <v-tooltip>
+                    <template #activator="{ props: activatorProps }">
+                      <cc-button
+                        v-bind="activatorProps"
+                        variant="outlined"
+                        :icon="!isInEncounter(p) ? 'mdi-plus' : 'mdi-check-bold'"
+                        size="small"
+                        :color="!isInEncounter(p) ? 'secondary' : 'success'"
+                        @click.stop="addPilot(p)"
+                      ></cc-button>
+                    </template>
+                    <span>{{ $t('active.roster.addToEncounter') }}</span>
+                  </v-tooltip>
+                </template>
+              </v-list-item>
+            </template>
+          </v-list-item>
+        </v-list>
       </div>
-    </CCSidebarLayout>
+    </div>
   </cc-dialog>
 </template>
 
@@ -520,7 +513,7 @@
   import type { Encounter } from '@/classes/encounter/Encounter'
   import { computed, ref } from 'vue'
   import { notify } from '@/util/notify'
-  import CCSidebarLayout from '@/ui/components/layouts/CCSidebarLayout.vue'
+
   import MechStatblock from '@/features/pilot_management/PilotSheet/sections/mech/sections/attributes/MechStatblock.vue'
   import { PilotGroupStore, PilotStore } from '@/stores'
   import { useI18n } from 'vue-i18n'

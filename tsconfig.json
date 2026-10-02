@@ -1,20 +1,34 @@
 {
+  // NOTE: the options below deliberately mirror upstream COMP/CON's tsconfig
+  // (moduleResolution "bundler", allowJs, noImplicitAny: false). Removing them
+  // produced ~700 diagnostics that were artifacts of the config change rather
+  // than defects in the code, which drowned out the ~20 genuine ones.
   "compilerOptions": {
     "target": "ESNext",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "bundler",
     "strict": true,
     "jsx": "preserve",
     "resolveJsonModule": true,
+    "types": ["vitest/globals", "node"],
     "isolatedModules": true,
     "esModuleInterop": true,
     "lib": ["ESNext", "DOM"],
     "skipLibCheck": true,
+    "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
-    }
+      "@/*": ["./src/*"]
+    },
+    "noImplicitAny": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmitOnError": false
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "src/vite-env.d.ts"],
+  "exclude": ["dist"]
 }

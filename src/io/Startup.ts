@@ -19,6 +19,7 @@ import { AchievementManager } from '@/user/achievements/AchievementManager'
 import { UnauthorizedError } from '@/io/apis/account'
 import logger from '@/user/logger'
 import { migrateV2LocalStorage } from './FullImporter'
+import { installOfficialContentPacks } from './OfficialContent'
 import { obrBridge } from '@/services/obrBridge'
 
 export default async function (skipSync = false): Promise<void> {
@@ -64,6 +65,8 @@ export default async function (skipSync = false): Promise<void> {
 
   logger.info('stamping content keys')
   stampContentKeys(lancerData)
+  logger.info('installing bundled official content packs')
+  await installOfficialContentPacks()
   logger.info('refreshing extra content')
   await CompendiumStore().refreshExtraContent()
   logger.info('extra content refreshed')

@@ -241,6 +241,7 @@
   import PilotSheet from '@/features/pilot_management/store/PilotSheet'
   import { notify } from '@/util/notify.js'
   import { obrBridge } from '@/services/obrBridge'
+  import { isV2Npc, transformV2Npc } from '@/io/V2Importer'
   import OBR from '@owlbear-rodeo/sdk'
 
   const { t } = useI18n()
@@ -350,8 +351,8 @@
         const proxyRes = await fetch(`/api/share/${encodeURIComponent(codeStr)}`)
         if (proxyRes.ok) {
           const payload = await proxyRes.json()
-          if (payload && (payload.callsign || payload.pilot || payload.mechs || payload.id || payload.ID || payload.name || payload.npcClass || payload.features)) {
-            const isNpc = !!(payload.npcClass || payload.features || payload.NpcClass || payload.npcType)
+          if (payload && (payload.callsign || payload.pilot || payload.mechs || payload.id || payload.ID || payload.name || payload.npcClass || payload.features || payload.class || isV2Npc(payload))) {
+            const isNpc = !!(payload.npcClass || payload.features || payload.NpcClass || payload.npcType || payload.class || isV2Npc(payload))
             const itemType = isNpc ? 'npc' : 'pilot'
             result = {
               code: codeStr,
@@ -405,7 +406,7 @@
       const parsed = JSON.parse(jsonTextInput.value.trim())
       const data = parsed.data || parsed.payload || parsed
 
-      const isNpc = !!(data.npcClass || data.features || data.NpcClass || data.npcType)
+      const isNpc = !!(data.npcClass || data.features || data.NpcClass || data.npcType || (typeof data.class === 'string' && data.class.startsWith('npc_')) || isV2Npc(data))
       const itemType = isNpc ? 'npc' : 'pilot'
       const name = data.name || data.callsign || data.Callsign || data.Name || 'Item Importado'
       const codeStr = 'JSON-IMPORT'
@@ -456,8 +457,16 @@
         }
         notify({ type: 'success', text: `Ficha ${sheet.Name} importada com sucesso!` })
       }
-      // 2. Piloto
-      else if (payload.callsign || payload.mechs || payload.ID || payload.id) {
+      // 2. NPC / Unidade
+      else if (payload.npcClass || payload.features || payload.NpcClass || payload.npcType || payload.class || isV2Npc(payload)) {
+        const npcData = isV2Npc(payload) ? (transformV2Npc(payload) as any) : payload
+        const unit = Unit.Deserialize(npcData)
+        await NpcStore().AddNpc(unit)
+        await obrBridge.saveNpcToRoom(unit, true)
+        notify({ type: 'success', text: `NPC ${unit.Name} importado com sucesso!` })
+      }
+      // 3. Piloto
+      else if (payload.callsign || payload.mechs || payload.pilot || payload.itemType === 'pilot' || payload.ID || payload.id) {
         const pilot = Pilot.Deserialize(payload)
         if (pilot.Mechs && pilot.Mechs.length > 0 && !pilot.ActiveMech) {
           pilot.ActiveMech = pilot.FavoriteMech || pilot.Mechs[0]
@@ -466,13 +475,6 @@
         await PilotSheetStore().AddPilotSheet(pilot)
         await obrBridge.savePilotToRoom(pilot, true)
         notify({ type: 'success', text: `Piloto ${pilot.Callsign || pilot.Name} importado com sucesso!` })
-      }
-      // 3. NPC / Unidade
-      else if (payload.npcClass || payload.features || payload.NpcClass) {
-        const unit = Unit.Deserialize(payload)
-        await NpcStore().AddNpc(unit)
-        await obrBridge.saveNpcToRoom(unit, true)
-        notify({ type: 'success', text: `NPC ${unit.Name} importado com sucesso!` })
       }
 
       reset()

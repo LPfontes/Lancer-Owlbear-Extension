@@ -49,13 +49,11 @@ const routes = [
       },
       {
         path: 'new-encounter',
-        name: 'active-new-encounter',
-        component: NewEncounter,
+        redirect: '/active-mode',
       },
       {
         path: 'manage-encounters',
-        name: 'active-manage-encounters',
-        component: EncounterManager,
+        redirect: '/active-mode',
       },
       {
         path: 'new-table',

@@ -420,6 +420,7 @@
   const isAuthed = computed(() => UserStore().IsLoggedIn)
 
   function exit() {
+    void EncounterStore().SaveEncounterData()
     emit('exit')
   }
   function saveAsNew() {

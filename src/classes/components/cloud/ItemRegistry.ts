@@ -19,12 +19,28 @@ import { EncounterStore } from '@/features/gm/store/encounter_store'
 import { CampaignStore } from '@/features/gm/store/campaign_store'
 import type { ICloudSyncable } from './ICloudSyncable'
 import { normalizeItemType } from './ItemTypeMap'
+import { isV2Npc, transformV2Npc } from '@/io/V2Importer'
 
 export interface ItemRegistration {
   construct: (data: any) => ICloudSyncable
   add: (item: ICloudSyncable) => Promise<void>
   deleteLocal: (item: ICloudSyncable) => Promise<void>
   getAll: () => ICloudSyncable[]
+}
+
+function deserializeNpc(data: any): ICloudSyncable {
+  const npcData = isV2Npc(data) ? (transformV2Npc(data as any) as any) : data
+  const type = (npcData?.npcType || npcData?.ItemType || npcData?.type || '').toLowerCase()
+  if (type === 'doodad') return Doodad.Deserialize(npcData)
+  if (type === 'eidolon') return Eidolon.Deserialize(npcData)
+  return Unit.Deserialize(npcData)
+}
+
+function deserializeNarrative(data: any): ICloudSyncable {
+  const type = (data?.collectionItemType || data?.ItemType || data?.type || '').toLowerCase()
+  if (type === 'faction') return Faction.Deserialize(data)
+  if (type === 'location') return Location.Deserialize(data)
+  return Character.Deserialize(data)
 }
 
 const _registry = new Map<string, ItemRegistration>([
@@ -49,10 +65,19 @@ const _registry = new Map<string, ItemRegistration>([
   [
     'unit',
     {
-      construct: data => Unit.Deserialize(data),
+      construct: data => (isV2Npc(data) ? Unit.Deserialize(transformV2Npc(data as any) as any) : Unit.Deserialize(data)),
       add: item => NpcStore().AddNpc(item as Unit),
       deleteLocal: item => NpcStore().DeleteNpcPermanent(item as Unit),
       getAll: () => NpcStore().Npcs.filter(n => normalizeItemType(n.ItemType) === 'unit'),
+    },
+  ],
+  [
+    'npc',
+    {
+      construct: data => deserializeNpc(data),
+      add: item => NpcStore().AddNpc(item as any),
+      deleteLocal: item => NpcStore().DeleteNpcPermanent(item as any),
+      getAll: () => NpcStore().Npcs,
     },
   ],
   [
@@ -155,6 +180,24 @@ const _registry = new Map<string, ItemRegistration>([
       add: item => CampaignStore().AddCampaign(item as Campaign),
       deleteLocal: item => CampaignStore().DeleteCampaign(item as Campaign),
       getAll: () => CampaignStore().Campaigns,
+    },
+  ],
+  [
+    'narrative',
+    {
+      construct: data => deserializeNarrative(data),
+      add: item => NarrativeStore().AddItem(item as any),
+      deleteLocal: item => NarrativeStore().DeleteItemPermanent(item as any),
+      getAll: () => NarrativeStore().CollectionItems,
+    },
+  ],
+  [
+    'collectionitem',
+    {
+      construct: data => deserializeNarrative(data),
+      add: item => NarrativeStore().AddItem(item as any),
+      deleteLocal: item => NarrativeStore().DeleteItemPermanent(item as any),
+      getAll: () => NarrativeStore().CollectionItems,
     },
   ],
 ] as Array<[string, ItemRegistration]>)

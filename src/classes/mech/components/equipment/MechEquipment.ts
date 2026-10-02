@@ -84,11 +84,26 @@ abstract class MechEquipment extends LicensedItem {
   }
 
   public get Ammo(): any[] {
-    return this._ammo.map(a => ({
-      ...a,
-      name: localizeNested(a, 'name', a.name),
-      detail: localizeNested(a, 'detail', a.detail),
-    }))
+    const slug = (s: string) =>
+      String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'x'
+    const seen = new Map<string, number>()
+
+    return this._ammo.map((a, idx) => {
+      let p: string
+      if (a.id != null) {
+        p = String(a.id)
+      } else {
+        const base = a.name ? `ammo_${slug(a.name)}` : `ammo_${idx}`
+        const n = seen.get(base) || 0
+        seen.set(base, n + 1)
+        p = `${this.ID}.${n ? `${base}_${n + 1}` : base}`
+      }
+      return {
+        ...a,
+        name: localizeNested(a, 'name', localize(p, 'name', a.name)),
+        detail: localizeNested(a, 'detail', localize(p, 'detail', a.detail)),
+      }
+    })
   }
 
   public getTotalUses(bonus?: number): number {

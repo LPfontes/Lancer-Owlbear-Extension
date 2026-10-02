@@ -51,6 +51,7 @@ import {
 } from './ActorIdentity'
 import {
   ActionPoolController,
+  BRACED_COMBAT_ACTIONS,
   normalizeActivation,
   type IActionUseRecord,
 } from './ActionPoolController'
@@ -524,6 +525,11 @@ class CombatController implements ICounterContainer, IStatContainer {
       t => !this.Resistances.some(r => r.type === t)
     )
     this.BraceGranted.forEach(t => this.AddResist(t, 'resistance'))
+    // Paying for the brace: no reactions from now on, and only a single quick
+    // action on this character's next turn. The action pool survives into that
+    // turn (nothing refills it at turn start) and is handed back by the
+    // 'clear-braced' step when the turn ends.
+    this.CombatActions = { ...BRACED_COMBAT_ACTIONS }
   }
 
   public Brace(force = false): boolean {

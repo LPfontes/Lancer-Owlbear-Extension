@@ -164,8 +164,8 @@
   <div style="height: 50px" />
 
   <div
-    style="position: fixed; bottom: 35px; left: 0"
-    :style="{ width: expanded ? '420px' : '92px' }"
+    class="mt-3"
+    style="position: sticky; bottom: 8px; left: 0; width: 100%; z-index: 2;"
   >
     <v-menu>
       <template #activator="{ props }">

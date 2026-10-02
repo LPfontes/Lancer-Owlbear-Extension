@@ -6,24 +6,14 @@
       class="mt-4"
       align="center"
     >
-      <v-col
-        cols="1"
-        class="text-center"
-      >
-        <v-icon
-          icon="cc:encounter"
-          :color="encounter ? 'success' : 'panel'"
-          size="50"
-        />
-      </v-col>
-      <v-col cols="11">
+      <v-col cols="12">
         <div class="text-cc-overline mb-1">
           <cc-slashes class="pr-1" />
           <span class="text-disabled">{{ $t('active.newEnc.encounterData') }}</span>
         </div>
-        <cc-panel>
+        <cc-panel density="no-gutters" color="transparent">
           <v-slide-x-transition leave-absolute>
-            <div v-if="!emptyEncounter">
+            <div v-if="!emptyEncounter && !showLoader">
               <cc-titled-divider
                 v-if="!encounter"
                 :title="$t('gm.campaign.selectEncounter').toLowerCase()"
@@ -118,13 +108,59 @@
           </v-slide-x-transition>
 
           <v-slide-x-transition leave-absolute>
-            <cc-panel v-if="emptyEncounter">
+            <cc-panel
+              v-if="emptyEncounter"
+              density="no-gutters"
+              color="transparent"
+            >
               <cc-titled-divider
                 :title="$t('classes.newEncounter')"
                 color="accent"
               />
               <sitrep-editor :item="emptyEncounter" />
               <environment-editor :item="emptyEncounter" />
+            </cc-panel>
+          </v-slide-x-transition>
+
+          <v-slide-x-transition leave-absolute>
+            <cc-panel
+              v-if="showLoader"
+              density="no-gutters"
+              color="transparent"
+            >
+              <cc-titled-divider
+                :title="$t('active.newEnc.loadFromJson')"
+                color="accent"
+              />
+              <div class="pa-2">
+                <cc-text-field
+                  v-model="loadInput"
+                  :label="$t('active.newEnc.jsonOrSharecode')"
+                  :placeholder="$t('active.newEnc.jsonOrSharecodePlaceholder')"
+                  density="compact"
+                  variant="outlined"
+                  rows="6"
+                  auto-grow
+                  hide-details
+                  :counter="50000"
+                />
+                <div v-if="loadError" class="text-error mt-2">{{ loadError }}</div>
+                <div class="d-flex justify-end mt-2 gap-2">
+                  <cc-button
+                    variant="text"
+                    @click="showLoader = false; loadInput = ''; loadError = ''"
+                  >
+                    {{ $t('common.cancel') }}
+                  </cc-button>
+                  <cc-button
+                    color="primary"
+                    :loading="loadLoading"
+                    @click="loadEncounter"
+                  >
+                    {{ $t('active.newEnc.loadEncounter') }}
+                  </cc-button>
+                </div>
+              </div>
             </cc-panel>
           </v-slide-x-transition>
 
@@ -143,22 +179,9 @@
             justify="space-between"
             class="mt-2"
           >
-            <v-col cols="auto">
-              <v-slide-x-transition>
-                <cc-button
-                  v-if="!!emptyEncounter"
-                  size="small"
-                  color="error"
-                  prepend-icon="mdi-close"
-                  @click="clearEmptyEncounter()"
-                >
-                  {{ $t('common.cancel') }}
-                </cc-button>
-              </v-slide-x-transition>
-            </v-col>
             <v-slide-x-reverse-transition>
               <v-col
-                v-if="!selectedEncounter && !emptyEncounter"
+                v-if="!selectedEncounter && !emptyEncounter && !showLoader"
                 cols="auto"
               >
                 <cc-button
@@ -171,23 +194,25 @@
                 </cc-button>
               </v-col>
             </v-slide-x-reverse-transition>
+            <v-slide-x-reverse-transition>
+              <v-col
+                v-if="!selectedEncounter && !emptyEncounter && !showLoader"
+                cols="auto"
+              >
+                <cc-button
+                  size="small"
+                  color="secondary"
+                  prepend-icon="mdi-code-json"
+                  @click="showLoader = true"
+                >
+                  {{ $t('active.newEnc.loadFromJson') }}
+                </cc-button>
+              </v-col>
+            </v-slide-x-reverse-transition>
           </v-row>
         </cc-panel>
       </v-col>
     </v-row>
-
-    <v-slide-y-transition>
-      <encounter-pilots-panel
-        v-if="encounter"
-        :encounter="encounter"
-        :pilots="pilots"
-        :placeholders="placeholders"
-        @remove-pilot="removePilot"
-        @remove-placeholder="placeholders.splice($event, 1)"
-        @add-pilot="pilots.push($event)"
-        @add-placeholder="addPlaceholder()"
-      />
-    </v-slide-y-transition>
 
     <v-slide-y-transition>
       <encounter-summary
@@ -212,9 +237,9 @@
   import EnvironmentEditor from '@/features/gm/encounters/_components/EnvironmentEditor.vue'
   import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { Placeholder } from '@/classes/encounter/Placeholder'
-  import EncounterPilotsPanel from './_components/EncounterPilotsPanel.vue'
   import EncounterSummary from './_components/EncounterSummary.vue'
   import { Pilot } from '@/classes/pilot/Pilot.js'
+  import { loadEncounterFromJsonOrSharecode } from '@/util/encounterLoader'
 
   const router = useRouter()
 
@@ -229,6 +254,10 @@
   const selectedEncounter = ref<Encounter | null>(null) as Ref<Encounter | null>
   const pilots = ref<Pilot[]>([]) as Ref<Pilot[]>
   const placeholders = ref<Placeholder[]>([]) as Ref<Placeholder[]>
+  const showLoader = ref(false)
+  const loadInput = ref('')
+  const loadLoading = ref(false)
+  const loadError = ref('')
 
   const encounter = computed<Encounter | null>(
     () => selectedEncounter.value || emptyEncounter.value
@@ -281,14 +310,55 @@
     instance.RecordEncounterStart()
     await EncounterStore().AddEncounterInstance(instance)
     await EncounterStore().SetActiveEncounter(instance.ID)
+
+    // Envia o encontro ativo para o outro iframe (Owlbear Rodeo / Combat Tracker) e sincroniza com a mesa
+    try {
+      const { obrBridge } = await import('@/services/obrBridge')
+      await obrBridge.broadcastActiveEncounter(instance)
+
+      const { useTableActionStore } = await import('@/stores/tableActionStore')
+      void useTableActionStore().postAction({
+        senderName: 'COMP/CON',
+        category: 'full_action',
+        title: `Combate Iniciado — ${instance.Name}`,
+        detail: `O encontro foi criado e sincronizado em tempo real com o Combat Tracker. Rodada 1.`,
+      })
+    } catch (err) {
+      console.warn('[NewEncounter] Erro ao sincronizar encontro via obrBridge:', err)
+    }
+
     if (launch) router.push('gm-encounter-runner')
     else router.push('manage-encounters')
+  }
+  async function loadEncounter() {
+    if (!loadInput.value.trim()) {
+      loadError.value = 'Insira um JSON ou ShareCode.'
+      return
+    }
+    loadLoading.value = true
+    loadError.value = ''
+    try {
+      const { instance } = await loadEncounterFromJsonOrSharecode(loadInput.value.trim(), {
+        pilots: pilots.value,
+        placeholders: placeholders.value,
+        navigate: false,
+      })
+      // Navigate to the runner with the loaded encounter
+      router.push({ name: 'active-gm-encounter-runner', params: { id: instance.ID } })
+    } catch (err) {
+      loadError.value = err instanceof Error ? err.message : 'Erro ao carregar encontro.'
+    } finally {
+      loadLoading.value = false
+    }
   }
   function reset() {
     selectedEncounter.value = null
     emptyEncounter.value = null
     pilots.value = []
     placeholders.value = []
+    showLoader.value = false
+    loadInput.value = ''
+    loadError.value = ''
     router.push('manage-encounters')
   }
 </script>

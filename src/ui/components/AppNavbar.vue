@@ -171,22 +171,6 @@
           />
         </v-btn>
 
-        <v-btn
-          to="/active-mode/manage-encounters"
-          variant="text"
-          :class="isRouteActive('/active-mode/manage-encounters') ? 'nav-link-active text-accent' : 'text-grey-lighten-2'"
-          class="nav-btn font-weight-bold rounded-0"
-          prepend-icon="cc:encounter"
-        >
-          {{ $t('ow.encountersGm') }}
-          <v-badge
-            v-if="encountersCount > 0"
-            :content="encountersCount"
-            color="primary"
-            inline
-            class="ml-1"
-          />
-        </v-btn>
 
         <v-btn
           to="/active-mode/npcs"
@@ -398,19 +382,6 @@
         </template>
       </v-list-item>
 
-      <v-list-item
-        to="/active-mode/manage-encounters"
-        prepend-icon="cc:encounter"
-        :title="$t('ow.encountersGm')"
-        class="my-1 rounded-0"
-        :active="isRouteActive('/active-mode/manage-encounters')"
-        color="accent"
-        @click="drawer = false"
-      >
-        <template #append v-if="encountersCount > 0">
-          <v-badge :content="encountersCount" color="primary" inline />
-        </template>
-      </v-list-item>
 
       <v-list-item
         to="/active-mode/npcs"
@@ -434,14 +405,6 @@
         to="/active-mode/new-sheet"
         prepend-icon="mdi-account-plus"
         :title="$t('ow.newSheet')"
-        class="my-1 rounded-0"
-        @click="drawer = false"
-      />
-
-      <v-list-item
-        to="/active-mode/new-encounter"
-        prepend-icon="mdi-sword-cross"
-        :title="$t('ow.newEncounter')"
         class="my-1 rounded-0"
         @click="drawer = false"
       />

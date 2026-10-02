@@ -7,10 +7,10 @@
   >
     <v-toolbar
       density="compact"
-      height="50"
+      height="60"
       :color="active ? 'core' : 'panel'"
     >
-      <span class="heading h3 px-2">
+      <span class="heading h5 px-2" style="font-size: 14px;">
         {{ cs.Name }}
         <v-chip
           v-if="active"
@@ -130,7 +130,7 @@
         >
           <v-expansion-panel-title>
             <div
-              class="heading h3 text-accent"
+              class="heading h5 text-accent"
               style="line-height: 0"
             >
               {{ cs.PassiveName || '' }}

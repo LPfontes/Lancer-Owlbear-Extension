@@ -3,7 +3,7 @@
     <!-- Red Header Ribbon: LL{level} — {name} -->
     <div class="lancer-hud-ribbon">
       <div class="ribbon-text">
-        LL{{ licenseLevel }} &mdash; {{ actorName }}
+        {{ levelPrefix }}{{ licenseLevel }} &mdash; {{ actorName }}
       </div>
     </div>
 
@@ -834,8 +834,15 @@
   // State
   const imgFallback = ref(false)
 
-  // License Level
+  // License Level / Tier
+  const levelPrefix = computed(() => {
+    return props.item.ItemType?.toLowerCase() === 'npc' ? 'T' : 'LL'
+  })
+
   const licenseLevel = computed(() => {
+    if (props.item.ItemType?.toLowerCase() === 'npc') {
+      return (props.item as any).NpcClassController?.Tier ?? 1
+    }
     return (props.item as any).Level ?? (props.item as any).Pilot?.Level ?? 0
   })
 

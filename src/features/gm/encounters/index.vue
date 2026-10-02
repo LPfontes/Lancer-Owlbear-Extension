@@ -188,7 +188,7 @@
     >
       <encounter-editor
         :item="selected"
-        @exit="editDialog = false"
+        @exit="onEditorExit"
       />
     </v-dialog>
 
@@ -416,5 +416,9 @@
     EncounterStore().AddEncounter(e)
     selected.value = e
     editDialog.value = true
+  }
+  function onEditorExit() {
+    editDialog.value = false
+    void EncounterStore().SaveEncounterData()
   }
 </script>

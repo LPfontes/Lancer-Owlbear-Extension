@@ -5,6 +5,7 @@ import { SetItem } from '@/io/Storage'
 import { toRaw } from 'vue'
 import { dddiceService } from './dddiceService'
 import { statusMarkerService } from './statusMarkerService'
+import { TAB_ID } from './tabId'
 
 export const COMPCON_METADATA_KEY = 'com.compcon.activemode'
 export const COMPCON_PILOT_PREFIX = 'com.compcon.activemode/p/'
@@ -16,6 +17,7 @@ export const COMPCON_NPCS_METADATA_KEY = 'com.compcon.activemode/npcs'
 export const COMPCON_PILOT_ROSTER_KEY = 'com.compcon.activemode/pilot_roster'
 export const COMPCON_NPC_ROSTER_KEY = 'com.compcon.activemode/npc_roster'
 export const COMPCON_TABLE_ACTIONS_KEY = 'com.compcon.activemode/table_actions'
+export const COMPCON_ACTIVE_ENCOUNTER_KEY = 'com.compcon.activemode/active_encounter'
 export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
 export const COMPCON_ICON_URL = '/icon.svg'
 export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
@@ -25,7 +27,7 @@ class OBRBridge {
   private isReady = false
   private role: 'GM' | 'PLAYER' = 'PLAYER'
   private playerId: string = ''
-  private tabId: string = 'tab_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now()
+  private tabId: string = TAB_ID
   private isSyncingFromRemote = false
   private isSavingToRemote = false
   private incomingChunks = new Map<string, { chunks: string[]; total: number; timestamp: number }>()
@@ -43,6 +45,7 @@ class OBRBridge {
   private lastRoomNpcRosterStr: string = ''
   private cachedPilotRoster: Record<string, any> = {}
   private cachedNpcRoster: Record<string, any> = {}
+  private playerSelectionUnsubscribe?: () => void
 
   public async init(onReadyCallback?: () => void) {
     if (this.isReady) return
@@ -59,6 +62,28 @@ class OBRBridge {
       } catch (e) {
         console.warn('[OBRBridge] BroadcastChannel local não suportado:', e)
       }
+    }
+
+    // Cross-window traffic, restricted to this extension's own windows. The
+    // bridge must not act on messages posted by whatever page embeds or opened
+    // the app, so both the origin and the envelope are required: a foreign page
+    // can then neither read the broadcast payloads nor inject commands.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('message', async (event) => {
+        try {
+          if (event.origin !== window.location.origin) return
+          const data = event.data
+          if (!data || typeof data !== 'object') return
+          if (data.obrBridgeBroadcast !== true) return
+          const payload = data.payload
+          if (!payload || typeof payload !== 'object') return
+          if (payload.senderTabId && payload.senderTabId === this.tabId) return
+          if (!payload.type && !payload.action) return
+          await this.handleBroadcastMessage(payload)
+        } catch {
+          // ignore
+        }
+      })
     }
 
     if (!OBR.isAvailable) {
@@ -90,6 +115,7 @@ class OBRBridge {
       if (!isStandaloneChat) {
         this.setupContextMenu()
         this.setupSceneMetadataListener()
+        this.setupPlayerSelectionListener()
 
         // Carrega fichas já salvas na cena/sala do Owlbear
         await this.syncFromRoom().catch(() => {})
@@ -274,6 +300,10 @@ class OBRBridge {
       if (pilotChanged || npcChanged) {
         await this.syncFromRoom()
       }
+
+      if (COMPCON_ACTIVE_ENCOUNTER_KEY in metadata && metadata[COMPCON_ACTIVE_ENCOUNTER_KEY]) {
+        await this.handleReceivedEncounter(metadata[COMPCON_ACTIVE_ENCOUNTER_KEY])
+      }
     })
 
     OBR.scene.onReadyChange(async (ready) => {
@@ -358,6 +388,12 @@ class OBRBridge {
         )
       } else if (msg.type === 'TABLE_ACTION') {
         window.dispatchEvent(new CustomEvent('compcon-table-action', { detail: msg.action }))
+      } else if (msg.type === 'ENCOUNTER_DATA') {
+        await this.handleReceivedEncounter(msg.data)
+      } else if (msg.type === 'ENCOUNTER_STORAGE_UPDATED') {
+        const { EncounterStore } = await import('@/stores')
+        await EncounterStore().LoadEncounters()
+        window.dispatchEvent(new CustomEvent('compcon-encounters-reloaded'))
       } else if (msg.senderName && msg.title) {
         // Evento de rolagem de combate compartilhado
         window.dispatchEvent(new CustomEvent('compcon-combat-roll', { detail: msg }))
@@ -392,6 +428,18 @@ class OBRBridge {
     }
 
     // 1. Envia via BroadcastChannel local (sincronização instantânea entre abas no mesmo navegador)
+    if (!this.localTabChannel && typeof BroadcastChannel !== 'undefined') {
+      try {
+        this.localTabChannel = new BroadcastChannel('compcon_obr_local_tabs')
+        this.localTabChannel.onmessage = async (event) => {
+          if (!event.data || typeof event.data !== 'object') return
+          if (event.data.senderTabId && event.data.senderTabId === this.tabId) return
+          await this.handleBroadcastMessage(event.data)
+        }
+      } catch (e) {
+        console.warn('[OBRBridge] BroadcastChannel local não suportado:', e)
+      }
+    }
     if (this.localTabChannel) {
       try {
         this.localTabChannel.postMessage(fullPayload)
@@ -400,7 +448,33 @@ class OBRBridge {
       }
     }
 
-    // 2. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting
+    // 2. Sends via window.postMessage to the parent/opener or sibling windows.
+    // The target origin is pinned to our own origin: only this extension's own
+    // windows speak this protocol, so a cross-origin host page or opener must
+    // not receive the serialized sheet payloads.
+    if (typeof window !== 'undefined') {
+      const envelope = { obrBridgeBroadcast: true, payload: fullPayload }
+      const ownOrigin = window.location.origin
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(envelope, ownOrigin)
+        }
+        if (window.opener) {
+          window.opener.postMessage(envelope, ownOrigin)
+        }
+        for (let i = 0; i < window.frames.length; i++) {
+          try {
+            window.frames[i].postMessage(envelope, ownOrigin)
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 3. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting
     if (OBR.isAvailable && this.isReady) {
       await new Promise<void>((resolve) => {
         this.broadcastQueue.push({ payload: fullPayload, resolve })
@@ -757,6 +831,121 @@ class OBRBridge {
       pilotId,
       patch,
     })
+  }
+
+  /**
+   * Transmite o encontro ativo para toda a mesa e salva nos metadados da cena
+   */
+  public async broadcastActiveEncounter(encounterObj: any): Promise<void> {
+    try {
+      const raw = encounterObj ? toRaw(encounterObj) : null
+
+      if (!raw) {
+        // Encerramento / limpeza do encontro
+        await this.sendBroadcastMessage({
+          type: 'ENCOUNTER_DATA',
+          encounterId: null,
+          data: null,
+        })
+        if (OBR.isAvailable && this.isReady) {
+          try {
+            await OBR.scene.setMetadata({
+              [COMPCON_ACTIVE_ENCOUNTER_KEY]: undefined,
+            })
+          } catch (err) {
+            console.warn('[OBRBridge] Erro ao limpar encontro da cena:', err)
+          }
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('compcon-encounter-synced', { detail: { encounterId: null, instance: null } })
+          )
+        }
+        console.log('[OBRBridge] Encontro ativo encerrado e removido da cena.')
+        return
+      }
+
+      const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
+
+      let serialized: any = null
+      if (typeof raw.Serialize === 'function') {
+        serialized = raw.Serialize()
+      } else if (typeof EncounterInstance.Serialize === 'function') {
+        serialized = EncounterInstance.Serialize(raw as any)
+      } else {
+        serialized = raw
+      }
+
+      const compressed = await this.compressData(serialized)
+
+      // Transmite via broadcast em tempo real para todos na sala
+      await this.sendBroadcastMessage({
+        type: 'ENCOUNTER_DATA',
+        encounterId: raw.ID || raw.id,
+        data: compressed,
+      })
+
+      // Se for GM e OBR Scene estiver disponível, persiste na cena para quem entrar depois
+      if (OBR.isAvailable && this.isReady) {
+        try {
+          await OBR.scene.setMetadata({
+            [COMPCON_ACTIVE_ENCOUNTER_KEY]: compressed,
+          })
+        } catch (err) {
+          console.warn('[OBRBridge] Erro ao gravar encontro na cena:', err)
+        }
+      }
+
+      console.log(`[OBRBridge] Encontro "${raw.Name || raw.id}" transmitido para a mesa com sucesso.`)
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao sincronizar encontro com a mesa:', e)
+    }
+  }
+
+  /**
+   * Trata um encontro recebido via broadcast ou metadados de cena
+   */
+  public async handleReceivedEncounter(compressedOrData: any): Promise<void> {
+    try {
+      if (!compressedOrData) {
+        const { EncounterStore } = await import('@/stores')
+        const store = EncounterStore()
+        store.CurrentActiveID = ''
+        window.dispatchEvent(
+          new CustomEvent('compcon-encounter-synced', { detail: { encounterId: null, instance: null } })
+        )
+        return
+      }
+
+      let data = compressedOrData
+      if (typeof compressedOrData === 'string') {
+        data = await this.decompressData(compressedOrData)
+      }
+      if (!data || typeof data !== 'object') {
+        const { EncounterStore } = await import('@/stores')
+        const store = EncounterStore()
+        store.CurrentActiveID = ''
+        window.dispatchEvent(
+          new CustomEvent('compcon-encounter-synced', { detail: { encounterId: null, instance: null } })
+        )
+        return
+      }
+
+      const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
+      const { EncounterStore } = await import('@/stores')
+
+      const instance = EncounterInstance.Deserialize(data)
+      const store = EncounterStore()
+      await store.AddEncounterInstance(instance)
+      await store.SetActiveEncounter(instance.ID)
+
+      window.dispatchEvent(
+        new CustomEvent('compcon-encounter-synced', { detail: { encounterId: instance.ID, instance } })
+      )
+      console.log(`[OBRBridge] Encontro sincronizado recebido: ${instance.Name} (Rodada ${instance.Round})`)
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao processar encontro recebido:', e)
+    }
   }
 
   /**
@@ -1638,6 +1827,16 @@ class OBRBridge {
     try {
       const metadata = await OBR.room.getMetadata()
 
+      // Carrega encontro ativo salvo na cena, se houver
+      try {
+        const sceneMeta = await OBR.scene.getMetadata()
+        if (COMPCON_ACTIVE_ENCOUNTER_KEY in sceneMeta && sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY]) {
+          await this.handleReceivedEncounter(sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY])
+        }
+      } catch {
+        // cena pode não estar pronta
+      }
+
       // --- PILOTOS ---
       const roomPilots = await this.getRoomPilots()
       if (Object.keys(roomPilots).length > 0) {
@@ -1904,6 +2103,165 @@ class OBRBridge {
       }
     } catch (e) {
       console.warn('[OBRBridge] Erro ao sincronizar marcadores de status do combatente:', e)
+    }
+  }
+
+  /**
+   * Monitora a seleção de tokens no canvas do Owlbear e notifica o Tracker
+   */
+  private setupPlayerSelectionListener() {
+    if (this.playerSelectionUnsubscribe) {
+      this.playerSelectionUnsubscribe()
+    }
+    if (!OBR.isAvailable || !this.isReady) return
+
+    this.playerSelectionUnsubscribe = OBR.player.onChange(async (player) => {
+      const selection = player.selection
+      if (!selection || selection.length === 0) return
+      const selectedId = selection[0]
+      try {
+        const items = await OBR.scene.items.getItems([selectedId])
+        if (items.length > 0) {
+          const item = items[0]
+          const meta = (item.metadata[COMPCON_METADATA_KEY] as any) || {}
+          window.dispatchEvent(
+            new CustomEvent('compcon-token-selected', {
+              detail: {
+                tokenId: selectedId,
+                tokenName: item.name,
+                sheetId: meta.sheetId,
+                mechId: meta.mechId,
+                combatantId: meta.combatantId,
+              },
+            })
+          )
+        }
+      } catch {
+        // ignore
+      }
+    })
+  }
+
+  /**
+   * Encontra o token correspondente a um combatente no mapa
+   */
+  public async findTokenForCombatant(c: any): Promise<Item | null> {
+    if (!this.isReady || !OBR.isAvailable) return null
+    try {
+      const items = await OBR.scene.items.getItems()
+      const sheetId = c?.actor?.ID
+      const mechId = c?.actor?.ActiveMech?.ID
+      const combatantId = c?.id
+      const name = (c?.actor?.Name || '').trim().toLowerCase()
+      const combatName = (c?.actor?.CombatController?.CombatName || '').trim().toLowerCase()
+
+      // 1. Busca por vínculo explícito de IDs nos metadados
+      const exactMatch = items.find((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        if (!meta) return false
+        return (
+          (combatantId && meta.combatantId === combatantId) ||
+          (sheetId && (meta.sheetId === sheetId || meta.mechId === sheetId)) ||
+          (mechId && (meta.sheetId === mechId || meta.mechId === mechId))
+        )
+      })
+      if (exactMatch) return exactMatch
+
+      // 2. Busca por nome no token da cena
+      const nameMatch = items.find((item) => {
+        const tokenName = (item.name || '').trim().toLowerCase()
+        if (!tokenName) return false
+        return (
+          tokenName === name ||
+          tokenName === combatName ||
+          (name && tokenName.includes(name)) ||
+          (combatName && tokenName.includes(combatName))
+        )
+      })
+      return nameMatch || null
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao buscar token para combatente:', e)
+      return null
+    }
+  }
+
+  /**
+   * Move e centraliza a câmera do Owlbear Rodeo no token e o seleciona
+   */
+  public async focusToken(token: Item): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable || !token) return
+    try {
+      const scale = (await OBR.viewport.getScale().catch(() => 1)) || 1
+      const width = (await OBR.viewport.getWidth().catch(() => 1920)) || 1920
+      const height = (await OBR.viewport.getHeight().catch(() => 1080)) || 1080
+
+      const targetX = token.position.x
+      const targetY = token.position.y
+
+      await OBR.viewport.animateTo({
+        scale,
+        position: {
+          x: width / 2 - targetX * scale,
+          y: height / 2 - targetY * scale,
+        },
+      })
+
+      await OBR.player.select([token.id])
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao focar token no mapa:', e)
+    }
+  }
+
+  /**
+   * Localiza o token de um combatente e foca a câmera nele
+   */
+  public async focusAndSelectCombatant(combatant: any): Promise<boolean> {
+    const token = await this.findTokenForCombatant(combatant)
+    if (token) {
+      await this.focusToken(token)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Vincula o token atualmente selecionado no mapa a este combatente do Tracker
+   */
+  public async bindSelectedTokenToCombatant(combatant: any): Promise<boolean> {
+    if (!this.isReady || !OBR.isAvailable) return false
+    try {
+      const selection = await OBR.player.getSelection()
+      if (!selection || selection.length === 0) {
+        await OBR.notification.show('Selecione primeiro um token no mapa para vincular.')
+        return false
+      }
+      const tokenId = selection[0]
+      const sheetId = combatant.actor?.ID || combatant.id
+      const mechId = combatant.actor?.ActiveMech?.ID || sheetId
+      const name = combatant.actor?.CombatController?.CombatName || combatant.actor?.Name || 'Combatente'
+
+      await this.bindTokenToSheet(tokenId, {
+        sheetType: combatant.side === 'ally' ? 'pilot' : 'npc',
+        sheetId,
+        mechId,
+        name,
+        combatantId: combatant.id,
+      } as any)
+
+      await OBR.scene.items.updateItems([tokenId], (items) => {
+        for (const item of items) {
+          item.metadata[COMPCON_METADATA_KEY] = {
+            ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
+            combatantId: combatant.id,
+          }
+        }
+      })
+
+      await OBR.notification.show(`Token vinculado com sucesso a ${name}!`)
+      return true
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao vincular token selecionado ao combatente:', e)
+      return false
     }
   }
 

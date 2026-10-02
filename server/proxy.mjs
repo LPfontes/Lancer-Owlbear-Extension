@@ -41,7 +41,7 @@ export async function resolveShareCode(rawCode) {
 
         if (cfResponse.ok) {
           const payload = await cfResponse.json();
-          if (payload && (payload.callsign || payload.mechs || payload.itemType === 'pilot' || payload.id || payload.ID)) {
+          if (payload && (payload.callsign || payload.mechs || payload.itemType === 'pilot' || payload.id || payload.ID || payload.name || payload.npcClass || payload.class || payload.features)) {
             return payload;
           }
         }
@@ -65,7 +65,7 @@ export async function resolveShareCode(rawCode) {
 
       if (response.ok) {
         const payload = await response.json();
-        if (payload && (payload.callsign || payload.pilot || payload.mechs || payload.id || payload.ID)) {
+        if (payload && (payload.callsign || payload.pilot || payload.mechs || payload.id || payload.ID || payload.name || payload.npcClass || payload.class || payload.features)) {
           return payload;
         }
       }

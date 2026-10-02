@@ -372,6 +372,7 @@
             {{ $t('hud.roll') }}
           </v-btn>
           <v-btn
+            v-if="lastRollResults.length"
             color="success"
             variant="elevated"
             prepend-icon="mdi-check"
@@ -536,8 +537,12 @@
   function openModal(openFn: () => void) {
     // Inicializa danos base da arma
     baseDamages.value = []
-    if (props.item?.Damage && props.item.Damage.length) {
-      for (const d of props.item.Damage) {
+    let damageData = props.item?.Damage
+    if (typeof damageData === 'function') {
+      try { damageData = damageData(1, []) } catch(e) { damageData = [] }
+    }
+    if (damageData && Array.isArray(damageData) && damageData.length) {
+      for (const d of damageData) {
         baseDamages.value.push({
           type: d.Type || 'Kinetic',
           val: String(d.Value || '1d6'),
@@ -634,7 +639,7 @@
           }
         }
 
-        if (diceToRoll.length > 0 || totalFlatBonus !== 0) {
+        if (diceToRoll.length > 0) {
           const rollData = await dddiceService.rollDice({
             dice: diceToRoll,
             flatBonus: totalFlatBonus,
