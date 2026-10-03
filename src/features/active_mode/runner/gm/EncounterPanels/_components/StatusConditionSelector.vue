@@ -158,13 +158,16 @@
 
   function syncMarkers() {
     try {
-      const parentId = (props.controller as any).Parent?.ID
+      const parent = (props.controller as any).Parent
+      const parentId = parent?.ID
       if (!parentId) return
       const list = ((props.controller as any).Statuses || []).map((s: any) => s.status?.ID || s.status)
       if (props.controller.IsInDangerZone && !list.includes('dangerzone')) {
         list.push('dangerzone')
       }
-      obrBridge.syncCombatantStatusMarkers(parentId, list).catch(() => {})
+      obrBridge
+        .syncCombatantStatusMarkers(parentId, list, parent?.OriginId || parentId)
+        .catch(() => {})
     } catch (_e) {}
   }
 

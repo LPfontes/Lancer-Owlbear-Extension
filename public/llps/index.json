@@ -1,0 +1,74 @@
+[
+  {
+    "file": "dustgrave.llp",
+    "lang": "pt",
+    "target": "05B2PGxewZ193c4GaHDBoE2sl8U=",
+    "target_version": "^2.0.2",
+    "pack": "LANCER: Dustgrave",
+    "version": "2.0.2",
+    "keys": 388
+  },
+  {
+    "file": "ktb.llp",
+    "lang": "pt",
+    "target": "l2LyED6bpwu6FATD80SCqegdxvE=",
+    "target_version": "^2.0.2",
+    "pack": "Lancer KTB Data",
+    "version": "2.0.2",
+    "keys": 600
+  },
+  {
+    "file": "long-rim.llp",
+    "lang": "pt",
+    "target": "eK3m5/lSUgllpz12ZjWcfL/TC2c=",
+    "target_version": "^2.0.2",
+    "pack": "Lancer Long Rim Data",
+    "version": "2.0.2",
+    "keys": 407
+  },
+  {
+    "file": "osr.llp",
+    "lang": "pt",
+    "target": "GWG3TKHfJGNXeO3U3Q+CgjhS/Os=",
+    "target_version": "^2.0.1",
+    "pack": "Operation Solstice Rain Data",
+    "version": "2.0.1",
+    "keys": 135
+  },
+  {
+    "file": "ows.llp",
+    "lang": "pt",
+    "target": "xX6hfQwgnreJ8BLny07FueBFWrg=",
+    "target_version": "^2.0.1",
+    "pack": "Operation Winter Scar",
+    "version": "2.0.1",
+    "keys": 144
+  },
+  {
+    "file": "sotw.llp",
+    "lang": "pt",
+    "target": "w2IDRl6mAY9Emo6d1CTb6TnQgj8=",
+    "target_version": "^2.0.0",
+    "pack": "Shadow of the Wolf",
+    "version": "2.0.0",
+    "keys": 110
+  },
+  {
+    "file": "ssmr.llp",
+    "lang": "pt",
+    "target": "B/5RiGRmQef6GvXMnoE51htsja4=",
+    "target_version": "^2.0.0",
+    "pack": "Siren's Song, A Mountain's Remorse",
+    "version": "2.0.0",
+    "keys": 95
+  },
+  {
+    "file": "wallflower.llp",
+    "lang": "pt",
+    "target": "MMhitef+jvmY2uy9kdaCSXKJSeA=",
+    "target_version": "^3.0.4",
+    "pack": "Lancer Wallflower Data",
+    "version": "3.0.4",
+    "keys": 261
+  }
+]

@@ -70,6 +70,11 @@
                 align-self="start"
                 class="ml-auto mr-1 mt-1"
               >
+                <open-npc-sheet-button
+                  v-if="isNpc"
+                  :combatant="owner"
+                  class="mr-1"
+                />
                 <activation-tracker :item="item" />
                 <v-menu v-if="(owner as any)[statusField]">
                   <template #activator="{ props: statusProps }">
@@ -416,6 +421,7 @@
   import TrackableStatsComplex from './_components/TrackableStatsComplex.vue'
   import TrackableStatsSimple from './_components/TrackableStatsSimple.vue'
   import LancerFoundryStatsHud from './_components/LancerFoundryStatsHud.vue'
+  import OpenNpcSheetButton from './_components/_OpenNpcSheetButton.vue'
   import { ICombatant } from '@/classes/components/combat/ICombatant'
   import { PilotStatus, NpcStatus, MechStatus } from '@/classes/enums'
   import { useLayoutOptions, filterStats } from '@/features/active_mode/layoutOptions'
@@ -431,6 +437,7 @@
   const { layout } = useLayoutOptions()
 
   const itemType = computed(() => props.item.ItemType.toLowerCase())
+  const isNpc = computed(() => ['unit', 'doodad', 'eidolon'].includes(owner.value?.type ?? ''))
   const statusField = computed<'status' | 'pilotStatus' | 'mechStatus'>(() => {
     if (itemType.value === 'mech') return 'mechStatus'
     if (itemType.value === 'pilot') return 'pilotStatus'

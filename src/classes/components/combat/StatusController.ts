@@ -71,7 +71,8 @@ class StatusController {
   public NotifyStatusChange(): void {
     if (typeof window !== 'undefined') {
       try {
-        const parentId = (this._parent as any).Parent?.ID
+        const parent = (this._parent as any).Parent
+        const parentId = parent?.ID
         if (parentId) {
           const activeStatuses = this.Statuses.map(s => s.status.ID)
           if (this._parent.IsInDangerZone && !activeStatuses.includes('dangerzone')) {
@@ -81,6 +82,7 @@ class StatusController {
             new CustomEvent('compcon-combatant-statuses-changed', {
               detail: {
                 combatantId: parentId,
+                originId: parent?.OriginId || parentId,
                 statuses: activeStatuses,
               },
             })

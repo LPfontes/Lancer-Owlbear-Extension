@@ -64,7 +64,7 @@
         <v-toolbar
           density="compact"
           class="cToolbar"
-          :height="mobile ? '40' : '46'"
+          :height="mobile ? '66' : '46'"
         >
           <v-row
             no-gutters

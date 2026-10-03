@@ -139,6 +139,7 @@ interface CombatData {
   actionUses: Record<string, IActionUseRecord>
 
   combat_log: IRecorderData
+  combat_log_version?: number
   round: number
   turn: number
 
@@ -1435,6 +1436,7 @@ class CombatController implements ICounterContainer, IStatContainer {
     target.rechargeRolledRound = controller.RechargeRolledRound
 
     target.combat_log = controller.CombatLog.Save()
+    target.combat_log_version = controller.CombatLogVersion
     target.round = controller.Round
     target.turn = controller.Turn
 
@@ -1466,6 +1468,7 @@ class CombatController implements ICounterContainer, IStatContainer {
     controller.RechargeRolledRound = data?.rechargeRolledRound ?? -1
 
     controller.CombatLog.Load(data?.combat_log)
+    controller.CombatLogVersion = data?.combat_log_version ?? 0
 
     controller.Round = data?.round || 1
     controller.Turn = data?.turn || 1

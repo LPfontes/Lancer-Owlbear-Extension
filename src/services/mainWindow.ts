@@ -37,7 +37,7 @@ export async function isMainWindowOpen(): Promise<boolean> {
   }
 }
 
-export async function openMainWindow(openTableSheets: boolean = false): Promise<void> {
+export async function openMainWindow(openTableSheets: boolean = false, targetRoute?: string): Promise<void> {
   let screenW = 1920
   let screenH = 1080
 
@@ -67,9 +67,11 @@ export async function openMainWindow(openTableSheets: boolean = false): Promise<
   const height = Math.min(!isNaN(baseHeight) && baseHeight >= 500 ? baseHeight : 720, Math.max(480, screenH - top - 96))
   const left = Math.max(84, screenW - width - 84)
 
-  const targetUrl = openTableSheets
-    ? '/?windowType=floating#/active-mode?openTableSheets=true'
-    : '/?windowType=floating#/active-mode'
+  const targetUrl = targetRoute
+    ? `/?windowType=floating#${targetRoute}`
+    : openTableSheets
+      ? '/?windowType=floating#/active-mode?openTableSheets=true'
+      : '/?windowType=floating#/active-mode'
 
   if (OBR.isAvailable) {
     try {

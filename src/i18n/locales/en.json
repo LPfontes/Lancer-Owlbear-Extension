@@ -1343,7 +1343,8 @@
       "setCampaign": "Set Campaign"
     },
     "landing": {
-      "resumeRound": "resume {name} (Round {n})"
+      "resumeRound": "resume {name} (Round {n})",
+      "openNpcs": "Open NPCs"
     },
     "endEnc": {
       "endEncounter": "End Encounter",
@@ -1567,7 +1568,8 @@
       "hardCover": "Hard Cover",
       "resistances": "Resistances",
       "statusesConditions": "Statuses/Conditions",
-      "counters": "Counters"
+      "counters": "Counters",
+      "openSheet": "Open sheet"
     },
     "damageMenu": {
       "takeDamage": "Take Damage",

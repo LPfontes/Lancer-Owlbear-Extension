@@ -333,10 +333,10 @@
             </template>
           </v-tooltip>
 
-          <!-- Alternar Visibilidade do Combatente (Apenas Mestre) -->
+          <!-- Abrir Ficha do NPC -->
           <v-tooltip
-            v-if="effectiveIsGM"
-            :text="c.hiddenFromPlayers ? 'Revelar combatente aos jogadores' : 'Ocultar combatente dos jogadores (Fog of War)'"
+            v-if="effectiveIsGM && isNpcCombatant(c)"
+            text="Abrir ficha do NPC"
             location="top"
           >
             <template #activator="{ props: tipProps }">
@@ -344,11 +344,12 @@
                 v-bind="tipProps"
                 size="small"
                 variant="tonal"
-                :color="c.hiddenFromPlayers ? 'purple-accent-2' : 'grey-lighten-1'"
-                :icon="c.hiddenFromPlayers ? 'mdi-eye-off' : 'mdi-eye'"
+                color="accent"
+                icon="mdi-book-open-variant"
                 class="rounded-0 ml-1"
                 style="height: 32px; width: 32px;"
-                @click.stop="toggleCombatantVisibility(c)"
+                :disabled="!resolveNpcSheet(c)"
+                @click.stop="openNpcSheet(c)"
               />
             </template>
           </v-tooltip>
@@ -1004,6 +1005,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { CampaignStore, EncounterStore, PilotStore, NpcStore } from '@/stores'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { obrBridge } from '@/services/obrBridge'
+import { openMainWindow } from '@/services/mainWindow'
 import { StatKey } from '@/classes/components/combat/stats/Stats'
 
 const props = withDefaults(
@@ -1242,6 +1244,49 @@ function getActivations(c: any): { current: number; max: number } {
   }
 }
 
+// Abrir a ficha completa do NPC (mesmo iframe)
+const NPC_SHEET_TYPE: Record<string, string> = {
+  unit: 'npc',
+  doodad: 'doodad',
+  eidolon: 'eidolon',
+}
+
+function isNpcCombatant(c: any): boolean {
+  return ['unit', 'doodad', 'eidolon'].includes(c?.type)
+}
+
+function resolveNpcSheet(c: any): { type: string; id: string } | null {
+  const type = NPC_SHEET_TYPE[c?.type]
+  const id = c?.actor?.OriginId || c?.actor?.ID
+  if (!type || !id) return null
+  // O NPC pode estar embutido no encontro (sharecode/json) sem existir no roster;
+  // nesse caso o npc-runner resolve direto do encontro compartilhado.
+  return { type, id }
+}
+
+function openNpcSheet(c: any) {
+  const target = resolveNpcSheet(c)
+  if (!target) return
+  // Abre a ficha ativa do NPC na janela principal (iframe da direita)
+  void openMainWindow(false, `/active-mode/npc-runner/${target.id}`)
+  // local-only: abre só na janela principal do mestre, sem afetar os jogadores
+  void obrBridge.sendBroadcastMessage(
+    {
+      type: 'OPEN_SHEET_REQUESTED',
+      sheetType: 'npc',
+      sheetId: target.id,
+    },
+    true
+  )
+}
+
+// Grava o encontro localmente (active_encounters) e transmite para a mesa
+function persistEncounter() {
+  if (!encounterInstance.value) return
+  void encounterInstance.value.Save?.()
+  void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+}
+
 // Controles de Turno
 function startCombatantTurn(c: any) {
   activeTurnId.value = c.id
@@ -1263,7 +1308,7 @@ function startCombatantTurn(c: any) {
   })
 
   if (encounterInstance.value) {
-    void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+    persistEncounter()
   }
 }
 
@@ -1285,7 +1330,7 @@ function finishCombatantTurn(c: any) {
   })
 
   if (encounterInstance.value) {
-    void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+    persistEncounter()
   }
 }
 
@@ -1295,7 +1340,7 @@ function adjustActivation(c: any, delta: number) {
   const next = Math.max(0, Math.min(max, current + delta))
   c.actor?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, next)
   if (encounterInstance.value) {
-    void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+    persistEncounter()
   }
 }
 
@@ -1307,7 +1352,7 @@ function resetRoundActivations() {
   }
   activeTurnId.value = null
   if (encounterInstance.value) {
-    void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+    persistEncounter()
   }
 }
 
@@ -1330,14 +1375,14 @@ async function advanceRound() {
   })
 
   if (encounterInstance.value) {
-    void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+    persistEncounter()
   }
 }
 
 function toggleCombatantVisibility(c: any) {
   c.hiddenFromPlayers = !c.hiddenFromPlayers
   if (encounterInstance.value) {
-    void obrBridge.broadcastActiveEncounter(encounterInstance.value)
+    persistEncounter()
   }
   forceRefreshKey.value++
 
@@ -1472,6 +1517,8 @@ async function addNpcToEncounter(npcItem: any) {
   try {
     const { makeCombatant } = await import('@/classes/encounter/Encounter')
     const npc = npcItem.Clone(false)
+    // Preserva o vínculo com o item do roster para permitir abrir a ficha
+    npc.OriginId = npcItem.OriginId || npcItem.ID
     const sameNameCount = encounterInstance.value.Combatants.filter(
       (c: any) => c.actor.Name === npc.Name
     ).length
@@ -1648,6 +1695,14 @@ async function refreshEncountersList() {
   } finally {
     isLoadingEncounters.value = false
   }
+}
+
+// A janela do tracker (chat standalone) não recebe o listener de metadados da
+// cena, então busca o encontro ativo salvo na cena explicitamente.
+async function syncEncounterFromScene() {
+  if (encounterStore.CurrentActiveID) return
+  await obrBridge.syncActiveEncounterFromScene().catch(() => {})
+  forceRefreshKey.value++
 }
 
 async function openSelectEncounterModal() {
@@ -1840,11 +1895,15 @@ function onTokenSelected(e: any) {
 
 onMounted(async () => {
   await refreshEncountersList()
+  await syncEncounterFromScene()
   if (typeof window !== 'undefined') {
     window.addEventListener('compcon-encounter-synced', onEncounterSynced)
     window.addEventListener('compcon-token-selected', onTokenSelected)
     window.addEventListener('compcon-encounters-reloaded', refreshEncountersList)
-    window.addEventListener('focus', refreshEncountersList)
+    window.addEventListener('focus', () => {
+      void refreshEncountersList()
+      void syncEncounterFromScene()
+    })
   }
 })
 

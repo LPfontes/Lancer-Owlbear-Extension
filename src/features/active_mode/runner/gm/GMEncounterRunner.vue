@@ -223,6 +223,7 @@ import {
   import QuickReferencePanel from './InfoPanels/QuickReferencePanel.vue'
   import NpcReferencePanel from './InfoPanels/NpcReferencePanel.vue'
   import { EncounterStore } from '@/stores'
+  import { obrBridge } from '@/services/obrBridge'
   import NotesPanel from './InfoPanels/GmNotesPanel.vue'
   import GmInitiativePanel from './_components/GmInitiativePanel.vue'
   import GmToolPalette from './_components/GmToolPalette.vue'
@@ -338,6 +339,36 @@ watch([versionSignal, () => instance.value?.Round], () => {
     recacheUndoBaseline()
   })
 
+// Salva e transmite o encontro em tempo real (mestre autoritativo)
+let broadcastTimeout: ReturnType<typeof setTimeout> | null = null
+function persistEncounter() {
+    if (!instance.value) return
+    if (broadcastTimeout) clearTimeout(broadcastTimeout)
+    broadcastTimeout = setTimeout(() => {
+      void instance.value?.Save()
+      void obrBridge.broadcastActiveEncounter(instance.value)
+    }, 600)
+  }
+
+// Metadados de combatente (ordem, status, lado, reforço) para persistir também
+const combatantMeta = computed(() => {
+    if (!instance.value) return [] as any[]
+    return instance.value.Combatants.map((c: any) => ({
+      id: c.id,
+      number: c.number,
+      side: c.side,
+      reinforcement: c.reinforcement,
+      status: c.status,
+      pilotStatus: c.pilotStatus,
+      mechStatus: c.mechStatus,
+    }))
+  })
+
+watch([versionSignal, combatantMeta, () => instance.value?.Round], () => {
+    if (!instance.value) return
+    persistEncounter()
+  })
+
 function reselectById(inst: EncounterInstance | undefined, id: string | undefined) {
   if (!inst || !id) {
       selected.value = null
@@ -379,7 +410,10 @@ function handleUndoRedoKeydown(e: KeyboardEvent) {
 }
 
   onMounted(() => window.addEventListener('keydown', handleUndoRedoKeydown))
-  onBeforeUnmount(() => window.removeEventListener('keydown', handleUndoRedoKeydown))
+  onBeforeUnmount(() => {
+    window.removeEventListener('keydown', handleUndoRedoKeydown)
+    if (broadcastTimeout) clearTimeout(broadcastTimeout)
+  })
 
   watch(
     instanceID,

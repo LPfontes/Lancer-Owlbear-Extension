@@ -128,11 +128,14 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue'
+  import { ref, computed, watch, onMounted } from 'vue'
   import { useDisplay } from 'vuetify'
   import { useRoute, onBeforeRouteLeave } from 'vue-router'
   import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import { PilotStore } from '@/features/pilot_management/store'
+  import { EncounterStore } from '@/stores'
+  import { makeCombatant } from '@/classes/encounter/Encounter'
+  import { obrBridge } from '@/services/obrBridge'
   import ActorTelemetry from '../gm/EncounterPanels/_components/ActorTelemetry.vue'
   import ActorLogs from '../gm/EncounterPanels/_components/ActorLogs.vue'
   import CombatStatblockExport from '../gm/EncounterPanels/_components/CombatStatblockExport.vue'
@@ -226,11 +229,92 @@ const panelMap: Record<string, any> = {
         await sheetStore.SetActiveSheet(targetSheet.ID)
       }
     }
+
+    await connectToEncounter()
+
+    // Cria automaticamente o token no Owlbear Rodeo para esta ficha (se habilitado)
+    if (sheet.value) {
+      void obrBridge.createTokenForSheet(sheet.value.Combatant?.actor, 'pilot').catch(() => {})
+    }
   })
   const sheetID = computed(() => (sheet.value ? sheet.value.ID : 0))
-  const combatant = computed(() => sheet.value!.Combatant)
   const pilot = computed(() => sheet.value!.Combatant.actor as Pilot)
-  const encounterInstance = computed(() => sheet.value!.EncounterInstance)
+
+  // Encontro geral compartilhado (fonte de verdade da mesa)
+  const sharedEncounter = computed(() => {
+    const store = EncounterStore()
+    return store.getActiveEncounter(store.CurrentActiveID) ?? null
+  })
+
+  // Combatente do jogador dentro do encontro compartilhado
+  const encounterCombatant = computed(() => {
+    const enc = sharedEncounter.value
+    if (!enc || !sheet.value) return null
+    const p = sheet.value.Combatant.actor as Pilot
+    return (
+      enc.Combatants.find(
+        (c: any) => c.type === 'pilot' && (c.actor.ID === p.ID || c.id === p.ID)
+      ) ?? null
+    )
+  })
+
+  const combatant = computed(() => encounterCombatant.value ?? sheet.value!.Combatant)
+  const encounterInstance = computed(() => sharedEncounter.value ?? sheet.value!.EncounterInstance)
+
+  // Conecta o jogador ao encontro geral: garante que seu combatente esteja
+  // presente no encontro e transmite as informações para a mesa.
+  async function connectToEncounter() {
+    const enc = sharedEncounter.value
+    if (!enc || !sheet.value) return
+    const p = sheet.value.Combatant.actor as Pilot
+
+    const existing = enc.Combatants.find(
+      (c: any) => c.type === 'pilot' && (c.actor.ID === p.ID || c.id === p.ID)
+    )
+    if (existing) return // já está no encontro do mestre; renderiza a versão autoritativa
+
+    // Jogador ainda não está no encontro: envia o próprio combatente (delta)
+    const pc = Pilot.Deserialize(JSON.parse(JSON.stringify(Pilot.Serialize(p))))
+    if (!pc.ActiveMech && pc.Mechs?.length) pc.ActiveMech = pc.Mechs[0]
+    pc.SetStats()
+    pc.CombatController?.ResetForEncounter?.()
+    pc.CombatController?.StatController?.resetCurrentStats?.()
+
+    const newCombatant = makeCombatant(pc, 'pilot', {
+      id: pc.ID,
+      index: -1,
+      number: -1,
+      side: 'ally',
+      status: undefined,
+      pilotStatus: undefined,
+      mechStatus: undefined,
+    })
+
+    void obrBridge.sendPlayerCombatantUpdate(enc.ID, newCombatant)
+  }
+
+  // Sincroniza mudanças de combate do jogador para o mestre (delta, debounced)
+  let syncTimeout: ReturnType<typeof setTimeout> | null = null
+  watch(
+    () => {
+      if (!sheet.value) return undefined
+      return combatant.value?.actor?.CombatController?.CombatLogVersion
+    },
+    () => {
+      const enc = sharedEncounter.value
+      const c = sheet.value ? combatant.value : null
+      if (!enc || !c) return
+      if (syncTimeout) clearTimeout(syncTimeout)
+      syncTimeout = setTimeout(() => {
+        void obrBridge.sendPlayerCombatantUpdate(enc.ID, c)
+      }, 600)
+    }
+  )
+
+  // Quando o encontro chega (ex.: broadcast do mestre), conecta o jogador
+  watch(sharedEncounter, () => {
+    void connectToEncounter()
+  })
 
 function selectPanel(p: string) {
     panel.value = panel.value === p ? 'pc' : p

@@ -13,7 +13,13 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lcps": "node scripts/fetch-official-lcps.mjs",
-    "lcps:update": "node scripts/fetch-official-lcps.mjs --force"
+    "lcps:update": "node scripts/fetch-official-lcps.mjs --force",
+    "i18n:sync": "node scripts/sync-pt-translations.mjs",
+    "i18n:manual": "node scripts/apply-manual-translations.mjs",
+    "i18n:llp": "node scripts/build-llp.mjs",
+    "i18n:lcps": "node scripts/inject-llp-into-lcps.mjs",
+    "i18n:check": "node scripts/check-lcp-translations.mjs",
+    "i18n:verify": "node scripts/check-lcp-translations.mjs --check=95 && node scripts/inject-llp-into-lcps.mjs --check"
   },
   "dependencies": {
     "@kyvg/vue3-notification": "3.4.2",

@@ -44,7 +44,7 @@ export default defineConfig({
       name: 'compcon-proxy-server',
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
-          if (req.url && req.url.startsWith('/api/share')) {
+          if (req.url && (req.url.startsWith('/api/share') || req.url.startsWith('/api/image'))) {
             const { handleProxyRequest } = await import('./server/proxy.mjs')
             await handleProxyRequest(req, res)
             return

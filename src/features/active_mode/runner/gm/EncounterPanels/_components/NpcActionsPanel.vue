@@ -5,6 +5,17 @@
     @deploy="$emit('deploy', $event)"
     @activate="activate($event)"
   >
+    <template #before-quick>
+      <v-row dense>
+        <v-col>
+          <npc-skirmish-button :action="skirmishAction" />
+        </v-col>
+        <v-col>
+          <npc-barrage-button :action="barrageAction" />
+        </v-col>
+      </v-row>
+      <v-divider class="my-1" />
+    </template>
     <template #quick-action-btn="{ action }">
       <invade-button
         v-if="action?.ID === 'act_invade'"
@@ -34,6 +45,9 @@
   import BasicActionButton from './loadouts/action_buttons/basicActionButton.vue'
   import InvadeButton from './loadouts/action_buttons/invadeButton.vue'
   import TargetedActionButton from './loadouts/action_buttons/targetedActionButton.vue'
+  import NpcSkirmishButton from './loadouts/action_buttons/npcSkirmishButton.vue'
+  import NpcBarrageButton from './loadouts/action_buttons/npcBarrageButton.vue'
+  import { CompendiumStore } from '@/stores'
 
   const { owner } = useEncounterContext()
 
@@ -52,6 +66,13 @@
   const fullNpcActions = ['act_disengage', 'act_improvised_attack_npc', 'act_stabilize_npc']
 
   const controller = computed(() => owner.value.actor.CombatController)
+
+  const skirmishAction = computed(
+    () => CompendiumStore().Actions.find(a => a.ID === 'act_skirmish')!
+  )
+  const barrageAction = computed(
+    () => CompendiumStore().Actions.find(a => a.ID === 'act_barrage')!
+  )
 
   const NOTICES: Record<string, { ok: [string, string]; fail?: [string, string] }> = {
     act_prepare: { ok: ['active.npcActions.npcPreparedTitle', 'active.common.preparedText'] },

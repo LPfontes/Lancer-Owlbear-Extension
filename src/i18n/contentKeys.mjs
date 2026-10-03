@@ -62,6 +62,7 @@ const EMIT_FIELDS = [
   'detail',
   'effect',
   'trigger',
+  'condition',
   'active_name',
   'active_effect',
   'passive_name',

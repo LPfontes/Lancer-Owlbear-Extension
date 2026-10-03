@@ -234,6 +234,7 @@
   import { useDisplay } from 'vuetify'
   import { downloadFromS3, GetFromCode } from '@/io/apis/account'
   import logger from '@/user/logger'
+  import ShareCodeResult from '@/shared/ShareCodeResult.vue'
   import { useI18n } from 'vue-i18n'
   import { PilotStore, PilotSheetStore, NpcStore } from '@/stores'
   import { Pilot } from '@/classes/pilot/Pilot'

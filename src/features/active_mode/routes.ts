@@ -10,6 +10,7 @@ const CreateSheet = () => import('./pc/NewSheet.vue')
 const SheetManager = () => import('./pc/SheetManager.vue')
 const EncounterTelemetry = () => import('./gm/EncounterTelemetry.vue')
 const GMEncounterRunner = () => import('./runner/gm/GMEncounterRunner.vue')
+const NpcRunner = () => import('./runner/npc/NpcRunner.vue')
 const PilotLogbooks = () =>
   import('@/features/pilot_management/_components/logbook/PilotLogbookView.vue')
 const JoinTable = () => import('./runner/pilot/JoinTable.vue')
@@ -82,6 +83,12 @@ const routes = [
         path: 'gm-encounter-runner/:id?',
         name: 'active-gm-encounter-runner',
         component: GMEncounterRunner,
+        props: true,
+      },
+      {
+        path: 'npc-runner/:id?',
+        name: 'active-npc-runner',
+        component: NpcRunner,
         props: true,
       },
       {

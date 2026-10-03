@@ -155,6 +155,17 @@ async function bundle(pack, previous) {
   for (const [name, data] of [...lib].sort(([a], [b]) => a.localeCompare(b))) {
     zip.file(name, data)
   }
+
+  // Keep any language patch bundled with the pack (see public/llps and the README):
+  // ContentPackParser.getBundledPatches picks up *.llp entries when a pack is installed.
+  const patchFile = join(ROOT, 'public', 'llps', `${pack.slug}.llp`)
+  const hasPatch = existsSync(patchFile)
+  if (hasPatch) {
+    zip.file('pt.llp', readFileSync(patchFile, 'utf8'), {
+      date: new Date(Date.UTC(2020, 0, 1, 0, 0, 0)),
+    })
+  }
+
   const buffer = await zip.generateAsync({
     type: 'nodebuffer',
     compression: 'DEFLATE',
@@ -178,6 +189,7 @@ async function bundle(pack, previous) {
     itemPrefix: manifest.item_prefix || '',
     v3: !!manifest.v3,
     collections,
+    ...(hasPatch ? { languages: ['pt'] } : {}),
     repo: `https://github.com/massif-press/${pack.repo}/tree/${branch}`,
   }
 }

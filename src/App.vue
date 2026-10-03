@@ -98,7 +98,7 @@ import { PilotStore } from '@/features/pilot_management/store'
 const router = useRouter()
 
 async function handleOpenSheetRequested(event: Event) {
-  const customEvent = event as CustomEvent<{ sheetType: 'pilot' | 'npc'; sheetId: string }>
+  const customEvent = event as CustomEvent<{ sheetType: 'pilot' | 'npc'; sheetId: string; npcType?: string }>
   const detail = customEvent.detail
   if (!detail) return
 
@@ -152,7 +152,7 @@ async function handleOpenSheetRequested(event: Event) {
       router.push(`/active-mode/pilot-runner/${detail.sheetId}`)
     }
   } else {
-    router.push(`/active-mode/npcs/${detail.sheetId}`)
+    router.push(`/active-mode/npc-runner/${detail.sheetId}`)
   }
 }
 

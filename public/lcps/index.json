@@ -16,7 +16,10 @@
       "talents",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/ktb-data/tree/master"
+    "repo": "https://github.com/massif-press/ktb-data/tree/master",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "long-rim.lcp",
@@ -34,7 +37,10 @@
       "talents",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/long-rim-data/tree/v3"
+    "repo": "https://github.com/massif-press/long-rim-data/tree/v3",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "wallflower.lcp",
@@ -52,7 +58,10 @@
       "talents",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/wallflower-data/tree/v3"
+    "repo": "https://github.com/massif-press/wallflower-data/tree/v3",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "dustgrave.lcp",
@@ -74,7 +83,10 @@
       "talents",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/dustgrave-data/tree/master"
+    "repo": "https://github.com/massif-press/dustgrave-data/tree/master",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "osr.lcp",
@@ -92,7 +104,10 @@
       "talents",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/osr-data/tree/v3"
+    "repo": "https://github.com/massif-press/osr-data/tree/v3",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "ows.lcp",
@@ -109,7 +124,10 @@
       "systems",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/ows-data/tree/master"
+    "repo": "https://github.com/massif-press/ows-data/tree/master",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "sotw.lcp",
@@ -127,7 +145,10 @@
       "pilot_gear",
       "systems"
     ],
-    "repo": "https://github.com/massif-press/sotw-data/tree/v3"
+    "repo": "https://github.com/massif-press/sotw-data/tree/v3",
+    "languages": [
+      "pt"
+    ]
   },
   {
     "file": "ssmr.lcp",
@@ -145,6 +166,9 @@
       "talents",
       "weapons"
     ],
-    "repo": "https://github.com/massif-press/ssmr-data/tree/v3"
+    "repo": "https://github.com/massif-press/ssmr-data/tree/v3",
+    "languages": [
+      "pt"
+    ]
   }
 ]

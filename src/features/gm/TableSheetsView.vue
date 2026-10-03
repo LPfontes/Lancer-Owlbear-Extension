@@ -935,12 +935,15 @@ async function openPilotSheet(pilotId: string) {
     // 1. Abre a janela padrão flutuante do Owlbear Rodeo
     await openStandardWindow(targetUrl)
 
-    // 2. Notifica a janela padrão via broadcast caso já esteja aberta
-    await obrBridge.sendBroadcastMessage({
-      type: 'OPEN_SHEET_REQUESTED',
-      sheetType: 'pilot',
-      sheetId,
-    })
+    // 2. Notifica a janela padrão via broadcast caso já esteja aberta (local-only)
+    await obrBridge.sendBroadcastMessage(
+      {
+        type: 'OPEN_SHEET_REQUESTED',
+        sheetType: 'pilot',
+        sheetId,
+      },
+      true
+    )
 
     // 3. Dispara evento local
     window.dispatchEvent(
@@ -958,11 +961,14 @@ async function openNpcSheet(npcId: string) {
   try {
     const targetUrl = `/#/active-mode/npcs/${npcId}`
     await openStandardWindow(targetUrl)
-    await obrBridge.sendBroadcastMessage({
-      type: 'OPEN_SHEET_REQUESTED',
-      sheetType: 'npc',
-      sheetId: npcId,
-    })
+    await obrBridge.sendBroadcastMessage(
+      {
+        type: 'OPEN_SHEET_REQUESTED',
+        sheetType: 'npc',
+        sheetId: npcId,
+      },
+      true
+    )
     window.dispatchEvent(
       new CustomEvent('compcon-open-sheet-requested', {
         detail: { sheetType: 'npc', sheetId: npcId },

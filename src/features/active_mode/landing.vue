@@ -81,6 +81,19 @@
                     />
                   </v-avatar>
                 </template>
+                <template #append>
+                  <v-btn
+                    v-if="(e as any).id === 'npcs'"
+                    size="small"
+                    variant="tonal"
+                    color="accent"
+                    prepend-icon="mdi-book-open-variant"
+                    class="text-none ml-1"
+                    @click.stop="openNpcs()"
+                  >
+                    {{ $t('active.landing.openNpcs') }}
+                  </v-btn>
+                </template>
               </v-list-item>
               <div v-else>
                 <v-btn
@@ -212,6 +225,7 @@
     ],
     [
       {
+        id: 'npcs',
         title: t('gm.titles.npcRoster'),
         subtitle: t('gm.subtitles.manageNonPlayerCombatUnits'),
         icon: 'cc:npc',
@@ -229,6 +243,10 @@
   const lastLocalSheet = computed(() => {
     return PilotSheetStore().GetSheet(PilotSheetStore().CurrentActiveID)
   })
+
+  function openNpcs() {
+    router.push('/active-mode/npcs')
+  }
 
   function loadLastLocalEncounter() {
     if (lastLocalEncounter.value) {

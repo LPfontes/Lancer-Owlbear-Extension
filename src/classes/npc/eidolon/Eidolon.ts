@@ -30,6 +30,7 @@ class EidolonData extends NpcData implements IInstanceableData {
 
 class Eidolon extends Npc implements IInstanceable {
   public InstanceID?: string
+  public OriginId?: string
   public ActiveLayerIndex: number = 0
 
   public override readonly ItemType: ItemType = ItemType.Eidolon
@@ -43,6 +44,7 @@ class Eidolon extends Npc implements IInstanceable {
     this.ActiveLayerIndex = data?.activeLayer || 0
 
     this.InstanceID = data?.instanceId
+    this.OriginId = data?.originId || ''
 
     this._tier = data?.tier || 1
 
@@ -170,6 +172,7 @@ class Eidolon extends Npc implements IInstanceable {
       id: eidolon.ID,
       is_instance: eidolon.IsInstance,
       instanceId: eidolon.InstanceID,
+      originId: eidolon.OriginId,
       name: eidolon.Name,
       note: eidolon.Note,
       tier: eidolon.Tier,

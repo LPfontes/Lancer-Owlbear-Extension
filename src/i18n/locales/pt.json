@@ -151,7 +151,7 @@
     "statsLabel": "Estatísticas",
     "syncNow": "Sincronizar Agora",
     "tables": "Tabelas",
-    "actionCannotBeUndone": "Essa ação não pode ser desfeita",
+    "actionCannotBeUndone": "Essa ação não pode ser desfeita.",
     "importOverwriteWarning": "Estes dados de importação irão sobrescrever uma campanha existente com o mesmo ID ({title}). A campanha existente foi atualizada pela última vez em {date}.",
     "systemPoints": "Pontos de Sistemas",
     "techAttack": "Ataque Tecnológico",
@@ -185,7 +185,7 @@
     },
     "shiftEnterNewline": "Shift + Enter para nova linha",
     "unknown": "Desconhecido",
-    "deselectAll": "Desselecionar tudo"
+    "deselectAll": "Desmarcar Tudo"
   },
   "print": {
     "generalOptions": "Opções Gerais de Impressão"
@@ -393,7 +393,7 @@
       "enhancedReportingNotNecessary": "Não necessário",
       "enhancedReportingStatus": "Relatório de erros avançado: {status}",
       "communityThemesBy": "Temas da comunidade por {vialra} {asger} {thecrystalwoods} e {suji}",
-      "importStrategy": "// Estratégia de Importação",
+      "importStrategy": "Estratégia de Importação",
       "createBackup": "Criar Backup de Dados",
       "createBackupTooltip": "O @:{'common.appName'} depende do armazenamento seguro do seu navegador para salvar e carregar seus dados. Geralmente, esses dados estão protegidos contra exclusão, mas certas configurações do navegador e utilitários podem, às vezes, limpar esses dados, resultando na perda dos seus dados do @:{'common.appName'}. É uma boa prática fazer backup dos seus dados de tempos em tempos.",
       "downloadV2Backup": "Baixar backup tipo V2 armazenado",
@@ -422,7 +422,7 @@
       "with": "Com",
       "graphicDesignBy": "Design Gráfico por",
       "tier": "{patreonTierName} Patamar",
-      "patronThanks": "O desenvolvimento contínuo do @:{'common.appName'} não seria possível sem o generoso",
+      "patronThanks": "O desenvolvimento contínuo do @:{'common.appName'} não seria possível sem o generoso {support} de",
       "supportOf": "de",
       "compconBy": "@:{'common.appName'} Por",
       "anonymousPatron": "Patrono Anônimo",
@@ -616,7 +616,8 @@
       "catNpcStats": "Estatísticas de PNJs",
       "foundFixable": "Encontrado {count} problema corrigível | Encontrados {count} problemas corrigíveis",
       "andRequiringManual": " e {count} problema que requer ação manual | e {count} problemas que requerem ação manual",
-      "applyFixesButton": "Aplicar {count} correção | Aplicar {count} correções"
+      "applyFixesButton": "Aplicar {count} correção | Aplicar {count} correções",
+      "catLcpFlavorState": "Texto Personalizado de LCP"
     },
     "achievementItem": {
       "dataRedacted": "Dados ocultados",
@@ -903,7 +904,7 @@
       "staged": "Em estágios",
       "actionUsed": "Ação já utilizada.",
       "insufficientActions": "Ações de {activation} insuficientes restantes neste turno.",
-      "cannotActivate": "Não é possível ativar.",
+      "cannotActivate": "Não é possível ativar",
       "cannotActivateShort": "Não é possível ativar",
       "heatSelf": "+{n} de Calor (Próprio)",
       "activate": "Ativar",
@@ -967,7 +968,11 @@
       "resistanceType": "tipo de resistência",
       "saveHalf": "Salvamento para Metade",
       "removeSpecialCondition": "remover condição especial",
-      "self": "Próprio"
+      "self": "Próprio",
+      "consumeLockOn": "Consumir TRAVA DE MIRA para +1 de precisão",
+      "confirmKill": "Alvo Destruído",
+      "sideAlly": "Aliado",
+      "sideEnemy": "Inimigo"
     },
     "cascade": {
       "alert": "Alerta de Cascata",
@@ -1084,7 +1089,7 @@
       "itemShareCode": "Código de Compartilhamento do Item",
       "findItem": "Encontrar Item",
       "noItemFound": "Nenhum item encontrado com o código {code}.",
-      "dataFound": "// Dados do {type} encontrados",
+      "dataFound": "Dados do {type} encontrados",
       "userOwned": "Você é o autor deste item. Você não pode adicionar seus próprios itens como recursos remotos.",
       "alreadyAdded": "Este item já foi adicionado como um recurso remoto.",
       "qrTypeHelp": "Este item é um {qr}. Ele ainda pode ser importado, mas aparecerá na lista de {qr}, não na lista de {type}."
@@ -1317,12 +1322,12 @@
       "archive": "Arquivo"
     },
     "flow": {
-      "unresolved": "Não resolvido: {list}",
+      "unresolved": "Não resolvidos: {list}",
       "awaiting": "Aguardando {n} entrada(s)",
       "request": {
-        "burn": "Teste de Queimadura",
+        "burn": "Salvamento de Queimadura",
         "structureOrStressCheck": "Teste de Estrutura ou Estresse",
-        "attackInputs": "Entradas de Ataque",
+        "attackInputs": "Parâmetros de Ataque",
         "attackRoll": "Rolagem de Ataque",
         "damage": "Rolagem de Dano",
         "Encaixe": "Encaixe a destruir",
@@ -1343,13 +1348,13 @@
     "agility": "Agilidade",
     "systems": "Sistemas",
     "engineering": "Engenharia",
-    "agi": "Agilidade",
+    "agi": "AGI",
     "sys": "Sistemas",
     "eng": "Engenharia",
     "hp": "PV",
     "armor": "Armadura",
     "evasion": "Evasão",
-    "edef": "Defesa-E",
+    "edef": "DEF-E",
     "edefense": "Defesa-E",
     "speed": "Velocidade",
     "sensors": "Sensores",
@@ -1739,7 +1744,8 @@
     },
     "npcEditor": {
       "v2Export": "Exportação v2",
-      "statblock": "Bloco de Estatísticas"
+      "statblock": "Bloco de Estatísticas",
+      "noTelemetry": "Ainda não há telemetria para este PNJ. A telemetria é registrada quando um encontro em que ele aparece é arquivado."
     },
     "titles": {
       "setGmLabel": "Definir Etiqueta do Mestre",
@@ -1907,9 +1913,9 @@
     },
     "pilot": {
       "upToDateTitle": "Piloto Atualizado",
-      "upToDateText": "Piloto {callsign} // {name} já possui os dados de nuvem mais recentes. Nenhuma atualização necessária.",
-      "syncedText": "Piloto {callsign} // {name} sincronizado.",
-      "syncFailedText": "Falha ao sincronizar Piloto {callsign} // {name}. {err}"
+      "upToDateText": "Piloto @:{'common.pilotDisplayName'} já possui os dados de nuvem mais recentes. Nenhuma atualização necessária.",
+      "syncedText": "Piloto @:{'common.pilotDisplayName'} sincronizado.",
+      "syncFailedText": "Falha ao sincronizar Piloto @:{'common.pilotDisplayName'}. {err}"
     },
     "statblock": {
       "copiedTitle": "Bloco de Estatísticas Copiado para a Área de Transferência",
@@ -2042,8 +2048,8 @@
       "mechBracedText": "{name} agora está Suportando.",
       "overwatchTitle": "Mecha ativou Retaliar",
       "overwatchText": "{name} vai Retaliar.",
-      "shutDownTitle": "Mecha Desligado",
-      "shutDownText": "{name} foi desligado. Calor e EXPOSTO foram limpos; o mecha está ATORDOADO e imune a ações tecnológicas até ser reiniciado."
+      "shutDownTitle": "Desligar Mecha",
+      "shutDownText": "“{name} foi desligado. O Calor e EXPOSTO são limpos. O mecha de está ATORDOADO e tem Imunidade a ataques tecs até ser Ligado."
     },
     "npcActions": {
       "npcPreparedTitle": "PNJ Preparado",
@@ -2122,9 +2128,9 @@
       "devNoteLogs": "Este recurso ainda está em desenvolvimento. Dados adicionais e opções de exportação estarão disponíveis em builds futuros.",
       "deleteArchiveDetail": "Isso marcará o arquivo para exclusão. Ele não aparecerá mais nesta lista, mas será excluído permanentemente com base nas suas opções de retenção no Menu de Opções.",
       "noArchivedFoundFiltered": "Nenhum encontro arquivado encontrado contendo \"{search}\"",
-      "loadFromJson": "Carregar Combate de JSON",
-      "exportActorLog": "Exportar Registro",
-      "exportActorLogTooltip": "Exporta o registro deste combatente como um arquivo que você pode entregar ao jogador. Apenas os eventos e referências deste combatente são incluídos."
+      "loadFromJson": "Carregar JSON de Encontro",
+      "exportActorLog": "Exportar Log",
+      "exportActorLogTooltip": "Exporta o registro deste combatente como um arquivo que você pode entregar ao jogador dele. Apenas os eventos deste ator e as referências mencionadas por eles estão incluídos."
     },
     "encSummary": {
       "turnN": "(Turno {n})",
@@ -2162,14 +2168,14 @@
       "savePilotHistory": "Salvar Histórico do Piloto",
       "featureInDev": "Recurso em desenvolvimento (v3.1)",
       "encounterHash": "encontro #",
-      "saveToLogbook": "Salvar no Diário de Bordo",
-      "saveToLogbookTooltip": "Grava o registro de combate desta ficha no diário de bordo do piloto. Salvar novamente substitui o registro já existente para este combate.",
-      "historySaved": "Registro de combate gravado no diário de bordo de {name}.",
-      "historySaveFailed": "Não foi possível gravar este combate no diário de bordo do piloto.",
-      "noEvents": "Esta ficha não possui eventos de combate gravados.",
+      "saveToLogbook": "Salvar no Diário de Bordo do Piloto",
+      "saveToLogbookTooltip": "Grava o registro de encontro desta ficha no diário de bordo do piloto. Salvar novamente substitui o registro já existente para este encontro.",
+      "historySaved": "Registro de encontro gravado no diário de bordo de {name}.",
+      "historySaveFailed": "Não foi possível gravar este encontro no diário de bordo do piloto.",
+      "noEvents": "Esta ficha não contém eventos de combate registrados.",
       "viewSheet": "Ver Ficha",
-      "viewSheetTooltip": "Revisa os atributos, status e equipamentos deste piloto como estavam quando a ficha foi arquivada.",
-      "viewSheetUnavailable": "Esta ficha não possui mecha ativo para relatar."
+      "viewSheetTooltip": "Revise os atributos, condições e equipamentos deste piloto como estavam quando a ficha foi arquivada.",
+      "viewSheetUnavailable": "Esta ficha não possui nenhum mecha ativo para relatar."
     },
     "newSheet": {
       "llLevel": "NL{n}",
@@ -2191,16 +2197,17 @@
       "setCampaign": "Definir Campanha"
     },
     "landing": {
-      "resumeRound": "retomar {name} (Rodada {n})"
+      "resumeRound": "retomar {name} (Rodada {n})",
+      "openNpcs": "Abrir PNJs"
     },
     "endEnc": {
       "endEncounter": "Encerrar Encontro",
       "confirmEndEncounter": "Confirmar Fim do Encontro",
-      "gmConfirm": "Finalizar este combate fechará a instância ativa e enviará uma cópia para o arquivo. Combates arquivados não podem ser retomados (mas podem ser reiniciados). Tem certeza de que deseja continuar?",
+      "gmConfirm": "Encerrar este encontro fechará a instância ativa e enviará uma cópia para o arquivo. Encontros arquivados não podem ser retomados (mas podem ser reiniciados). Tem certeza de que deseja continuar?",
       "results": {
-        "pc_victory": "VITÓRIA DOS JOGADORES",
-        "enemy_victory": "VITÓRIA DOS INIMIGOS",
-        "stalemate": "IMPASSE"
+        "pc_victory": "VITÓRIA PJ",
+        "enemy_victory": "VITÓRIA INIMIGA",
+        "stalemate": "EMPATE"
       }
     },
     "sortBar": {
@@ -2224,8 +2231,8 @@
       "exitWithoutSaving": "Sair Sem Salvar"
     },
     "endRound": {
-      "endRound": "Encerrar Turno",
-      "confirmEndRound": "Confirmar Fim do Turno"
+      "endRound": "Encerrar Rodada",
+      "confirmEndRound": "Confirmar Fim da Rodada"
     },
     "actionChips": {
       "protocol": "Protocolo",
@@ -2243,7 +2250,7 @@
       "resolveBurn": "Resolver Queimadura",
       "burnResolved": "Queimadura resolvida",
       "burnRequired": "Resolver ou ignorar sua Queimadura no fim da rodada.",
-      "movementRemainingTitle": "Você ainda possui movimento restante",
+      "movementRemainingTitle": "Você tem movimentação restante",
       "movementRemaining": "{n} espaços de movimento serão perdidos."
     },
     "joinTable": {
@@ -2272,7 +2279,7 @@
       "warningReplace": "Aviso: O estado da Ficha de Personagem importado substituirá o estado atual da Ficha de Personagem.",
       "changeActiveMech": "Alterar Mecha Ativo",
       "applySave": "Aplicar & Salvar",
-      "invalidSheetFile": "Arquivo de Instância de Ficha de Personagem inválido."
+      "invalidSheetFile": "Arquivo de instância de ficha de personagem inválido."
     },
     "pcNotes": {
       "playerNotes": "Notas do Jogador",
@@ -2301,8 +2308,8 @@
       "noReinforcementSchedule": "Sem Cronograma de Reforços",
       "undoRemoveCombatant": "Remover {name} do Encontro",
       "undoEditOverrides": "Desfazer alterações de {name}",
-      "invalidEncounterFile": "Arquivo de Instância de Combate inválido.",
-      "importFailed": "Não foi possível importar este arquivo de combate."
+      "invalidEncounterFile": "Arquivo de instância de Encontro inválido.",
+      "importFailed": "Não foi possível importar este arquivo de encontro."
     },
     "encInfo": {
       "reinforcements": "Reforços",
@@ -2415,7 +2422,8 @@
       "resistances": "Resistências",
       "statusesConditions": "Status/Condições",
       "counters": "Contadores",
-      "endActivation": "Terminar Ativação"
+      "endActivation": "Terminar Ativação",
+      "openSheet": "Abrir ficha"
     },
     "damageMenu": {
       "takeDamage": "Sofrer Dano",
@@ -2451,8 +2459,8 @@
       "telemetry": "Telemetria",
       "devNote": "Este recurso ainda está em desenvolvimento. Dados de telemetria adicionais em breve. {emphasis}",
       "collectedNote": "Os dados de telemetria são coletados ao final de cada rodada",
-      "encounterInstance": "instânciaDoEncontro",
-      "lifetime": "tempo de vida",
+      "encounterInstance": "Esse Encontro",
+      "lifetime": "Histórico",
       "exportText": "Exportar como Texto",
       "rounds": "Rodadas",
       "turns": "Turnos",
@@ -2463,11 +2471,11 @@
       "damageTakenUnmounted": "Dano Recebido Desmontado",
       "movementUnmounted": "Espaços Movidos Desmontado",
       "movementSpent": "Movimento Gasto",
-      "offense": "Ofensiva",
-      "defense": "Defensiva",
-      "checks": "Testes e Salvaguardas",
-      "statuses": "Status Adquiridos",
-      "actions": "Ações Realizadas",
+      "offense": "Ofensivo",
+      "defense": "Defensivo",
+      "checks": "Teste e Salvamento",
+      "statuses": "Condições Obtidas",
+      "actions": "Ações Tomadas",
       "attacks": "Ataques Acertados",
       "crits": "Acertos Críticos",
       "misses": "Erros",
@@ -2478,20 +2486,51 @@
       "structureChecks": "Testes de Estrutura",
       "stressChecks": "Testes de Estresse",
       "mechsLost": "Mechas Perdidos",
-      "savesPassed": "Salvaguardas Bem-sucedidas",
-      "savesFailed": "Salvaguardas Falhas",
-      "checksPassed": "Testes Bem-sucedidos",
-      "checksFailed": "Testes Falhos",
+      "savesPassed": "Salvamentos Passados",
+      "savesFailed": "Salvamentos Falhados",
+      "checksPassed": "Testes Passados",
+      "checksFailed": "Testes Falhados",
       "heatGained": "Calor Gerado",
       "overcharges": "Sobrecargas (Calor)",
-      "deployablesLaunched": "Implantáveis Lançados",
-      "deployablesDestroyed": "Implantáveis Destruídos",
-      "none": "Nenhum registrado",
-      "noLifetimeData": "Nenhum registro vitalício para este piloto ainda. Entradas no diário são gravadas quando um combate é arquivado.",
-      "encountersLogged": "Combates Registrados",
+      "deployablesLaunched": "Implementos Posicionados",
+      "deployablesDestroyed": "Implementos Destruídos",
+      "none": "Nada Gravado",
+      "noLifetimeData": "Ainda não há registros para este piloto. As entradas no diário de bordo são gravadas quando um encontro é arquivado.",
+      "encountersLogged": "Encontros Registrados",
       "heatCleared": "Calor Dissipado",
       "equipmentDestroyed": "Equipamento destruído",
-      "coreEnergySpent": "Energia de Núcleo gasta"
+      "coreEnergySpent": "Energia de Núcleo gasta",
+      "rollup": {
+        "equipmentDestroyed": "Equipamento destruído",
+        "deployables": "Implantáveis",
+        "rounds": "Rodadas",
+        "turns": "Turnos",
+        "movementSpent": "Movimento Gasto",
+        "crits": "Críticos",
+        "saves": "Salvamentos",
+        "savesValue": "{passed} bem-sucedido(s), {failed} com falha",
+        "kills": "Abates",
+        "killsValue": "{confirmed} (+{reported} relatados)",
+        "damageDealt": "Dano Causado",
+        "damageTaken": "Dano Sofrido",
+        "reducedByArmor": "Reduzido por Armadura",
+        "heatGained": "Calor ganho",
+        "heatCleared": "Calor Limpo",
+        "overcharges": "Sobrecargas",
+        "overchargesValue": "{n} ({heat} calor)",
+        "structureChecks": "Salvamentos de Estrutura",
+        "stressChecks": "Salvamento de Estresse",
+        "deployablesValue": "{n} Colocados",
+        "coreEnergySpent": "Poder de Núcleo gasto",
+        "roundsUnmounted": "Rodadas desmontado",
+        "actionsUnmounted": "Ações desmontado",
+        "damageDealtUnmounted": "Dano causado desmontado",
+        "damageTakenUnmounted": "Dano sofrido desmontado",
+        "movementUnmounted": "Espaços movidos desmontado",
+        "summaryHeader": "{name}- Rodada {n}",
+        "logEntryHeader": "Rodada {n} ({time})",
+        "attacks": "Ataques"
+      }
     },
     "actorLogs": {
       "log": "Registro",
@@ -2501,7 +2540,7 @@
       "filterKind": "Filtrar por Evento",
       "filterRound": "Rodada",
       "allRounds": "Todas as Rodadas",
-      "noMatches": "Nenhuma entrada corresponde aos filtros atuais.",
+      "noMatches": "Nenhum item corresponde ao seu filtro atual.",
       "showing": "Exibindo {shown} de {total} entradas",
       "round": "Rodada {n}"
     },
@@ -2533,14 +2572,14 @@
     },
     "statblockExport": {
       "title": "Bloco de Estatísticas de Combate",
-      "include": "// Incluir",
+      "include": "Incluir",
       "exportText": "Exportar Bloco de Estatísticas em Texto"
     },
     "statusCond": {
       "title": "Status / Condições",
       "addCustom": "Adicionar Status Personalizado",
-      "braceCooldownDetail": "Devido ao estresse de suportar, até o final deste turno você só pode realizar uma ação rápida. Você não pode realizar reações, sobrecarregar, mover-se normalmente, realizar ações completas ou realizar ações livres.",
-      "cascadeDetail": "Um NHP instalado entrou em CASCATA e assumiu o controle total do mecha. O mecha fica sob controle do Mestre até que o Piloto retome o controle escolhendo Desligar o mecha."
+      "braceCooldownDetail": "Devido ao estresse de Suportar, até o fim deste turno você só pode realizar uma ação rápida. Você não pode realizar reações, sobreaquecer, mover-se normalmente, realizar ações completas ou realizar ações livres.",
+      "cascadeDetail": "Uma PNH instalada entrou em CASCATA e assumiu o controle total do mecha. O mecha está sob controle do Mestre até que o Piloto retome o controle ao escolher Desligar o mecha."
     },
     "scan": {
       "scan": "Escanear"
@@ -2582,9 +2621,9 @@
       "restoreUse": "Click para restaurar um uso",
       "quickN": "Rápida {n}",
       "orTwoQuick": "Uma Ação completa pode ser gasta como duas Ações Rápidas",
-      "restoreAction": "Clique para restaurar esta ação",
-      "asOvercharge": "Como Sobrecarregar",
-      "overchargeReady": "Sobrecarregado - qualquer ação rápida é gratuita"
+      "restoreAction": "Clique para restaurar essa ação",
+      "asOvercharge": "em Sobrecarga",
+      "overchargeReady": "Sobrecarga – qualquer ação rápida é gratuita"
     },
     "deploy": {
       "deployNamed": "Implantar {name}",
@@ -2649,11 +2688,11 @@
       "select": "Selecione uma Ação de Montaria"
     },
     "barrage": {
-      "selectWeapon": "selecionar armas para Dano",
+      "selectWeapon": "selecionar armas para Barragem",
       "additionalAux": "armas aux adicionais de {name}"
     },
     "skirmish": {
-      "selectWeapon": "selecionar arma para Ataque"
+      "selectWeapon": "selecionar arma para Alvejar"
     },
     "fight": {
       "selectWeapon": "selecionar arma"
@@ -2674,7 +2713,7 @@
       "canMake": "Esta arma pode fazer {n} ataques por ativação."
     },
     "mechLoadout": {
-      "weapons": "// Armas"
+      "weapons": "Armas"
     },
     "cards": {
       "equipmentDestroyed": "Equipamento destruído",
@@ -2930,19 +2969,19 @@
       "showFlavorTooltip": "Mostre texto descritivo e de história em cartas de equipamentos e recursos. Desative para ver apenas as regras."
     },
     "pcEndEncounter": {
-      "confirm": "Finalizar este combate fechará a instância da ficha ativa, enviará uma cópia para o arquivo e a registrará no diário de bordo deste piloto. Tem certeza de que deseja continuar?"
+      "confirm": "Encerrar este encontro fechará a instância de ficha ativa, enviará uma cópia para o arquivo e a gravará no diário de bordo deste piloto. Tem certeza de que deseja continuar?"
     },
     "override": {
       "prompt": "Isto não pode ser concluído: {reason}. Resolver mesmo assim?",
-      "promptNamed": "{action} não pode ser concluída: {reason}. Resolver mesmo assim?"
+      "promptNamed": "Não é possível concluir {action}: {reason}. Resolver mesmo assim?"
     },
     "targetedAction": {
       "rollFirst": "Role o ataque corpo a corpo para resolver esta ação."
     },
     "weaponSelect": {
-      "hidingUnavailable": "Ocultando armas que não podem ser disparadas. Clique para exibi-las.",
-      "showingUnavailable": "Exibindo armas que não podem ser disparadas. Clique para ocultá-las.",
-      "unavailableCount": "indisponível"
+      "hidingUnavailable": "Ocultando armas que não podem disparar. Clique para exibi-las.",
+      "showingUnavailable": "Exibindo armas que não podem disparar. Clique para ocultá-las.",
+      "unavailableCount": "Indisponível"
     },
     "expiration": {
       "start": "início",
@@ -2950,6 +2989,98 @@
       "endsOnSelfTurn": "Termina no {when} do seu turno ({name})",
       "endsOnOtherTurn": "Termina no {when} do turno de {name}",
       "endsOnRound": "Termina no {when} da rodada {round}"
+    },
+    "charts": {
+      "round": "Rodada",
+      "count": "Quantidade",
+      "noData": "Coleta de dados incompleta. Arquive encontros adicionais.",
+      "showTable": "Mostrar como Tabela",
+      "cumulative": "Dano Cumulativo",
+      "showChart": "Exibir como gráfico",
+      "careerAverage": "Média da carreira",
+      "checks": "Testes de Perícia",
+      "passed": "Passados",
+      "failed": "Falhos",
+      "overchargeHeat": "Por Sobrecarga",
+      "otherHeat": "Outros",
+      "crit": "Crítico",
+      "killsPer": "Mortes por Participação",
+      "dealtPer": "Dano por Participação",
+      "appearances": "Participações",
+      "colKind": "Tipo",
+      "damageDealtByType": "Dano Causado pro tipo",
+      "damageDealtByTypeSub": "Totais gerais em todos os encontros gravados",
+      "dealtAndTakenPerEncounter": "Dano Causado e Sofrido por Encontro",
+      "careerDamage": "\"Dano da Carreira",
+      "accuracyOverTime": "Precisão ao Longo do Tempo",
+      "accuracyOverTimeSub": "Média da carreira: {n}%",
+      "savesAndChecks": "Salvamentos e Testes",
+      "heatPerEncounter": "Calor pro Encontro",
+      "heatPerEncounterSub": "Quanto calor este piloto gerou para si mesmo",
+      "mostUsedActions": "Ações Mais Usadas",
+      "statusesSuffered": "Condições Sofridas",
+      "damagePerRound": "Dano por Rodada",
+      "heatCurve": "Curva de Calor",
+      "heatCurveSub": "Capacidade de Calor {n}",
+      "encounterTimeline": "Linha do Tempo do Encontro",
+      "damageByGroup": "Dano Causado pro Grupo",
+      "encounterTimelineSub": "O que este piloto fez, rodada a rodada",
+      "threatVsDurability": "Ameaça contra Durabilidade",
+      "threatVsDurabilitySub": "Dano causado vs. dano absorvido. O tamanho da bolha reflete a taxa de participação.",
+      "lethalityPerAppearance": "Letalidade por Participação",
+      "lethalityPerAppearanceSub": "Total de eliminações dividido por participações",
+      "classVsTemplate": "Classe contra Modelo",
+      "encounterLength": "Duração do Encontro",
+      "partyDamageShare": "Participação no Dano do Grupo",
+      "attackOutcomes": "Resultados dos Ataques",
+      "damageBySide": "Dano por Facção",
+      "dataSet": "Conjunto de Dados",
+      "noStream": "registro completo deste encontro não está mais armazenado, portanto os gráficos por rodada estão indisponíveis.",
+      "expandChart": "Expandir Gráfico",
+      "collapseChart": "Recolher Gráfico"
+    },
+    "gmTelemetry": {
+      "title": "Telemetria do Encontro",
+      "subtitle": "Estatísticas de combate de todos os encontros arquivados",
+      "allFolders": "Todas as Pastas",
+      "allLabels": "Todos os Rótulos",
+      "allCampaigns": "Todas as Campanhas",
+      "byRosterEntry": "Registro de Piloto",
+      "byCombatant": "Combatente Individual",
+      "byType": "Tipo de Ator",
+      "scopeSummary": "{archives} encontros arquivados, {groups} grupos",
+      "groupSummary": "{appearances} presenças, {dealt} causados, {taken} sofridos",
+      "empty": "Nenhum encontro arquivado corresponde a estes filtros. A telemetria é gravada quando um encontro é arquivado.",
+      "manageData": "Gerenciar Dados de Telemetria",
+      "deleteTitle": "Apagar Dados de Telemetria",
+      "deleteConfirm": "Isso excluirá permanentemente {count} registros de encontros arquivados, incluindo todos os dados de telemetria. Esta ação não pode ser desfeita.",
+      "omitted": "{count} encontros arquivados não contêm dados de telemetria e foram omitidos.",
+      "byTemplate": "Modelo PNJ"
+    },
+    "aar": {
+      "roundsValue_one": "{n} rodada | {n} rodadas",
+      "roundsValue_many": "{n} rodadas",
+      "roundsValue_other": "{n} rodadas",
+      "roundTag": "R{n}:",
+      "rowSummary": "{dealt} causados / {taken} sofridos / {kills} eliminações",
+      "highlightsTitle": "DESTAQUES",
+      "casualtiesTitle": "BAIXAS E ELIMINAÇÕES",
+      "highlights": {
+        "topDealt": "Maior Dano Causado",
+        "topTaken": "Maior Dano Sofrido",
+        "topKills": "Mais Eliminações",
+        "biggestHit": "Maior Golpe Individual",
+        "topCrits": "Mais Acertos Críticos",
+        "topOvercharges": "Mais Sobrecargas",
+        "topHeatCleared": "Mais Calor Dissipado"
+      },
+      "chartsTitle": "GRÁFICOS",
+      "step": "Etapa {n} de {total}",
+      "pilotStatus": "Status do Piloto",
+      "outcomeTitle": "STATUS PÓS-ENCONTRO",
+      "mechStatus": "Status do Mecha",
+      "next": "Próximo",
+      "recordedStatuses": "STATUS REGISTRADOS"
     }
   },
   "mainMenu": {
@@ -3477,7 +3608,7 @@
     },
     "import": {
       "importSuccessTitle": "Importação Bem-sucedida",
-      "importSuccessText": "{name} // {callsign} adicionado(a) com sucesso à lista.",
+      "importSuccessText": "@:{'common.pilotDisplayName'} adicionado(a) com sucesso à lista.",
       "importErrorText": "Não foi possível ler o arquivo: {error}",
       "importPilotErrorText": "Não foi possível importar o Piloto: {error}",
       "groupImportSuccessText": "{name} adicionado com sucesso.",
@@ -3668,7 +3799,7 @@
       "addEquipment": "Adicionar Equipamento",
       "addExoticEquipment": "Adicionar Equipamento Exótico",
       "unionAdministrativeIdentRecord": "Registro do Protocolo de Identificação de Piloto (IDENT) RM-4 Administrativo da União",
-      "biometricRecordValid": "Registro biométrico válido [[",
+      "biometricRecordValid": "Registro biométrico válido [[{n}PB]] :: OHM c//{date}",
       "pbOhmC": "PB]] :: OHM c//",
       "identRecordNotice": "O uso indevido deste registro IDENT e/ou de seus dados constituintes pelo detentor do registro ou por quaisquer outras pessoas é punível de acordo com o DoJ/HR A-645-c. Este registro é propriedade do Escritório Administrativo da União e as informações contidas nele devem ser transmitidas mediante solicitação sob os protocolos de criptografia NDL-C-DISCORDANT-BREATH. Este registro RM-4 deve ser atualizado a cada cinco (5) Anos Padrão do Berço de tempo objetivo para reter os direitos de licenciamento da GMS. Operativos de campo distante que preveem implantações durando mais de cinco Anos Padrão do Berço e que não receberam um Gancho Omninet portátil devem solicitar a Extensão Suplementar (b) RM-11-B IDENT. Contate seu Oficial Administrativo da União local para quaisquer outros assuntos referentes a este registro. V-CDL//M-265-114-831 (A)",
       "requiresCloudAccount": "Requer Conta da Nuvem",
@@ -3728,7 +3859,9 @@
       "coreActive": "Ativa Principal",
       "maxParen": "({n} máx)",
       "capacityParen": "({n} capacidade)",
-      "slashesLl": "// NL"
+      "slashesLl": "// NL",
+      "pilotCombatHistory": "Histórico de Combate do Piloto",
+      "openLogbook": "Abrir Diário de Bordo do Piloto"
     },
     "roster": {
       "history": "Histórico",
@@ -4072,6 +4205,42 @@
     "a11y": {
       "dragToReorderGroup": "Arraste para reordenar o grupo",
       "dragToReorder": "Arraste para reordenar"
+    },
+    "logbook": {
+      "importTitle": "Importar Registro de Encontro",
+      "importIntro": "Escolha um arquivo de log de encontro exportado pelo seu MJ para este piloto. Você poderá visualizar o conteúdo antes de gravá-lo nos dados do seu Piloto.",
+      "chooseFile": "Escolher Arquivo",
+      "notALog": "Esse arquivo não é um log de encontro válido.",
+      "incoming": "Registro Recebido",
+      "unnamed": "Encontro Sem Nome",
+      "candidateSummary": "{rounds} rodadas, {date}, {participants} participantes, {events} eventos registrados",
+      "sourceGm": "Registrado por um Mestre de Jogo",
+      "sourceSelf": "Registro Autodeclarado",
+      "autoReplace": "Este piloto já possui um registro para este encontro ({name}). A importação irá substituí-lo.",
+      "addNew": "Add como Novo",
+      "replaceExisting": "Substituir um Registro Meu",
+      "replaceWarning": "A substituição é permanente. O registro selecionado será totalmente descartado, incluindo quaisquer eliminações autodeclaradas.",
+      "heldSummary": "{rounds} rodadas, {date}",
+      "suggested": "Correspondência Provável",
+      "imported": "Registro de encontro importado.",
+      "empty": "Nenhum registro de encontro ainda. Um diário de bordo é criado quando um encontro é arquivado ou quando o log de um MJ é importado.",
+      "survived": "Sobreviveu",
+      "totalDealt": "Dano total Causado",
+      "totalKills": "Total de Abates",
+      "encounterHistory": "Histórico do Encontro",
+      "exportStream": "Exportar log completo deste encontro",
+      "retentionNote": "Os registros completos de eventos são mantidos para os {n} encontros mais recentes. Encontros mais antigos mantêm suas estatísticas, mas não os eventos.",
+      "colDate": "Data",
+      "title": "Diários de Bordo dos Pilotos",
+      "subtitle": "Histórico de combate vitalício e telemetria dos seus pilotos",
+      "acrossN_one": "ao longo de {n} encontro | ao longo de {n} encontros",
+      "acrossN_many": "ao longo de {n} encontros",
+      "acrossN_other": "ao longo de {n} encontros",
+      "acrossAll": "ao longo de todos os encontros",
+      "encounterLogs": "Registros de Encontro",
+      "manageData": "Gerenciar Dados do Diário de Bordo",
+      "deleteTitle": "Excluir Dados do Diário de Bordo",
+      "deleteConfirm": "Isso excluirá permanentemente {count} registros de encontro, incluindo toda a telemetria e logs de eventos. Esta ação não pode ser desfeita."
     }
   },
   "enums": {
@@ -4131,7 +4300,8 @@
       "full_tech": "Programar Completo",
       "quick_tech": "Programar Rápido",
       "reaction": "Reação",
-      "other": "Outros"
+      "other": "Outros",
+      "overcharge": "Sobrecarga"
     },
     "systemType": {
       "ai": "AI",
@@ -4188,6 +4358,25 @@
       "melee": "Corpo a Corpo",
       "ranged": "a Distância",
       "tech": "Tecnológico"
+    },
+    "pilotStatus": {
+      "kia": "KIA",
+      "active": "ATIVO",
+      "injured": "PREJUDICADO",
+      "mia": "MIA",
+      "disengaged": "DESENGAJADO"
+    },
+    "mechStatus": {
+      "operational": "OPERACIONAL",
+      "in_cascade": "EM CASCATA",
+      "destroyed": "DESTRUÍDO",
+      "reactor_meltdown": "FUSÃO DE REATOR"
+    },
+    "npcStatus": {
+      "operational": "OPERACIONAL",
+      "destroyed": "DESTRUÍDO",
+      "routed": "EM FUGA",
+      "disengaged": "DESENGAJADO"
     }
   },
   "ow": {

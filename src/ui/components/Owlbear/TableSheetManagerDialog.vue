@@ -927,11 +927,14 @@ async function openPilotSheet(pilotId: string) {
 
     await openStandardWindow(targetUrl)
 
-    await obrBridge.sendBroadcastMessage({
-      type: 'OPEN_SHEET_REQUESTED',
-      sheetType: 'pilot',
-      sheetId,
-    })
+    await obrBridge.sendBroadcastMessage(
+      {
+        type: 'OPEN_SHEET_REQUESTED',
+        sheetType: 'pilot',
+        sheetId,
+      },
+      true
+    )
 
     window.dispatchEvent(
       new CustomEvent('compcon-open-sheet-requested', {
@@ -949,11 +952,14 @@ async function openNpcSheet(npcId: string) {
   try {
     const targetUrl = `/#/active-mode/npcs/${npcId}`
     await openStandardWindow(targetUrl)
-    await obrBridge.sendBroadcastMessage({
-      type: 'OPEN_SHEET_REQUESTED',
-      sheetType: 'npc',
-      sheetId: npcId,
-    })
+    await obrBridge.sendBroadcastMessage(
+      {
+        type: 'OPEN_SHEET_REQUESTED',
+        sheetType: 'npc',
+        sheetId: npcId,
+      },
+      true
+    )
     window.dispatchEvent(
       new CustomEvent('compcon-open-sheet-requested', {
         detail: { sheetType: 'npc', sheetId: npcId },

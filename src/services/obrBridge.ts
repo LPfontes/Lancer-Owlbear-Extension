@@ -1,4 +1,4 @@
-import OBR, { Item } from '@owlbear-rodeo/sdk'
+import OBR, { buildImage, type Item } from '@owlbear-rodeo/sdk'
 import type { MechCombatState, CombatRollBroadcast, TokenSheetBinding } from '@/types/compcon-obr'
 import type { TableActionItem } from '@/types/table-actions'
 import { SetItem } from '@/io/Storage'
@@ -21,6 +21,7 @@ export const COMPCON_ACTIVE_ENCOUNTER_KEY = 'com.compcon.activemode/active_encou
 export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
 export const COMPCON_ICON_URL = '/icon.svg'
 export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
+export const COMPCON_AUTO_TOKEN_STORAGE_KEY = 'compcon_auto_token_enabled'
 
 
 class OBRBridge {
@@ -30,6 +31,7 @@ class OBRBridge {
   private tabId: string = TAB_ID
   private isSyncingFromRemote = false
   private isSavingToRemote = false
+  private lastBroadcastSignature: string | null = null
   private incomingChunks = new Map<string, { chunks: string[]; total: number; timestamp: number }>()
   private processedMsgIds = new Set<string>()
   private localTabChannel?: BroadcastChannel
@@ -135,9 +137,9 @@ class OBRBridge {
         // Listener global para sincronizar marcadores de status quando fichas mudarem no COMP/CON
         if (typeof window !== 'undefined') {
           window.addEventListener('compcon-combatant-statuses-changed', async (e: any) => {
-            const { combatantId, statuses } = e.detail || {}
+            const { combatantId, statuses, originId } = e.detail || {}
             if (combatantId && Array.isArray(statuses)) {
-              await this.syncCombatantStatusMarkers(combatantId, statuses).catch(() => {})
+              await this.syncCombatantStatusMarkers(combatantId, statuses, originId).catch(() => {})
             }
           })
         }
@@ -383,13 +385,15 @@ class OBRBridge {
       } else if (msg.type === 'OPEN_SHEET_REQUESTED') {
         window.dispatchEvent(
           new CustomEvent('compcon-open-sheet-requested', {
-            detail: { sheetType: msg.sheetType || 'pilot', sheetId: msg.sheetId },
+            detail: { sheetType: msg.sheetType || 'pilot', sheetId: msg.sheetId, npcType: msg.npcType },
           })
         )
       } else if (msg.type === 'TABLE_ACTION') {
         window.dispatchEvent(new CustomEvent('compcon-table-action', { detail: msg.action }))
       } else if (msg.type === 'ENCOUNTER_DATA') {
         await this.handleReceivedEncounter(msg.data)
+      } else if (msg.type === 'PLAYER_COMBATANT_UPDATE') {
+        await this.handleReceivedPlayerCombatant(msg)
       } else if (msg.type === 'ENCOUNTER_STORAGE_UPDATED') {
         const { EncounterStore } = await import('@/stores')
         await EncounterStore().LoadEncounters()
@@ -419,7 +423,7 @@ class OBRBridge {
   /**
    * Envia uma mensagem via BroadcastChannel local (abas locais) e via OBR.broadcast (remoto) com fila e rate limiting
    */
-  public async sendBroadcastMessage(payload: any): Promise<void> {
+  public async sendBroadcastMessage(payload: any, localOnly: boolean = false): Promise<void> {
     const fullPayload = {
       ...payload,
       msgId: `${this.tabId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -474,8 +478,10 @@ class OBRBridge {
       }
     }
 
-    // 3. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting
-    if (OBR.isAvailable && this.isReady) {
+    // 3. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting.
+    // Mensagens localOnly (ex.: abrir ficha na própria janela principal) não devem
+    // chegar aos outros jogadores da sala.
+    if (!localOnly && OBR.isAvailable && this.isReady) {
       await new Promise<void>((resolve) => {
         this.broadcastQueue.push({ payload: fullPayload, resolve })
         void this.processBroadcastQueue()
@@ -834,9 +840,31 @@ class OBRBridge {
   }
 
   /**
+   * Jogador envia apenas o próprio combatente (delta) para o mestre incorporar
+   * no encontro geral. Single-writer: só o mestre transmite o encontro completo.
+   */
+  public async sendPlayerCombatantUpdate(encounterId: string, combatant: any): Promise<void> {
+    try {
+      const { Encounter } = await import('@/classes/encounter/Encounter')
+      const data = Encounter.SerializeCombatant(combatant)
+      const sanitized = JSON.parse(JSON.stringify(data))
+      const compressed = await this.compressData(sanitized)
+      await this.sendBroadcastMessage({
+        type: 'PLAYER_COMBATANT_UPDATE',
+        encounterId,
+        combatantId: combatant?.id || combatant?.actor?.ID,
+        data: compressed,
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao enviar atualização de combatente do jogador:', e)
+    }
+  }
+
+  /**
    * Transmite o encontro ativo para toda a mesa e salva nos metadados da cena
    */
   public async broadcastActiveEncounter(encounterObj: any): Promise<void> {
+    this.isSavingToRemote = true
     try {
       const raw = encounterObj ? toRaw(encounterObj) : null
 
@@ -877,6 +905,9 @@ class OBRBridge {
       }
 
       const compressed = await this.compressData(serialized)
+      // Registra a assinatura do que acabamos de transmitir para ignorar o eco
+      // do próprio broadcast (via metadados da cena) no recebimento.
+      this.lastBroadcastSignature = `${serialized?.id || ''}:${serialized?.save?.lastModified ?? 0}`
 
       // Transmite via broadcast em tempo real para todos na sala
       await this.sendBroadcastMessage({
@@ -899,6 +930,8 @@ class OBRBridge {
       console.log(`[OBRBridge] Encontro "${raw.Name || raw.id}" transmitido para a mesa com sucesso.`)
     } catch (e) {
       console.warn('[OBRBridge] Erro ao sincronizar encontro com a mesa:', e)
+    } finally {
+      this.isSavingToRemote = false
     }
   }
 
@@ -931,6 +964,14 @@ class OBRBridge {
         return
       }
 
+      // Ignora o eco do nosso próprio broadcast (metadados da cena reescritos),
+      // que substituiria a instância local e descartaria referências em memória.
+      const sig = `${data?.id || ''}:${data?.save?.lastModified ?? 0}`
+      if (this.lastBroadcastSignature && sig === this.lastBroadcastSignature) {
+        this.lastBroadcastSignature = null
+        return
+      }
+
       const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
       const { EncounterStore } = await import('@/stores')
 
@@ -945,6 +986,47 @@ class OBRBridge {
       console.log(`[OBRBridge] Encontro sincronizado recebido: ${instance.Name} (Rodada ${instance.Round})`)
     } catch (e) {
       console.warn('[OBRBridge] Erro ao processar encontro recebido:', e)
+    }
+  }
+
+  /**
+   * Mestre incorpora o combatente enviado por um jogador (single-writer).
+   * Só o mestre processa; jogadores apenas leem o encontro completo.
+   */
+  private async handleReceivedPlayerCombatant(msg: any): Promise<void> {
+    try {
+      if (this.role !== 'GM') return
+
+      let data = msg.data
+      if (typeof data === 'string') {
+        data = await this.decompressData(data)
+      }
+      if (!data || typeof data !== 'object') return
+
+      const { Encounter } = await import('@/classes/encounter/Encounter')
+      const { EncounterStore } = await import('@/stores')
+
+      const store = EncounterStore()
+      const enc = store.getActiveEncounter(msg.encounterId)
+      if (!enc) return
+
+      const combatant = Encounter.DeserializeCombatant(data)
+      const idx = enc.Combatants.findIndex(
+        (c: any) => c.id === msg.combatantId || c.actor?.ID === msg.combatantId
+      )
+
+      if (idx === -1) {
+        combatant.index = enc.Combatants.length
+        enc.Combatants.push(combatant)
+      } else {
+        combatant.index = enc.Combatants[idx].index
+        enc.Combatants.splice(idx, 1, combatant)
+      }
+
+      await enc.Save?.()
+      await this.broadcastActiveEncounter(enc)
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao incorporar combatente do jogador:', e)
     }
   }
 
@@ -1815,6 +1897,26 @@ class OBRBridge {
   // =========================================================================
 
   /**
+   * Recupera apenas o encontro ativo salvo na cena (para janelas standalone
+   * como o chat/tracker, que não têm o listener de metadados da cena).
+   */
+  public async syncActiveEncounterFromScene(): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    try {
+      // A cena pode ainda não estar pronta quando a janela monta; nesse caso,
+      // apenas retorna (o foco/ready posterior tentará de novo).
+      const sceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!sceneReady) return
+      const sceneMeta = await OBR.scene.getMetadata()
+      if (COMPCON_ACTIVE_ENCOUNTER_KEY in sceneMeta && sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY]) {
+        await this.handleReceivedEncounter(sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY])
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao sincronizar encontro ativo da cena:', e)
+    }
+  }
+
+  /**
    * Baixa pilotos e NPCs salvos na sala e solicita sincronização via broadcast
    */
   public async syncFromRoom(): Promise<{ pilotsCount: number; npcsCount: number }> {
@@ -1941,6 +2043,296 @@ class OBRBridge {
     }
 
     return { pilotsCount, npcsCount }
+  }
+
+  // =========================================================================
+  // CRIAÇÃO AUTOMÁTICA DE TOKENS A PARTIR DE FICHAS
+  // =========================================================================
+
+  /**
+   * Verifica se a criação automática de token ao abrir uma ficha está habilitada.
+   * Padrão: habilitada.
+   */
+  public isAutoCreateTokenEnabled(): boolean {
+    try {
+      const raw = localStorage.getItem(COMPCON_AUTO_TOKEN_STORAGE_KEY)
+      if (raw === null) return true
+      return raw !== 'false' && raw !== '0'
+    } catch {
+      return true
+    }
+  }
+
+  /**
+   * Habilita/desabilita a criação automática de token ao abrir uma ficha.
+   */
+  public setAutoCreateTokenEnabled(enabled: boolean): void {
+    try {
+      localStorage.setItem(COMPCON_AUTO_TOKEN_STORAGE_KEY, enabled ? 'true' : 'false')
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Cria um token na cena do Owlbear Rodeo para uma ficha de Piloto ou NPC,
+   * caso ainda não exista um token vinculado a ela.
+   * Usa o retrato da ficha quando há uma URL HTTP(S) válida; caso contrário
+   * usa a imagem padrão (nodata) correspondente ao tipo.
+   */
+  public async createTokenForSheet(sheet: any, type: 'pilot' | 'npc'): Promise<string | null> {
+    if (!this.isReady || !OBR.isAvailable) return null
+    if (!sheet || !sheet.ID) return null
+    if (!this.isAutoCreateTokenEnabled()) return null
+
+    try {
+      const sceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!sceneReady) return null
+
+      const mechId = type === 'pilot' ? sheet.ActiveMech?.ID : undefined
+
+      // Evita duplicar: já existe token vinculado a esta ficha (ou ao mecha ativo)?
+      const existing = await OBR.scene.items.getItems((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        if (!meta) return false
+        if (meta.sheetId === sheet.ID) return true
+        if (mechId && meta.mechId === mechId) return true
+        return false
+      })
+      if (existing.length > 0) return existing[0].id
+
+      // Para pilotos, usa a imagem do mecha ativo (arte do frame/retrato do mecha);
+      // para NPCs (e pilotos sem mecha), usa o retrato da própria ficha.
+      const portraitSource = type === 'pilot' ? (sheet.ActiveMech || sheet) : sheet
+      const portrait = typeof portraitSource.Portrait === 'string' ? portraitSource.Portrait : ''
+
+      // O Owlbear Rodeo carrega a imagem do token via fetch() (não <img>), o que exige CORS.
+      // Tenta nesta ordem: 1) retrato direto (se CORS-fetchable); 2) retrato via nosso
+      // proxy (/api/image), que serve com CORS; 3) imagem padrão do tipo.
+      let imageUrl = this.resolveTokenImageUrl(portrait, type)
+      let fetched = await this.fetchImageBlob(imageUrl)
+      let tokenUrl = imageUrl
+
+      if (!fetched.ok) {
+        const proxied = this.proxyImageUrl(imageUrl)
+        if (proxied) {
+          tokenUrl = proxied
+          fetched = await this.fetchImageBlob(proxied)
+        }
+      }
+      if (!fetched.ok) {
+        imageUrl = this.defaultTokenUrl(type)
+        tokenUrl = imageUrl
+        fetched = await this.fetchImageBlob(imageUrl)
+      }
+
+      const dims = fetched.ok && fetched.blob
+        ? await this.getBlobDimensions(fetched.blob)
+        : { width: 512, height: 512 }
+      const mime = (fetched.ok && fetched.blob && fetched.blob.type) || this.inferMime(imageUrl)
+
+      const size = this.getSheetSize(sheet, type)
+      const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 150
+      const name = this.resolveSheetName(sheet, type)
+
+      const w = dims.width || 512
+      const h = dims.height || 512
+      // Escala uniforme para o token ocupar `size` células de grid na largura.
+      const s = (size * dpi) / w
+
+      const token = buildImage(
+        { width: w, height: h, mime, url: tokenUrl },
+        { offset: { x: w / 2, y: h / 2 }, dpi }
+      )
+        .name(name)
+        .position(await this.viewportCenter())
+        .scale({ x: s, y: s })
+        .layer('CHARACTER')
+        .metadata({
+          [COMPCON_METADATA_KEY]: {
+            sheetType: type,
+            sheetId: sheet.ID,
+            ...(mechId ? { mechId } : {}),
+            name,
+            size,
+          },
+        })
+        .build()
+
+      await OBR.scene.items.addItems([token])
+      await OBR.notification.show(`Token criado: ${name}`).catch(() => {})
+      return token.id
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao criar token para ficha:', e)
+      return null
+    }
+  }
+
+  /**
+   * Resolve uma URL HTTP(S) válida e absoluta para o token a partir do retrato da ficha.
+   * URLs `data:`/`blob:` e caminhos inválidos são rejeitados pelo loader do Owlbear Rodeo
+   * e, nesses casos, retorna a imagem padrão.
+   */
+  private resolveTokenImageUrl(portrait: string | undefined | null, type: 'pilot' | 'npc'): string {
+    const raw = typeof portrait === 'string' ? portrait.trim() : ''
+    if (!raw || raw.startsWith('data:') || raw.startsWith('blob:')) {
+      return this.defaultTokenUrl(type)
+    }
+    try {
+      const u = new URL(raw, window.location.origin)
+      if (u.protocol === 'http:' || u.protocol === 'https:') return u.href
+    } catch {
+      // URL inválida
+    }
+    if (raw.startsWith('/')) return window.location.origin + raw
+    return this.defaultTokenUrl(type)
+  }
+
+  /**
+   * URL absoluta da imagem padrão usada quando a ficha não tem retrato utilizável.
+   */
+  private defaultTokenUrl(type: 'pilot' | 'npc'): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const path = type === 'pilot' ? '/img/pilot/nodata.webp' : '/img/npc/nodata.webp'
+    return origin + path
+  }
+
+  /**
+   * Reescreve a URL da imagem para passar pelo nosso proxy (/api/image), que baixa
+   * a imagem no servidor e devolve com `Access-Control-Allow-Origin: *`. Retorna null
+   * para URLs já na nossa origem ou que não sejam http(s).
+   */
+  private proxyImageUrl(url: string): string | null {
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      if (!origin) return null
+      const u = new URL(url)
+      if (u.origin === origin) return null
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+      return `${origin}/api/image?url=${encodeURIComponent(url)}`
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Infere o MIME type a partir da extensão do arquivo da imagem.
+   */
+  private inferMime(url: string): string {
+    const clean = url.split(/[?#]/)[0].toLowerCase()
+    if (clean.endsWith('.svg')) return 'image/svg+xml'
+    if (clean.endsWith('.png')) return 'image/png'
+    if (clean.endsWith('.webp')) return 'image/webp'
+    if (clean.endsWith('.gif')) return 'image/gif'
+    if (clean.endsWith('.avif')) return 'image/avif'
+    if (clean.endsWith('.jpg') || clean.endsWith('.jpeg')) return 'image/jpeg'
+    return 'image/png'
+  }
+
+  /**
+   * Busca a imagem via fetch em modo CORS — exatamente como o Owlbear Rodeo faz
+   * ao carregar o item. Retorna `ok: false` quando a origem não permite CORS
+   * (ex.: o CloudFront da COMP/CON) ou a imagem não existe.
+   */
+  private async fetchImageBlob(url: string): Promise<{ ok: boolean; blob?: Blob }> {
+    try {
+      const res = await fetch(url, { method: 'GET', mode: 'cors', redirect: 'follow' })
+      if (!res.ok) return { ok: false }
+      const blob = await res.blob()
+      return { ok: true, blob }
+    } catch {
+      return { ok: false }
+    }
+  }
+
+  /**
+   * Obtém as dimensões naturais da imagem a partir do blob (mesma origem após o fetch),
+   * para manter a proporção ao escalar. Fallback para 512x512.
+   */
+  private getBlobDimensions(blob: Blob): Promise<{ width: number; height: number }> {
+    return new Promise((resolve) => {
+      const fallback = { width: 512, height: 512 }
+      if (typeof window === 'undefined' || typeof Image === 'undefined') {
+        resolve(fallback)
+        return
+      }
+      let settled = false
+      const done = (width: number, height: number) => {
+        if (!settled) {
+          settled = true
+          resolve({ width: width || 512, height: height || 512 })
+        }
+      }
+      try {
+        const objectUrl = URL.createObjectURL(blob)
+        const img = new Image()
+        const timer = setTimeout(() => {
+          URL.revokeObjectURL(objectUrl)
+          done(512, 512)
+        }, 4000)
+        img.onload = () => {
+          clearTimeout(timer)
+          URL.revokeObjectURL(objectUrl)
+          done(img.naturalWidth || 512, img.naturalHeight || 512)
+        }
+        img.onerror = () => {
+          clearTimeout(timer)
+          URL.revokeObjectURL(objectUrl)
+          done(512, 512)
+        }
+        img.src = objectUrl
+      } catch {
+        done(512, 512)
+      }
+    })
+  }
+
+  /**
+   * Obtém o SIZE (tamanho em células de grid) da ficha: SIZE do mecha ativo
+   * para pilotos, SIZE do NPC para NPCs.
+   */
+  private getSheetSize(sheet: any, type: 'pilot' | 'npc'): number {
+    try {
+      if (type === 'pilot') {
+        const mech = sheet?.ActiveMech
+        const size = mech?.Frame?.Size ?? mech?.StatController?.getMax?.('size')
+        if (size) return Math.max(1, Number(size) || 1)
+      } else {
+        const size = sheet?.StatController?.getMax?.('size')
+        if (size) return Math.max(1, Number(size) || 1)
+      }
+    } catch {
+      // ignore
+    }
+    return 1
+  }
+
+  /**
+   * Nome de exibição do token: nome do mecha/callsign para pilotos, nome para NPCs.
+   */
+  private resolveSheetName(sheet: any, type: 'pilot' | 'npc'): string {
+    if (type === 'pilot') {
+      return sheet.ActiveMech?.Name || sheet.Callsign || sheet.Name || 'Piloto'
+    }
+    return sheet.Name || 'NPC'
+  }
+
+  /**
+   * Centro do viewport em coordenadas de cena (para posicionar o token no local visível).
+   */
+  private async viewportCenter(): Promise<{ x: number; y: number }> {
+    try {
+      const [pos, scale, width, height] = await Promise.all([
+        OBR.viewport.getPosition(),
+        OBR.viewport.getScale(),
+        OBR.viewport.getWidth(),
+        OBR.viewport.getHeight(),
+      ])
+      const s = scale || 1
+      return { x: (width / 2 - pos.x) / s, y: (height / 2 - pos.y) / s }
+    } catch {
+      return { x: 0, y: 0 }
+    }
   }
 
   // =========================================================================
@@ -2091,12 +2483,18 @@ class OBRBridge {
   /**
    * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha)
    */
-  public async syncCombatantStatusMarkers(combatantId: string, statuses: string[]): Promise<void> {
+  public async syncCombatantStatusMarkers(
+    combatantId: string,
+    statuses: string[],
+    originId?: string
+  ): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
     try {
+      const ids = [combatantId, originId].filter(Boolean) as string[]
       const items = await OBR.scene.items.getItems((item) => {
         const meta = item.metadata[COMPCON_METADATA_KEY] as any
-        return meta && (meta.sheetId === combatantId || meta.mechId === combatantId)
+        if (!meta) return false
+        return ids.some(id => meta.sheetId === id || meta.mechId === id || meta.combatantId === id)
       })
       for (const item of items) {
         await statusMarkerService.syncTokenStatusMarkers(item.id, statuses).catch(() => {})
