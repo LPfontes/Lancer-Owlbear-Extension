@@ -1485,6 +1485,12 @@
       "undoRoundChange": "Round change",
       "undoAction": "Combat action"
     },
+    "npcRunner": {
+      "notFoundTitle": "Sheet not found in this window",
+      "notFoundHint": "NPC {id} is in no active encounter and not in this window's local roster.",
+      "retry": "Try again",
+      "storageWarning": "This window's storage is not durable, so it cannot see the other window's data."
+    },
     "diceRoller": {
       "title": "Dice Roller",
       "quickRoll": "Quick Roll",

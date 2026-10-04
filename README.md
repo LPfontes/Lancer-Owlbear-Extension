@@ -88,7 +88,7 @@ src/
   classes/                domínio: Pilot, Npc, Mech, Encounter, Campaign...
   classes/components/cloud/  sync AWS legado (CloudController etc.)
   features/               módulos por feature (pilot_management, gm, active_mode...)
-  ui/components/          componentes compartilhados (incl. TableSheetManagerDialog)
+  ui/components/          componentes compartilhados
   i18n/locales/           traduções
 public/                   manifest.json do Owlbear + assets/ícones
 docs/                     documentação de arquitetura

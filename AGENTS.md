@@ -61,10 +61,10 @@ de combate, que muda a cada PV/calor/ação.
 - **O middleware do Vite cobre `/api/share` e `/api/image`** (ver `vite.config.mts`); as demais
   rotas de `api/**` só existem no deploy da Vercel. Para exercitar as funções localmente, use
   `vercel dev`.
-- **O "Gerenciador de Fichas da Mesa" é o dialog** `src/ui/components/Owlbear/TableSheetManagerDialog.vue`
-  (montado em `App.vue`). A antiga view standalone (`features/gm/TableSheetsView.vue`, rota
-  `/table-sheets`) foi **removida**; `openTableSheetsWindow()` agora apenas dispara o evento
-  `compcon-open-table-sheets`, que abre o dialog.
+- **O "Gerenciador de Fichas da Mesa" foi removido**, junto com `TableSheetManagerDialog.vue` e
+  `services/tableSheetsWindow.ts` (o botão que o abria saiu do chat da mesa). As fichas da mesa
+  continuam sendo listadas/gerenciadas pelos fluxos do modo ativo (Hangar, roster de NPCs e
+  vínculo de token).
 - **NPCs têm discriminador `npcType`** (`unit` | `doodad` | `eidolon`) — é ele que decide qual
   `Deserialize` usar (ver `src/classes/npc/` e `src/io/Importer.ts`).
 - **O encontro ativo não é sincronizado entre GM e jogadores.** Ele vive no armazenamento local de

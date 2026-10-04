@@ -110,17 +110,6 @@
           </v-chip>
         </v-tab>
       </v-tabs>
-
-      <!-- Gerenciador de Fichas da Mesa -->
-      <v-btn
-        icon="mdi-database-outline"
-        variant="text"
-        size="small"
-        color="accent"
-        class="mr-2 flex-shrink-0"
-        title="Gerenciador de Fichas da Mesa"
-        @click="openSheetManagerDialog"
-      />
     </div>
 
     <!-- Aba 1: Tracker de Combate -->
@@ -234,7 +223,6 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { EncounterStore } from '@/stores'
 import { closeTableChatWindow, detachTableChatWindow } from '@/services/tableChatWindow'
-import { openTableSheetsWindow } from '@/services/tableSheetsWindow'
 import { openMainWindow, isMainWindowOpen } from '@/services/mainWindow'
 import TableActionCard from '@/ui/components/TableActionDrawer/TableActionCard.vue'
 import TableActionInput from '@/ui/components/TableActionDrawer/TableActionInput.vue'
@@ -295,10 +283,6 @@ function closeWindow() {
 
 function detachWindow() {
   detachTableChatWindow()
-}
-
-function openSheetManagerDialog() {
-  void openTableSheetsWindow()
 }
 
 function confirmClearHistory() {

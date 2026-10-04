@@ -1231,9 +1231,23 @@ function resolveNpcSheet(c: any): { type: string; id: string } | null {
   return { type, id }
 }
 
-function openNpcSheet(c: any) {
+async function openNpcSheet(c: any) {
   const target = resolveNpcSheet(c)
   if (!target) return
+
+  // O iframe da direita lê o encontro no IndexedDB — ele não vê nada da memória
+  // desta janela. `EncounterInstance.Save()` é throttle de 1,5s, fire-and-forget e
+  // não avisa ninguém, então gravamos tudo agora (sem throttle) e notificamos as
+  // outras janelas ANTES de navegar: sem isso a ficha abria em
+  // "Carregando instância do encontro…" com a cópia velha do encontro.
+  await encounterStore.SaveActiveEncounterData().catch(() => {})
+
+  // O roster da outra janela também só é lido no boot dela: se o NPC foi
+  // criado/importado/recebido depois, ela não o conhece. Enviar o NPC pelo canal
+  // local resolve isso sem publicar a ficha para os jogadores (localOnly).
+  const rosterNpc = npcStore.getNpcByID(target.id)
+  if (rosterNpc) void obrBridge.broadcastSingleNpc(rosterNpc, true)
+
   // Abre a ficha ativa do NPC na janela principal (iframe da direita), reutilizando
   // o iframe já montado — nunca recriando a janela (isso descartava o estado).
   void openMainWindow({ restoreIfHidden: true, targetRoute: `/active-mode/npc-runner/${target.id}` })

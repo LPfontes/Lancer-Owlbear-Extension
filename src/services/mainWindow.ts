@@ -361,26 +361,21 @@ export interface OpenMainWindowOptions {
   restoreIfHidden?: boolean
   /** Rota interna a ser aberta (ex.: `/active-mode/npc-runner/xyz`). */
   targetRoute?: string
-  /** Abre o Gerenciador de Fichas da Mesa já montado. */
-  openTableSheets?: boolean
 }
 
-function baseTargetUrl(openTableSheets: boolean): string {
-  const base = `/?windowType=floating#/active-mode`
-  return openTableSheets ? `${base}?openTableSheets=true` : base
-}
+const DEFAULT_WINDOW_URL = '/?windowType=floating#/active-mode'
 
 /**
  * Abre a janela persistente se ela ainda não existir; caso exista, apenas
  * reexibe (sem `OBR.popover.open`, que recarregaria o iframe).
  */
 export async function openMainWindow(options: OpenMainWindowOptions = {}): Promise<void> {
-  const { restoreIfHidden = false, targetRoute, openTableSheets = false } = options
+  const { restoreIfHidden = false, targetRoute } = options
 
   if (typeof window === 'undefined') return
 
   if (!OBR.isAvailable) {
-    if (!isSheetWindowContext()) window.open(baseTargetUrl(openTableSheets), '_blank')
+    if (!isSheetWindowContext()) window.open(DEFAULT_WINDOW_URL, '_blank')
     return
   }
 
@@ -418,7 +413,7 @@ export async function openMainWindow(options: OpenMainWindowOptions = {}): Promi
   const { left, top, height } = await computeGeometry()
   const url = targetRoute
     ? `/?windowType=floating#${targetRoute}`
-    : baseTargetUrl(openTableSheets)
+    : DEFAULT_WINDOW_URL
 
   try {
     await OBR.popover.open({

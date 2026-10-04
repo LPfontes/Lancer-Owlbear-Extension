@@ -377,8 +377,6 @@ class OBRBridge {
         await this.handleReceivedNpc(msg.npcId, msg.data)
       } else if (msg.type === 'NPC_CHUNK') {
         await this.handleIncomingChunk('npc', msg.npcId, msg.chunkIndex, msg.totalChunks, msg.chunkData)
-      } else if (msg.type === 'OPEN_TABLE_SHEETS') {
-        window.dispatchEvent(new CustomEvent('compcon-open-table-sheets'))
       } else if (msg.type === 'RESTORE_MAIN_WINDOW') {
         // Reexibe a janela persistente da ficha (mesmo iframe, sem recarregar).
         const { restoreSheetWindow } = await import('./mainWindow')
@@ -795,9 +793,13 @@ class OBRBridge {
   }
 
   /**
-   * Transmite um único NPC via broadcast
+   * Transmite um único NPC via broadcast.
+   *
+   * `localOnly` entrega só às outras janelas deste navegador (BroadcastChannel),
+   * sem publicar a ficha para a sala — usado quando outra janela da própria mesa
+   * precisa conhecer o NPC para abrir a ficha dele.
    */
-  public async broadcastSingleNpc(npcObj: any): Promise<void> {
+  public async broadcastSingleNpc(npcObj: any, localOnly: boolean = false): Promise<void> {
     try {
       const raw = toRaw(npcObj)
       const id = raw?.ID || raw?.id
@@ -809,22 +811,28 @@ class OBRBridge {
       const MAX_BROADCAST_PAYLOAD = 12000
 
       if (compressed.length <= MAX_BROADCAST_PAYLOAD) {
-        await this.sendBroadcastMessage({
-          type: 'NPC_DATA',
-          npcId: id,
-          data: compressed,
-        })
+        await this.sendBroadcastMessage(
+          {
+            type: 'NPC_DATA',
+            npcId: id,
+            data: compressed,
+          },
+          localOnly
+        )
       } else {
         const chunkCount = Math.ceil(compressed.length / MAX_BROADCAST_PAYLOAD)
         for (let i = 0; i < chunkCount; i++) {
           const chunk = compressed.slice(i * MAX_BROADCAST_PAYLOAD, (i + 1) * MAX_BROADCAST_PAYLOAD)
-          await this.sendBroadcastMessage({
-            type: 'NPC_CHUNK',
-            npcId: id,
-            chunkIndex: i,
-            totalChunks: chunkCount,
-            chunkData: chunk,
-          })
+          await this.sendBroadcastMessage(
+            {
+              type: 'NPC_CHUNK',
+              npcId: id,
+              chunkIndex: i,
+              totalChunks: chunkCount,
+              chunkData: chunk,
+            },
+            localOnly
+          )
         }
       }
     } catch (e) {

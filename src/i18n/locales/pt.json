@@ -2339,6 +2339,12 @@
       "undoRoundChange": "Trocar Rodada",
       "undoAction": "Ação de combate"
     },
+    "npcRunner": {
+      "notFoundTitle": "Ficha não encontrada nesta janela",
+      "notFoundHint": "O NPC {id} não está em nenhum encontro ativo nem no roster local desta janela.",
+      "retry": "Tentar novamente",
+      "storageWarning": "O armazenamento desta janela não é durável, então ela não enxerga os dados da outra janela."
+    },
     "diceRoller": {
       "title": "Rolador de dados",
       "quickRoll": "Rolagem Rápida",

@@ -3,7 +3,6 @@
     <cc-notify />
     <AppNavbar v-if="!isStandaloneView" />
     <TokenLinkDialog />
-    <TableSheetManagerDialog />
     <v-main id="main-content" v-show="isStandaloneView || !windowManager.isMinimized.value">
       <router-view :key="route.fullPath" />
     </v-main>
@@ -18,7 +17,6 @@ import { GetValue } from '@/io/Storage'
 import CcNotify from '@/ui/notification/CCNotify.vue'
 import AppNavbar from '@/ui/components/AppNavbar.vue'
 import TokenLinkDialog from '@/ui/components/Owlbear/TokenLinkDialog.vue'
-import TableSheetManagerDialog from '@/ui/components/Owlbear/TableSheetManagerDialog.vue'
 import { windowManager } from '@/services/windowManager'
 import {
   bootSheetWindow,
@@ -132,6 +130,12 @@ async function handleOpenSheetRequested(event: Event) {
   const customEvent = event as CustomEvent<{ sheetType: 'pilot' | 'npc'; sheetId: string; npcType?: string }>
   const detail = customEvent.detail
   if (!detail) return
+
+  // Só a janela persistente da ficha (windowType=floating) abre a ficha pedida por
+  // outro iframe. Sem esta trava o pedido também navegava as outras janelas do
+  // mesmo navegador — a janela de chat desanexada (`/#/table-chat`) saía do chat
+  // para o npc-runner ao receber o broadcast do tracker.
+  if (!isSheetWindowContext()) return
 
   // Reexibe a janela persistente (mesmo iframe) antes de navegar para a ficha.
   void windowManager.reopenWindow()
