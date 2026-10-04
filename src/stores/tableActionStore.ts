@@ -43,8 +43,16 @@ export const useTableActionStore = defineStore('tableActions', {
   }),
 
   getters: {
+    /**
+     * Feed do chat em ordem cronológica invertida: a ação mais recente vem primeiro.
+     * O array `actions` continua armazenado em ordem crescente (é o que vai para a
+     * persistência local e para o buffer da sala); a inversão é só de exibição.
+     */
     recentActions: (state): TableActionItem[] => {
-      return [...state.actions].sort((a, b) => a.timestamp - b.timestamp)
+      return state.actions
+        .map((item, index) => ({ item, index }))
+        .sort((a, b) => b.item.timestamp - a.item.timestamp || b.index - a.index)
+        .map(entry => entry.item)
     },
 
     filteredActions(): TableActionItem[] {

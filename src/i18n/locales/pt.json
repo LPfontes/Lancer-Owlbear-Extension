@@ -1,4 +1,21 @@
 {
+  "trackerSync": {
+    "round": "Rodada",
+    "activations": "Ativações",
+    "activationsLeft": "Ativações restantes na rodada",
+    "inTurn": "EM TURNO",
+    "done": "CONCLUÍDO",
+    "readOnly": "Somente leitura",
+    "syncedByGM": "Iniciativa sincronizada pelo Mestre",
+    "waitingTitle": "Nenhum Combate Ativo",
+    "waitingHint": "Aguardando o Mestre iniciar o encontro na mesa.",
+    "emptyEncounterTitle": "Encontro Vazio",
+    "emptyEncounterHint": "Nenhum combatente foi adicionado à iniciativa ainda.",
+    "noCardsForFilter": "Nenhum combatente encontrado com este filtro",
+    "sideEnemy": "Inimigo",
+    "sideAlly": "Aliado",
+    "sideNeutral": "Neutro"
+  },
   "common": {
     "appName": "COMP/CON",
     "gameName": "LANCER",

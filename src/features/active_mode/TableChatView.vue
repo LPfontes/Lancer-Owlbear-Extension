@@ -213,7 +213,7 @@
       </div>
 
       <!-- Rodapé de Ações Rápidas e Input de Chat -->
-      <TableActionInput class="flex-shrink-0" />
+      <TableActionInput />
     </div>
   </div>
 </template>
@@ -271,9 +271,11 @@ const actorSelectItems = computed(() => {
   }))
 })
 
-function scrollToBottom() {
+// As mensagens mais recentes ficam no topo do feed, então "ir para a última mensagem"
+// significa rolar para o começo da lista.
+function scrollToLatest() {
   if (feedContainer.value) {
-    feedContainer.value.scrollTop = feedContainer.value.scrollHeight
+    feedContainer.value.scrollTop = 0
   }
 }
 
@@ -300,7 +302,7 @@ onMounted(async () => {
   }
   tableActionStore.unreadCount = 0
   nextTick(() => {
-    scrollToBottom()
+    scrollToLatest()
   })
 })
 
@@ -310,7 +312,7 @@ watch(
   () => {
     tableActionStore.unreadCount = 0
     nextTick(() => {
-      scrollToBottom()
+      scrollToLatest()
     })
   }
 )
@@ -318,7 +320,7 @@ watch(
 watch(currentTab, (tab) => {
   if (tab === 'chat') {
     nextTick(() => {
-      scrollToBottom()
+      scrollToLatest()
     })
   }
 })

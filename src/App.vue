@@ -25,6 +25,7 @@ import {
 } from '@/services/mainWindow'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { preloadTableChatWindow } from '@/services/tableChatWindow'
+import { isActiveModePrewarm } from '@/services/prewarmContext'
 import { UserStore, CompendiumStore } from './stores'
 
 import type { UserProfile } from '@/user'
@@ -49,6 +50,11 @@ const isStandaloneView = computed(() => {
     route.path.startsWith('/table-chat')
   )
 })
+
+// Iframe oculto de pré-aquecimento do Modo Ativo (ver `services/prewarmContext.ts`).
+// É uma segunda instância do app: carrega stores e sincronização, mas não mexe na
+// janela do usuário nem cria a janela persistente da ficha.
+const isPrewarmView = isActiveModePrewarm()
 
 provide<CompendiumDataProvider>(CompendiumDataKey, {
   get Statuses() {
@@ -215,10 +221,13 @@ onMounted(async () => {
   // Garante que a janela persistente da ficha exista desde a abertura da sala —
   // inclusive a partir da janela de chat/ações, que é a que o Owlbear carrega
   // sozinho. Uma vez criada, ela nunca é destruída: "fechar" apenas oculta via CSS.
-  void ensureSheetWindowOnRoomJoin()
+  // O iframe de pré-aquecimento não participa: quem cria janela é a janela visível.
+  if (!isPrewarmView) {
+    void ensureSheetWindowOnRoomJoin()
+  }
 
   // Janelas standalone (como o chat /table-chat) nunca devem reposicionar a janela principal da ficha
-  if (!isStandaloneView.value) {
+  if (!isStandaloneView.value && !isPrewarmView) {
     try {
       await windowManager.init()
     } catch {

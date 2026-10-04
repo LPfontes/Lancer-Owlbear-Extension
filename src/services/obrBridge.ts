@@ -1,10 +1,13 @@
 import OBR, { buildImage, type Item } from '@owlbear-rodeo/sdk'
 import type { MechCombatState, CombatRollBroadcast, TokenSheetBinding } from '@/types/compcon-obr'
 import type { TableActionItem } from '@/types/table-actions'
+import type { SyncedTrackerSnapshot } from '@/types/tracker-sync'
 import { SetItem } from '@/io/Storage'
 import { toRaw } from 'vue'
 import { dddiceService } from './dddiceService'
 import { statusMarkerService } from './statusMarkerService'
+import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
+import { isActiveModePrewarm } from './prewarmContext'
 import { TAB_ID } from './tabId'
 
 export const COMPCON_METADATA_KEY = 'com.compcon.activemode'
@@ -17,6 +20,7 @@ export const COMPCON_NPCS_METADATA_KEY = 'com.compcon.activemode/npcs'
 export const COMPCON_PILOT_ROSTER_KEY = 'com.compcon.activemode/pilot_roster'
 export const COMPCON_NPC_ROSTER_KEY = 'com.compcon.activemode/npc_roster'
 export const COMPCON_TABLE_ACTIONS_KEY = 'com.compcon.activemode/table_actions'
+export const COMPCON_TRACKER_SYNC_KEY = 'com.compcon.activemode/tracker_sync'
 export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
 export const COMPCON_ICON_URL = '/icon.svg'
 export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
@@ -93,27 +97,41 @@ class OBRBridge {
 
     OBR.onReady(async () => {
       this.isReady = true
+      // Publica a prontidão imediatamente: a UI reagir ao handshake não pode esperar
+      // a resolução do papel abaixo.
+      obrReady.value = true
+
       try {
         this.role = await OBR.player.getRole()
       } catch {
         this.role = 'PLAYER'
       }
+      obrRole.value = this.role
+
       try {
         this.playerId = OBR.player.id || (await OBR.player.getName()) || 'client_' + Math.random().toString(36).slice(2, 9)
       } catch {
         this.playerId = 'client_' + Math.random().toString(36).slice(2, 9)
       }
+      obrPlayerId.value = this.playerId
       console.log(`[OBRBridge] Inicializado com sucesso. Role: ${this.role}, PlayerId: ${this.playerId}, TabId: ${this.tabId}`)
 
       const isStandaloneChat =
         typeof window !== 'undefined' &&
         (window.location.hash.includes('/table-chat') || window.location.search.includes('/table-chat'))
 
+      // O iframe oculto de pré-aquecimento é uma segunda instância do app: sincroniza
+      // fichas normalmente, mas não pode mexer em nada que o usuário perceba (menu de
+      // contexto do Owlbear, integrações externas). Ver `services/prewarmContext.ts`.
+      const isPrewarmDocument = isActiveModePrewarm()
+
       this.setupBroadcastListener()
       this.setupRoomMetadataListener()
 
       if (!isStandaloneChat) {
-        this.setupContextMenu()
+        if (!isPrewarmDocument) {
+          this.setupContextMenu()
+        }
         this.setupSceneMetadataListener()
         this.setupPlayerSelectionListener()
 
@@ -130,8 +148,11 @@ class OBRBridge {
         // Limpa marcadores legados de status com URLs inválidas que possam ter ficado gravados na cena
         void statusMarkerService.cleanupLegacyMarkers().catch(() => {})
 
-        // Inicializa serviço de dados 3D compartilhados (dddice)
-        dddiceService.init()
+        // Inicializa serviço de dados 3D compartilhados (dddice) — só na janela visível,
+        // para não abrir uma segunda conexão por aba.
+        if (!isPrewarmDocument) {
+          dddiceService.init()
+        }
 
         // Listener global para sincronizar marcadores de status quando fichas mudarem no COMP/CON
         if (typeof window !== 'undefined') {
@@ -396,6 +417,12 @@ class OBRBridge {
         )
       } else if (msg.type === 'TABLE_ACTION') {
         window.dispatchEvent(new CustomEvent('compcon-table-action', { detail: msg.action }))
+      } else if (msg.type === 'TRACKER_SYNC') {
+        window.dispatchEvent(new CustomEvent('compcon-tracker-sync', { detail: msg.snapshot }))
+      } else if (msg.type === 'TRACKER_SYNC_CLEAR') {
+        window.dispatchEvent(new CustomEvent('compcon-tracker-clear'))
+      } else if (msg.type === 'TRACKER_SYNC_REQUEST') {
+        window.dispatchEvent(new CustomEvent('compcon-tracker-sync-request'))
       } else if (msg.type === 'ENCOUNTER_STORAGE_UPDATED') {
         const { EncounterStore } = await import('@/stores')
         await EncounterStore().LoadEncounters()
@@ -2489,6 +2516,62 @@ class OBRBridge {
       })
     } catch (e) {
       console.warn('[OBRBridge] Erro ao salvar ações na sala:', e)
+    }
+  }
+
+  /**
+   * Transmite o snapshot leve do tracker de iniciativa para os jogadores.
+   * Sem dados de ficha: só cards de iniciativa, ativações e turno atual.
+   */
+  public async sendTrackerSync(snapshot: SyncedTrackerSnapshot): Promise<void> {
+    await this.sendBroadcastMessage({
+      type: 'TRACKER_SYNC',
+      snapshot: JSON.parse(JSON.stringify(snapshot)),
+    })
+  }
+
+  /**
+   * Pede ao Mestre um snapshot atualizado do tracker (usado por quem entra depois).
+   */
+  public async sendTrackerSyncRequest(): Promise<void> {
+    await this.sendBroadcastMessage({ type: 'TRACKER_SYNC_REQUEST' })
+  }
+
+  /**
+   * Avisa os jogadores que o combate terminou e o tracker não está mais ativo.
+   */
+  public async sendTrackerSyncClear(): Promise<void> {
+    await this.sendBroadcastMessage({ type: 'TRACKER_SYNC_CLEAR' })
+  }
+
+  /**
+   * Lê o último snapshot do tracker gravado pelo Mestre no metadata da sala.
+   */
+  public async getRoomTrackerSync(): Promise<SyncedTrackerSnapshot | null> {
+    if (!this.isReady || !OBR.isAvailable) return null
+    try {
+      const metadata = await OBR.room.getMetadata()
+      const data = metadata[COMPCON_TRACKER_SYNC_KEY] as SyncedTrackerSnapshot | undefined
+      if (!data || typeof data !== 'object' || !Array.isArray((data as any).cards)) return null
+      return data
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao buscar o tracker da sala:', e)
+      return null
+    }
+  }
+
+  /**
+   * Grava (ou limpa, com `null`) o snapshot do tracker no metadata da sala, para que
+   * quem entrar depois veja a iniciativa sem depender do broadcast do Mestre.
+   */
+  public async saveRoomTrackerSync(snapshot: SyncedTrackerSnapshot | null): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    try {
+      await OBR.room.setMetadata({
+        [COMPCON_TRACKER_SYNC_KEY]: snapshot ? JSON.parse(JSON.stringify(snapshot)) : null,
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao salvar o tracker na sala:', e)
     }
   }
 

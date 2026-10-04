@@ -1,4 +1,21 @@
 {
+  "trackerSync": {
+    "round": "Round",
+    "activations": "Activations",
+    "activationsLeft": "Activations left this round",
+    "inTurn": "ACTIVE TURN",
+    "done": "DONE",
+    "readOnly": "Read only",
+    "syncedByGM": "Initiative synced by the GM",
+    "waitingTitle": "No Active Combat",
+    "waitingHint": "Waiting for the GM to start the encounter.",
+    "emptyEncounterTitle": "Empty Encounter",
+    "emptyEncounterHint": "No combatant has been added to the initiative yet.",
+    "noCardsForFilter": "No combatant matches this filter",
+    "sideEnemy": "Enemy",
+    "sideAlly": "Ally",
+    "sideNeutral": "Neutral"
+  },
   "common": {
     "appName": "COMP/CON",
     "gameName": "LANCER",

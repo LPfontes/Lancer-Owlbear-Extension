@@ -1,5 +1,5 @@
 <template>
-  <div class="action-input-container pa-2 border-t">
+  <div class="action-input-container pa-2 border-t flex-shrink-0">
     <!-- Seletor de Identidade do Emissor -->
     <div class="d-flex align-center justify-space-between mb-1">
       <div class="d-flex align-center ga-1 text-caption text-disabled">
@@ -138,9 +138,16 @@
 </script>
 
 <style scoped>
+  /* Rodapé fixo do chat: fica sempre visível na base do painel, sem encolher e
+     sem ser empurrado para fora quando o feed de mensagens cresce ou rola. */
   .action-input-container {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    flex-shrink: 0;
     background: rgba(14, 18, 24, 0.98);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.45);
   }
 
   .chat-text-input :deep(.v-field__input) {

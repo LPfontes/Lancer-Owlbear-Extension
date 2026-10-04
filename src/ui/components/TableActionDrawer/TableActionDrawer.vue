@@ -130,7 +130,7 @@
       </div>
 
       <!-- Rodapé com Input e Ações Rápidas -->
-      <TableActionInput class="flex-shrink-0" />
+      <TableActionInput />
     </div>
   </v-navigation-drawer>
 </template>
@@ -168,7 +168,7 @@
 
   onMounted(() => {
     tableActionStore.init()
-    scrollToBottom()
+    scrollToLatest()
   })
 
   // Auto-scroll para a última mensagem quando uma nova ação chega
@@ -176,7 +176,7 @@
     () => tableActionStore.actions.length,
     () => {
       nextTick(() => {
-        scrollToBottom()
+        scrollToLatest()
       })
     }
   )
@@ -187,15 +187,17 @@
     (isOpen) => {
       if (isOpen) {
         setTimeout(() => {
-          scrollToBottom()
+          scrollToLatest()
         }, 300) // Aguarda a animação do drawer
       }
     }
   )
 
-  function scrollToBottom() {
+  // As mensagens mais recentes ficam no topo do feed (ordem cronológica invertida),
+  // então a "última mensagem" está no começo da lista.
+  function scrollToLatest() {
     if (feedContainer.value) {
-      feedContainer.value.scrollTop = feedContainer.value.scrollHeight
+      feedContainer.value.scrollTop = 0
     }
   }
 

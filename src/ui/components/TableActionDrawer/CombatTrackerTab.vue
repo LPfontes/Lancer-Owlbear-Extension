@@ -1,7 +1,7 @@
 <template>
   <div class="combat-tracker-tab fill-height d-flex flex-column text-white">
     <!-- Header do Encontro Ativo e Rodada -->
-    <div v-if="encounterInstance" class="tracker-header px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
+    <div v-if="effectiveIsGM && encounterInstance" class="tracker-header px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
       <div class="d-flex align-center justify-space-between ga-2 mb-1.5">
         <!-- Título do Encontro e Rodada -->
         <div class="d-flex align-center ga-2 text-truncate">
@@ -120,6 +120,10 @@
       </div>
     </div>
 
+    <!-- Visão do jogador: tracker sincronizado pelo Mestre (somente leitura).
+         O Mestre só cai aqui no modo prévia "ver como jogador". -->
+    <SyncedTrackerFeed v-else-if="!effectiveIsGM" :active-filter="currentActiveFilter" />
+
     <!-- Banner de Alerta quando em Modo Prévia de Jogador -->
     <div
       v-if="previewAsPlayer"
@@ -136,7 +140,7 @@
 
     <!-- Lista de Participantes do Combate -->
     <div
-      v-if="encounterInstance && filteredCombatants.length"
+      v-if="effectiveIsGM && encounterInstance && filteredCombatants.length"
       class="combatants-list-container flex-grow-1 px-3 py-2 overflow-y-auto"
     >
       <div
@@ -390,7 +394,7 @@
 
     <!-- Estado Vazio: Encontro Ativo mas sem Combatentes -->
     <div
-      v-else-if="encounterInstance && visibleCombatants.length === 0"
+      v-else-if="effectiveIsGM && encounterInstance && visibleCombatants.length === 0"
       class="empty-state text-center py-10 px-4 my-auto"
     >
       <v-icon icon="mdi-account-multiple-plus" size="52" color="accent" class="mb-3" />
@@ -414,7 +418,7 @@
     </div>
 
     <!-- Estado Vazio: Nenhum Combate Ativo -->
-    <div v-else-if="!encounterInstance" class="empty-state text-center py-10 px-4 my-auto">
+    <div v-else-if="effectiveIsGM && !encounterInstance" class="empty-state text-center py-10 px-4 my-auto">
       <v-icon icon="cc:encounter" size="52" color="accent" class="mb-3" />
       <div class="text-subtitle-1 font-weight-bold text-white mb-1">
         Nenhum Combate Ativo
@@ -462,7 +466,7 @@
     </div>
 
     <!-- Estado Vazio com Filtro -->
-    <div v-else class="empty-state text-center py-10 px-4 my-auto">
+    <div v-else-if="effectiveIsGM" class="empty-state text-center py-10 px-4 my-auto">
       <v-icon icon="mdi-filter-off-outline" size="44" color="grey-darken-1" class="mb-2" />
       <div class="text-subtitle-2 text-grey-lighten-1">
         Nenhum combatente encontrado com este filtro
@@ -976,8 +980,12 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { CampaignStore, EncounterStore, PilotStore, NpcStore } from '@/stores'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { obrBridge } from '@/services/obrBridge'
+import { isGmClient } from '@/services/obrRuntime'
+import { trackerSyncService } from '@/services/trackerSync'
+import { useTrackerSyncStore } from '@/stores/trackerSyncStore'
 import { openMainWindow } from '@/services/mainWindow'
 import { StatKey } from '@/classes/components/combat/stats/Stats'
+import SyncedTrackerFeed from './SyncedTrackerFeed.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -1009,6 +1017,7 @@ const encounterStore = EncounterStore()
 const campaignStore = CampaignStore()
 const pilotStore = PilotStore()
 const npcStore = NpcStore()
+const trackerSyncStore = useTrackerSyncStore()
 
 const localActiveFilter = ref<'all' | 'enemy' | 'ally' | 'neutral' | 'pending'>('all')
 
@@ -1060,13 +1069,10 @@ const combatantToRemove = ref<any>(null)
 const confirmEndEncounterDialog = ref(false)
 
 // Permissões e Modo Prévia
-// Fails closed: the OBR role is only known once the bridge is ready, so until
-// then (and in any context without a room) nobody gets the GM-only controls
-// instead of everybody getting them.
-const isGM = computed(() => {
-  if (!obrBridge.getIsReady()) return false
-  return obrBridge.getRole() === 'GM'
-})
+// Fails closed: o papel só é liberado quando o SDK confirma. Lê o espelho reativo do
+// bridge (`obrRuntime`), não `obrBridge.getRole()` — aquele é um campo comum e o
+// `computed` congelaria o valor do primeiro render, antes do handshake terminar.
+const isGM = computed(() => isGmClient())
 
 const previewAsPlayer = ref(false)
 
@@ -1101,6 +1107,18 @@ const activatedCount = computed(() => {
 })
 
 const sideFilters = computed(() => {
+  // Jogador: os contadores vêm do tracker sincronizado pelo Mestre (ele não tem o
+  // encontro ativo localmente, então a lista local estaria vazia).
+  if (!effectiveIsGM.value) {
+    const cards = trackerSyncStore.cards
+    return [
+      { label: 'Todos', value: 'all', count: cards.length },
+      { label: 'Inimigos', value: 'enemy', count: cards.filter(c => c.side === 'enemy').length },
+      { label: 'Aliados', value: 'ally', count: cards.filter(c => c.side === 'ally').length },
+      { label: 'Pendentes', value: 'pending', count: cards.filter(c => c.activations.current > 0).length },
+    ]
+  }
+
   const list = visibleCombatants.value
   return [
     { label: 'Todos', value: 'all', count: list.length },
@@ -1585,6 +1603,9 @@ async function confirmEndEncounter() {
 
   activeTurnId.value = null
 
+  // O combate acabou: os jogadores não devem continuar vendo a iniciativa antiga.
+  void trackerSyncService.clear()
+
   void tableActionStore.postAction({
     senderName: 'Combat Tracker',
     category: 'full_action',
@@ -1746,9 +1767,11 @@ async function loadEncounterFromJson() {
     const { loadEncounterFromJsonOrSharecode, loadEncounterFromFile } = await import('@/util/encounterLoader')
 
     let instance: any
+    let importedNpcs = 0
     if (hasFile && loadJsonFile.value) {
       const result = await loadEncounterFromFile(loadJsonFile.value)
       instance = result.instance
+      importedNpcs = result.importedNpcs ?? 0
     } else {
       // Sem `pilots`: o encontro carregado traz os próprios combatentes e nenhum
       // piloto da mesa é incluído automaticamente na iniciativa.
@@ -1757,6 +1780,7 @@ async function loadEncounterFromJson() {
         navigate: false,
       })
       instance = result.instance
+      importedNpcs = result.importedNpcs ?? 0
     }
 
     loadFromJsonDialog.value = false
@@ -1771,7 +1795,9 @@ loadJsonFile.value = null
       senderName: 'Combat Tracker',
       category: 'full_action',
       title: `Combate Carregado — ${instance.Name}`,
-      detail: `Encontro carregado de JSON/Sharecode. Rodada ${instance.Round}.`,
+      detail:
+        `Encontro carregado de JSON/Sharecode. Rodada ${instance.Round}.` +
+        (importedNpcs > 0 ? ` ${importedNpcs} NPC(s) importado(s) para o roster.` : ''),
     })
   } catch (err) {
     loadJsonError.value = err instanceof Error ? err.message : 'Erro ao carregar encontro.'
@@ -1779,6 +1805,50 @@ loadJsonFile.value = null
     loadJsonLoading.value = false
   }
 }
+
+/**
+ * Assinatura do que interessa aos jogadores no tracker: estrutura do encontro
+ * (rodada, ordem dos cards, lados, nomes) e ativações da rodada.
+ *
+ * Só o que está aqui é publicado. PV, calor, estrutura, retratos e qualquer outro
+ * dado de ficha ficam fora do payload de propósito — o tracker sincronizado é público.
+ */
+const trackerPublishKey = computed(() => {
+  const instance = encounterInstance.value
+  if (!instance) return ''
+
+  const parts: string[] = [
+    String(instance.ID || ''),
+    String(instance.Name || ''),
+    String(instance.Round || 1),
+    activeTurnId.value || '',
+  ]
+
+  for (const c of (instance.Combatants || []) as any[]) {
+    if (!c || c.hiddenFromPlayers || c.reinforcement) continue
+    const activations = getActivations(c)
+    parts.push(
+      `${c.id}:${c.index}:${c.side}:${c.number || 0}:${activations.current}/${activations.max}:${c.actor?.Name || ''}`
+    )
+  }
+
+  return parts.join('|')
+})
+
+/**
+ * O Mestre publica o tracker para os jogadores sempre que o combate muda de forma
+ * relevante: rodada, turno atual, ativações gastas, entradas/saídas de combatente.
+ *
+ * Quem decide se há o que publicar é o serviço (ele confere o papel no bridge no
+ * momento do envio); aqui só avisamos que o estado mudou.
+ */
+watch(
+  trackerPublishKey,
+  () => {
+    trackerSyncService.publishFromSource()
+  },
+  { immediate: true }
+)
 
 function onTokenSelected(e: any) {
   const { sheetId, mechId, combatantId, tokenName } = e.detail || {}
@@ -1808,6 +1878,16 @@ function onTokenSelected(e: any) {
 
 onMounted(async () => {
   await refreshEncountersList()
+
+  // Liga a sincronização do tracker: o Mestre publica o estado do encontro, o jogador
+  // hidrata da sala. O serviço lê o estado desta janela pela fonte registrada aqui.
+  trackerSyncService.setSource(() =>
+    encounterInstance.value
+      ? { instance: encounterInstance.value, inTurnId: activeTurnId.value }
+      : null
+  )
+  trackerSyncService.start()
+
   if (typeof window !== 'undefined') {
     window.addEventListener('compcon-token-selected', onTokenSelected)
     window.addEventListener('compcon-encounters-reloaded', refreshEncountersList)
@@ -1818,6 +1898,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  trackerSyncService.setSource(null)
   if (typeof window !== 'undefined') {
     window.removeEventListener('compcon-token-selected', onTokenSelected)
     window.removeEventListener('compcon-encounters-reloaded', refreshEncountersList)

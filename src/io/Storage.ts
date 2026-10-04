@@ -179,10 +179,15 @@ const Initialize = async function () {
   if (indexedDbIsUsable()) {
     storageDriver.value = 'INDEXEDDB'
     storageIsDurable.value = true
+    // Log de boot: comparar o driver entre as janelas (popover esquerdo x janela da
+    // ficha) é o que revela duas janelas lendo storages diferentes — cada uma com o
+    // seu driver, sem enxergar os dados da outra.
+    console.log('[Storage] driver=INDEXEDDB (durável).')
     return
   }
 
   await ensureFallbackDrivers()
+  console.log(`[Storage] driver=${storageDriver.value} (durável: ${storageIsDurable.value}).`)
 }
 
 const SetValue = async function (key: string, value: any) {

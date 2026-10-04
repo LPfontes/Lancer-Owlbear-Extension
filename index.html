@@ -11,5 +11,47 @@
   <body style="overflow-x: hidden">
     <div id="app" />
     <script type="module" src="/src/main.ts"></script>
+
+    <script>
+      // Pré-aquecimento silencioso do Modo Ativo.
+      //
+      // O documento do chat/ações (`#/table-chat`) é o que o Owlbear carrega ao abrir a
+      // extensão. Aqui criamos um iframe OCULTO que carrega `#/active-mode` no mesmo
+      // documento, para o app do Modo Ativo (compêndio, dados do LANCER, stores, Vuetify)
+      // já estar quente quando a ficha for aberta — sem aparecer para o usuário.
+      //
+      // O iframe leva `?ccPrewarm=1` de propósito: essa é uma SEGUNDA instância do app no
+      // mesmo navegador e o app usa a flag para não registrar menu de contexto do Owlbear,
+      // não mexer no popover da ficha nem subir integrações externas (ver
+      // `src/services/prewarmContext.ts`).
+      //
+      // As guardas abaixo evitam justamente a recursão e o desperdício:
+      //   - `ccPrewarm=1`   → já somos o documento de pré-aquecimento: nada a fazer;
+      //   - `windowType=floating` → já somos a janela persistente da ficha (o próprio Modo Ativo);
+      //   - fora de `#/table-chat` → não há janela de chat para aquecer.
+      ;(function () {
+        try {
+          var url = window.location
+          if (url.search.indexOf('ccPrewarm=') !== -1) return
+          if (url.search.indexOf('windowType=floating') !== -1) return
+          if (url.hash.indexOf('/table-chat') === -1) return
+
+          var frame = document.createElement('iframe')
+          frame.id = 'cc-active-mode-prewarm'
+          frame.src = '/index.html?ccPrewarm=1#/active-mode'
+          frame.title = 'COMP/CON Active Mode (pré-aquecimento)'
+          frame.setAttribute('aria-hidden', 'true')
+          frame.setAttribute('tabindex', '-1')
+          frame.setAttribute('loading', 'eager')
+          // Fora da tela e invisível, mas ainda com layout (1x1): `display: none` também
+          // carregaria, porém visibilidade preserva medições de layout do app.
+          frame.style.cssText =
+            'position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;visibility:hidden;pointer-events:none'
+          document.body.appendChild(frame)
+        } catch (e) {
+          // Pré-aquecimento é otimização: nunca pode derrubar o boot da extensão.
+        }
+      })()
+    </script>
   </body>
 </html>

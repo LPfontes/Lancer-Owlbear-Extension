@@ -23,6 +23,7 @@ export { CollectionStore } from './user/store/CollectionStore'
 export { BackupStore } from './user/store/BackupStore'
 export { SyncStore } from './user/store/SyncStore'
 export { useTableActionStore } from './stores/tableActionStore'
+export { useTrackerSyncStore } from './stores/trackerSyncStore'
 
 export {
   UserStore,
