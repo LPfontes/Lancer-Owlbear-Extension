@@ -1,9 +1,9 @@
 <template>
   <v-card>
-    <div class="heading h2 pa-2">COMBAT REFERENCE</div>
+    <div class="heading h2 pa-2">{{ $t('active.quickReference.title') }}</div>
     <v-card-text class="pt-0">
       <fieldset class="px-2 py-1 mb-4">
-        <legend class="text-cc-overline text-accent px-2 font-weight-bold">Per Turn</legend>
+        <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.perTurn') }}</legend>
 
         <v-row dense>
           <v-col
@@ -18,7 +18,7 @@
                 size="large"
                 icon="cc:protocol"
               />
-              <div class="heading caption">protocols</div>
+              <div class="heading caption">{{ $t('active.quickReference.protocols') }}</div>
             </v-card>
           </v-col>
           <v-col
@@ -47,7 +47,7 @@
                 size="large"
                 icon="mdi-hexagon-slice-3"
               />
-              <div class="heading caption">full action or 2 quick actions</div>
+              <div class="heading caption">{{ $t('active.quickReference.fullActionOr2Quick') }}</div>
             </v-card>
           </v-col>
           <v-col
@@ -62,7 +62,7 @@
                 size="large"
                 icon="mdi-arrow-right-bold-hexagon-outline"
               />
-              <div class="heading caption">movement</div>
+              <div class="heading caption">{{ $t('active.quickReference.movement') }}</div>
             </v-card>
           </v-col>
           <v-col
@@ -77,7 +77,7 @@
                 size="large"
                 icon="cc:overcharge"
               />
-              <div class="heading caption">overcharge</div>
+              <div class="heading caption">{{ $t('active.quickReference.overcharge') }}</div>
             </v-card>
           </v-col>
           <v-col
@@ -92,7 +92,7 @@
                 size="large"
                 icon="cc:free_action"
               />
-              <div class="heading caption">free actions</div>
+              <div class="heading caption">{{ $t('active.quickReference.freeActions') }}</div>
             </v-card>
           </v-col>
           <v-col
@@ -107,13 +107,12 @@
                 size="large"
                 icon="cc:reaction"
               />
-              <div class="heading caption">reactions</div>
+              <div class="heading caption">{{ $t('active.quickReference.reactions') }}</div>
             </v-card>
           </v-col>
         </v-row>
         <div class="caption font-italic text-center py-1">
-          Characters cannot perform the same action more than once in a turn, except as a free
-          action or reaction.
+          {{ $t('active.quickReference.perTurnNote') }}
         </div>
       </fieldset>
 
@@ -129,27 +128,9 @@
             class="px-3 pt-1 pb-2"
             style="height: 100%"
           >
-            <legend class="text-cc-overline text-accent px-2 font-weight-bold">Engagement</legend>
-            <p class="mb-1">
-              If a character moves adjacent to a hostile character, they both gain
-              <b>ENGAGED</b>
-              for as long as they remain adjacent. Ranged attacks made while
-              <b>ENGAGED</b>
-              receive
-              <v-icon
-                icon="cc:difficulty"
-                class="mt-n1"
-                size="small"
-              />
-              .
-            </p>
-            <p>
-              Characters that become
-              <b>ENGAGED</b>
-              by targets of
-              <b>greater or equal SIZE</b>
-              during movement stop immediately and lose unused movement.
-            </p>
+            <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.engagement') }}</legend>
+            <p class="mb-1" v-html="$t('active.quickReference.engagementDesc1')"></p>
+            <p v-html="$t('active.quickReference.engagementDesc2')"></p>
           </fieldset>
         </v-col>
         <v-col
@@ -160,26 +141,14 @@
             class="px-3 pt-1 pb-2"
             style="height: 100%"
           >
-            <legend class="text-cc-overline text-accent px-2 font-weight-bold">Terrain</legend>
-            <div class="mb-1">
-              All movement through
-              <b>difficult terrain</b>
-              costs
-              <b>double</b>
-              .
-            </div>
-            <div>
-              When characters end their turn in
-              <b>dangerous terrain</b>
-              or move into it for the first time in a round, they must make an
-              <b>ENGINEERING</b>
-              check. On a failure, they take 5 damage
-            </div>
+            <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.terrain') }}</legend>
+            <div class="mb-1" v-html="$t('active.quickReference.terrainDifficult')"></div>
+            <div v-html="$t('active.quickReference.terrainDangerous')"></div>
           </fieldset>
         </v-col>
       </v-row>
 
-      <v-row dense>
+<v-row dense>
         <v-col
           cols="12"
           md=""
@@ -189,52 +158,11 @@
             style="height: 100%"
           >
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              Roll Modifiers
+              {{ $t('active.quickReference.rollModifiers') }}
             </legend>
-            <p class="mb-1">
-              Each point of
-              <v-icon
-                icon="cc:accuracy"
-                class="mt-n1"
-                size="small"
-              />
-              adds 1d6 to a roll.
-            </p>
-            <p class="mb-1">
-              Each point of
-              <v-icon
-                icon="cc:difficulty"
-                class="mt-n1"
-                size="small"
-              />
-              subtracts 1d6 from a roll.
-            </p>
-            <p>
-              <v-icon
-                icon="cc:accuracy"
-                class="mt-n1"
-                size="small"
-              />
-              and
-              <v-icon
-                icon="cc:difficulty"
-                class="mt-n1"
-                size="small"
-              />
-              cancel each other out on a 1:1 basis. No roll can ever receive more than -6 or +6 from
-              <v-icon
-                icon="cc:accuracy"
-                class="mt-n1"
-                size="small"
-              />
-              or
-              <v-icon
-                icon="cc:difficulty"
-                class="mt-n1"
-                size="small"
-              />
-              .
-            </p>
+            <p class="mb-1" v-html="$t('active.quickReference.rollModAccuracy')"></p>
+            <p class="mb-1" v-html="$t('active.quickReference.rollModDifficulty')"></p>
+            <p v-html="$t('active.quickReference.rollModCancel')"></p>
           </fieldset>
         </v-col>
         <v-col
@@ -245,33 +173,12 @@
             class="px-3 pt-1 pb-2"
             style="height: 100%"
           >
-            <legend class="text-cc-overline text-accent px-2 font-weight-bold">Cover</legend>
-            <p class="mb-1">
-              <b>Soft cover</b>
-              adds +1
-              <v-icon
-                icon="cc:difficulty"
-                class="mt-n1"
-                size="small"
-              />
-              to any ranged attacks.
-            </p>
+            <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.cover') }}</legend>
+            <p class="mb-1" v-html="$t('active.quickReference.softCover')"></p>
 
-            <p class="mb-1">
-              <b>Hard cover</b>
-              adds +2
-              <v-icon
-                icon="cc:difficulty"
-                class="mt-n1"
-                size="small"
-              />
-              to any ranged attacks. Characters only benefit from hard cover if they are adjacent to
-              whatever they’re using for cover and are the same
-              <b>SIZE</b>
-              or smaller.
-            </p>
+            <p class="mb-1" v-html="$t('active.quickReference.hardCover')"></p>
 
-            <p>Characters can only benefit from one type of cover at a time.</p>
+            <p v-html="$t('active.quickReference.coverOneType')"></p>
           </fieldset>
         </v-col>
       </v-row>
@@ -280,80 +187,58 @@
         class="mt-1"
       />
       <v-row dense>
-        <v-col style="min-width: 300px">
+        <v-col >
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              SKIRMISH
+              {{ $t('active.quickReference.skirmish') }}
               <v-icon
                 icon="mdi-hexagon-slice-3"
                 color="action--quick"
               />
             </legend>
-            <div>
-              Attack with a
-              <b>single weapon mount</b>
-            </div>
+            <div v-html="$t('active.quickReference.skirmishDesc')"></div>
           </fieldset>
         </v-col>
-        <v-col style="min-width: 500px">
+        <v-col >
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              BARRAGE
+              {{ $t('active.quickReference.barrage') }}
               <v-icon
                 icon="mdi-hexagon-slice-6"
                 color="action--full"
               />
             </legend>
-            <div>
-              Attack with
-              <b>two weapon mounts</b>
-              <b class="text-secondary pl-1">OR</b>
-              a
-              <b>superheavy weapon</b>
-            </div>
+            <div v-html="$t('active.quickReference.barrageDesc')"></div>
           </fieldset>
         </v-col>
-        <v-col style="min-width: 300px">
+        <v-col >
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              IMPROVISED ATTACK
+              {{ $t('active.quickReference.improvisedAttack') }}
               <v-icon
                 icon="mdi-hexagon-slice-6"
                 color="action--full"
               />
             </legend>
-            <div>
-              Deal 1d6
-              <v-icon
-                icon="cc:kinetic"
-                color="damage--kinetic"
-                class="mt-n1 mx-n1"
-              />
-            </div>
+            <div v-html="$t('active.quickReference.improvisedAttackDesc')"></div>
           </fieldset>
         </v-col>
-        <v-col style="min-width: 400px">
+        <v-col >
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              RAM
+              {{ $t('active.quickReference.ram') }}
               <v-icon
                 icon="mdi-hexagon-slice-3"
                 color="action--quick"
               />
             </legend>
-            <div>
-              Target takes
-              <b>PRONE</b>
-              and
-              <b>KNOCKBACK 1</b>
-              (optional)
-            </div>
+            <div v-html="$t('active.quickReference.ramDesc')"></div>
           </fieldset>
         </v-col>
         <v-col cols="12">
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              GRAPPLE
+              {{ $t('active.quickReference.grapple') }}
               <v-icon
                 icon="mdi-hexagon-slice-3"
                 color="action--quick"
@@ -362,35 +247,20 @@
             <div>
               <v-row dense>
                 <v-col>
-                  Melee attack vs adjacent target. On hit:
+                  <p v-html="$t('active.quickReference.grappleDesc1')"></p>
                   <ul>
-                    <li>
-                      Both characters become
-                      <b>ENGAGED</b>
-                    </li>
-                    <li>
-                      Neither character can
-                      <b>BOOST</b>
-                      or take reactions for the duration of the grapple
-                    </li>
-                    <li>
-                      The smaller character becomes
-                      <b>IMMOBILIZED</b>
-                      but moves when the larger party moves, mirroring their movement
-                    </li>
+                    <li v-html="$t('active.quickReference.grappleEffect1')"></li>
+                    <li v-html="$t('active.quickReference.grappleEffect2')"></li>
+                    <li v-html="$t('active.quickReference.grappleEffect3')"></li>
                   </ul>
                 </v-col>
                 <v-col>
-                  A GRAPPLE ends when:
+                  <p v-html="$t('active.quickReference.grappleEnds')"></p>
                   <br />
                   <ul>
-                    <li>Either character breaks adjacency</li>
-                    <li>The attacker chooses to end the grapple as a free action</li>
-                    <li>
-                      The defender breaks free by succeeding on a contested
-                      <b>HULL</b>
-                      check as a quick action
-                    </li>
+                    <li v-html="$t('active.quickReference.grappleEnd1')"></li>
+                    <li v-html="$t('active.quickReference.grappleEnd2')"></li>
+                    <li v-html="$t('active.quickReference.grappleEnd3')"></li>
                   </ul>
                 </v-col>
               </v-row>
@@ -406,7 +276,7 @@
         >
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              melee attacks
+              {{ $t('active.quickReference.meleeAttacks') }}
             </legend>
             <div class="text-center">
               <v-chip
@@ -420,19 +290,10 @@
                   start
                   size="x-large"
                 />
-                + GRIT vs EVASION
+                {{ $t('active.quickReference.meleeRangedFormula') }}
               </v-chip>
             </div>
-            <div class="caption text-center">
-              Target within
-              <v-icon
-                icon="cc:threat"
-                class="mt-n1 ml-n1"
-              />
-              <b>THREAT</b>
-              and
-              <b>LOS</b>
-            </div>
+            <div class="caption text-center" v-html="$t('active.quickReference.meleeRange')"></div>
           </fieldset>
         </v-col>
         <v-col
@@ -441,7 +302,7 @@
         >
           <fieldset class="px-3 pt-1 pb-2">
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              ranged attacks
+              {{ $t('active.quickReference.rangedAttacks') }}
             </legend>
             <div class="text-center">
               <v-chip
@@ -455,19 +316,10 @@
                   start
                   size="x-large"
                 />
-                + GRIT vs EVASION
+                {{ $t('active.quickReference.meleeRangedFormula') }}
               </v-chip>
             </div>
-            <div class="caption text-center">
-              Target within
-              <v-icon
-                icon="cc:range"
-                class="mt-n1 ml-n1"
-              />
-              <b>RANGE</b>
-              and
-              <b>LOS</b>
-            </div>
+            <div class="caption text-center" v-html="$t('active.quickReference.rangedRange')"></div>
           </fieldset>
         </v-col>
         <v-col
@@ -475,7 +327,7 @@
           md=""
         >
           <fieldset class="px-3 pt-1 pb-2">
-            <legend class="text-cc-overline text-accent px-2 font-weight-bold">tech attacks</legend>
+            <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.techAttacks') }}</legend>
             <div class="text-center">
               <v-chip
                 size="small"
@@ -488,26 +340,17 @@
                   start
                   size="x-large"
                 />
-                + TECH ATK. vs E-DEF
+                {{ $t('active.quickReference.techFormula') }}
               </v-chip>
             </div>
-            <div class="caption text-center">
-              Target within
-              <v-icon
-                icon="cc:sensor"
-                class="mt-n1"
-              />
-              <b>SENSORS</b>
-              and
-              <b>LOS</b>
-            </div>
+            <div class="caption text-center" v-html="$t('active.quickReference.techRange')"></div>
           </fieldset>
         </v-col>
       </v-row>
 
       <fieldset class="px-3 pt-1 pb-2 mt-3">
         <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-          Area of Effect Patterns
+          {{ $t('active.quickReference.aoePatterns') }}
         </legend>
         <v-row>
           <v-col
@@ -520,9 +363,9 @@
                 size="small"
                 class="mt-n1"
               />
-              LINE X
+              {{ $t('active.quickReference.line') }}
             </div>
-            <div>Affects a straight line, X spaces long.</div>
+            <div>{{ $t('active.quickReference.lineDesc') }}</div>
           </v-col>
           <v-col
             cols="12"
@@ -534,12 +377,9 @@
                 size="small"
                 class="mt-n1"
               />
-              CONE X
+              {{ $t('active.quickReference.cone') }}
             </div>
-            <div>
-              Affects a cone, X spaces long and X spaces wide at its furthest point. Starts at 1
-              space wide.
-            </div>
+            <div>{{ $t('active.quickReference.coneDesc') }}</div>
           </v-col>
           <v-col
             cols="12"
@@ -551,16 +391,9 @@
                 size="small"
                 class="mt-n1"
               />
-              BLAST X
+              {{ $t('active.quickReference.blast') }}
             </div>
-            <div>
-              Affects a radius of X spaces, drawn from a point within
-              <v-icon
-                icon="cc:range"
-                class="mt-n1"
-              />
-              and LOS.
-            </div>
+            <div>{{ $t('active.quickReference.blastDesc') }}</div>
           </v-col>
           <v-col
             cols="12"
@@ -572,15 +405,14 @@
                 size="small"
                 class="mt-n1"
               />
-              BURST X
+              {{ $t('active.quickReference.burst') }}
             </div>
-            <div>Affects a radius of X spaces, centered on the user (or target).</div>
+            <div>{{ $t('active.quickReference.burstDesc') }}</div>
           </v-col>
         </v-row>
         <v-divider class="my-1" />
         <div class="caption font-italic text-center py-1">
-          AoE Attack Rolls are made for each target. One damage roll is applied to all targets.
-          Bonus damage is halved.
+          {{ $t('active.quickReference.aoeNote') }}
         </div>
       </fieldset>
 
@@ -593,7 +425,7 @@
           md=""
         >
           <fieldset class="px-3 pt-1 pb-2">
-            <legend class="text-cc-overline text-accent px-2 font-weight-bold">damage types</legend>
+            <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.damageTypes') }}</legend>
             <div>
               <v-row dense>
                 <v-col
@@ -607,7 +439,7 @@
                       class="mt-n1"
                       color="damage--kinetic"
                     />
-                    <b>KINETIC</b>
+                    <b>{{ $t('active.quickReference.kinetic') }}</b>
                   </div>
                   <div>
                     <v-icon
@@ -616,7 +448,7 @@
                       class="mt-n1"
                       color="damage--energy"
                     />
-                    <b>ENERGY</b>
+                    <b>{{ $t('active.quickReference.energy') }}</b>
                   </div>
                   <div>
                     <v-icon
@@ -625,7 +457,7 @@
                       class="mt-n1"
                       color="damage--explosive"
                     />
-                    <b>EXPLOSIVE</b>
+                    <b>{{ $t('active.quickReference.explosive') }}</b>
                   </div>
                   <div>
                     <v-icon
@@ -634,7 +466,7 @@
                       class="mt-n1"
                       color="damage--heat"
                     />
-                    <b>HEAT</b>
+                    <b>{{ $t('active.quickReference.heat') }}</b>
                   </div>
                 </v-col>
                 <v-col
@@ -648,13 +480,8 @@
                       class="mt-n1"
                       color="damage--burn"
                     />
-                    <b>
-                      BURN
-                      <i>(AP)</i>
-                    </b>
-                    <div class="pl-5">
-                      <i>Applied at end of turn, save to clear. Persists.</i>
-                    </div>
+                    <b v-html="$t('active.quickReference.burn')"></b>
+                    <div class="pl-5" v-html="$t('active.quickReference.burnDesc')"></div>
                   </div>
                 </v-col>
               </v-row>
@@ -669,13 +496,8 @@
             class="px-3 pt-1 pb-2"
             style="height: 100%"
           >
-            <legend class="text-cc-overline text-accent px-2 font-weight-bold">bonus damage</legend>
-            <div>
-              For AoE attacks, bonus damage is halved.
-              <br />
-              Secondary AUX attacks made from a single mount deal
-              <b>no bonus damage</b>
-            </div>
+            <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.bonusDamage') }}</legend>
+            <div v-html="$t('active.quickReference.bonusDamageDesc')"></div>
           </fieldset>
         </v-col>
         <v-col
@@ -687,18 +509,14 @@
             style="height: 100%"
           >
             <legend class="text-cc-overline text-accent px-2 font-weight-bold">
-              critical hits
+              {{ $t('active.quickReference.criticalHits') }}
             </legend>
-            <div>
-              <b>20+</b>
-              (total) on a melee or ranged attack roll. All damage dice are rolled twice (inc'l
-              bonus damage) and the highest result from each is used.
-            </div>
+            <div v-html="$t('active.quickReference.criticalHitsDesc')"></div>
           </fieldset>
         </v-col>
       </v-row>
       <fieldset class="px-3 pt-1 pb-2 mt-3">
-        <legend class="text-cc-overline text-accent px-2 font-weight-bold">Statuses</legend>
+        <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.statuses') }}</legend>
         <v-row dense>
           <v-col
             v-for="s in statuses.filter(x => x.StatusType === 'Status')"
@@ -738,7 +556,7 @@
       </fieldset>
 
       <fieldset class="px-3 pt-1 pb-2 mt-3">
-        <legend class="text-cc-overline text-accent px-2 font-weight-bold">CONDITIONS</legend>
+        <legend class="text-cc-overline text-accent px-2 font-weight-bold">{{ $t('active.quickReference.conditions') }}</legend>
         <v-row dense>
           <v-col
             v-for="s in statuses.filter(x => x.StatusType === 'Condition')"
@@ -773,6 +591,9 @@
   import { computed } from 'vue'
   import { CompendiumStore } from '@/stores'
   import DOMPurify from 'dompurify'
+  import { useI18n } from 'vue-i18n'
+
+  const { t } = useI18n()
 
   function cleanSvg(svg: string) {
     return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } })
