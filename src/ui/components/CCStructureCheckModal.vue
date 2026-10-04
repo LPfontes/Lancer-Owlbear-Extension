@@ -500,7 +500,7 @@
           .map(v => Number(v.value))
       }
     } catch (e) {
-      console.warn('[StructureCheck] Erro ao rolar no dddice, usando fallback local:', e)
+      console.warn('Erro ao rolar no dddice, usando fallback local:', e)
     } finally {
       isRolling.value = false
     }
@@ -511,20 +511,24 @@
     rolls.value = prerollEffects(effects.value)
     emit('rolled', r)
 
-    const actorName = props.cc?.CombatName || 'Mech'
-    const checkKind = props.pending.kind === 'structure' ? 'Estrutura (Structure Check)' : 'Superaquecimento (Overheat Check)'
+    const actorName = props.cc?.CombatName || 'Mecha'
+    const checkKind = props.pending.kind === 'structure' ? 'Estrutura' : 'Superaquecimento'
     
     let translatedTitle = r.row?.title || ''
     if (r.row?.title && TABLE_ROW_TRANSLATIONS[r.row.title]) {
       translatedTitle = TABLE_ROW_TRANSLATIONS[r.row.title].title.split(' (')[0]
     }
     const rowTitle = translatedTitle ? ` - ${translatedTitle}` : ''
+    const rowResult = r.row?.title
+      ? TABLE_ROW_TRANSLATIONS[r.row.title]?.result || r.row.result || ''
+      : r.row?.result || ''
+    const rowEffect = rowResult ? `\n${rowResult}` : ''
     
     void useTableActionStore().postAction({
       senderName: actorName,
       category: 'roll',
       title: `Teste de ${checkKind}`,
-      detail: `Rolou ${diceCount}d6: [${r.dice.join(', ')}] -> Mínimo: ${r.lowest}${rowTitle}`,
+      detail: `Rolou ${diceCount}d6: [${r.dice.join(', ')}] -> Mínimo: ${r.lowest}${rowTitle}${rowEffect}`,
       roll: {
         total: r.lowest,
         formula: `${diceCount}d6`,
@@ -558,7 +562,7 @@
           .map(v => Number(v.value))
       }
     } catch (e) {
-      console.warn('[StructureCheck] Erro ao rolar save no dddice, usando fallback:', e)
+      console.warn('Erro ao rolar save no dddice, usando fallback:', e)
     }
 
     let totalVal = 0
@@ -577,7 +581,7 @@
       saveChoices[path] = r.total >= 10 ? 'success' : 'fail'
     }
 
-    const actorName = props.cc?.CombatName || 'Mech'
+    const actorName = props.cc?.CombatName || 'Mecha'
     const isSuccess = saveChoices[path] === 'success'
     void useTableActionStore().postAction({
       senderName: actorName,

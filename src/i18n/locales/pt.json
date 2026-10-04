@@ -2640,7 +2640,10 @@
       "cascadeDetail": "Uma PNH instalada entrou em CASCATA e assumiu o controle total do mecha. O mecha está sob controle do Mestre até que o Piloto retome o controle ao escolher Desligar o mecha."
     },
     "scan": {
-      "scan": "Escanear"
+      "scan": "Escanear",
+      "sendToChat": "Enviar para o chat",
+      "reportTitle": "Relatório de Escaneamento",
+      "sentToChat": "Relatório enviado para o chat da mesa"
     },
     "miniPanel": {
       "resetBase": "Redefinir para o Valor Base"

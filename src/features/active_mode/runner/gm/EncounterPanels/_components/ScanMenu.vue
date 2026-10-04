@@ -50,7 +50,14 @@
             variant="outlined"
             class="flavor-text"
           />
-          <div class="d-flex justify-end mt-4">
+          <div class="d-flex justify-end ga-2 mt-4">
+            <cc-button
+              prepend-icon="mdi-chat-outline"
+              color="primary"
+              @click="sendToChat()"
+            >
+              {{ $t('active.scan.sendToChat') }}
+            </cc-button>
             <cc-button
               prepend-icon="mdi-clipboard-text-outline"
               color="accent"
@@ -72,6 +79,7 @@
   const { t } = useI18n()
   import * as _ from 'lodash-es'
   import Statblock from '@/classes/Statblock'
+  import { useTableActionStore } from '@/stores/tableActionStore'
   import { Unit } from '@/classes/npc/unit/Unit'
 
   defineOptions({ name: 'ScanMenu' })
@@ -85,6 +93,23 @@
   const statblock = computed(() => {
     return Statblock.ScanNpc(props.item as Unit, includeFeatureDetails.value)
   })
+
+  function sendToChat() {
+    const item = props.item as any
+    const name = item?.Name || item?.CombatName || 'GM'
+    void useTableActionStore().postAction({
+      senderName: name,
+      actorType: 'npc',
+      category: 'status',
+      title: t('active.scan.reportTitle'),
+      detail: statblock.value,
+    })
+    notify({
+      title: t('active.scan.reportTitle'),
+      text: t('active.scan.sentToChat'),
+      icon: 'mdi-chat-outline',
+    })
+  }
 
   function copy() {
     navigator.clipboard
