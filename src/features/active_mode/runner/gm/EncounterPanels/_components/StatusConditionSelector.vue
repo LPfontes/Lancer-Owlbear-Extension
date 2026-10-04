@@ -161,10 +161,11 @@
       const parent = (props.controller as any).Parent
       const parentId = parent?.ID
       if (!parentId) return
-      const list = ((props.controller as any).Statuses || []).map((s: any) => s.status?.ID || s.status)
-      if (props.controller.IsInDangerZone && !list.includes('dangerzone')) {
-        list.push('dangerzone')
-      }
+      // Passa pelo MESMO agregador que o evento de status usa. Montar a lista aqui
+      // à mão deixava a Cobertura de fora, e como o sync substitui o conjunto
+      // inteiro de marcadores, o badge do cover era apagado ao adicionar uma
+      // condição. `MarkerStatusIds` já inclui status + dangerzone + cobertura.
+      const list = (props.controller as any).StatusController.MarkerStatusIds(props.controller)
       obrBridge
         .syncCombatantStatusMarkers(parentId, list, parent?.OriginId || parentId)
         .catch(() => {})

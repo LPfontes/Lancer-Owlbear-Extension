@@ -144,8 +144,7 @@
   import DiceRollInterface from './DiceRollInterface.vue'
   import DamageEffectOptions from './DamageEffectOptions.vue'
   import { DamageEvent } from '@/classes/components/feature/active_effects/effect_events/damageEvent'
-  import { DiceRoller } from '@/classes/dice/DiceRoller'
-  import { dddiceService } from '@/services/dddiceService'
+  import { rollDamageRows } from '@/util/diceRoll'
   import { useI18n } from 'vue-i18n'
   const { t } = useI18n()
 
@@ -191,27 +190,19 @@
 
   import { useTableActionStore } from '@/stores/tableActionStore'
 
-  function rollDamage(d: DamageEvent) {
-    let rollResult: any
-    if (d.DamageRollString && d.DamageRollString.includes('d')) {
-      rollResult = DiceRoller.rollDamage(
-        d.DamageRollString,
-        d.IsCrit,
-        d.Overkill,
-        d.Reliable
-      )
-    } else {
-      const val = Number(d.DamageRollString) || 0
-      rollResult = { total: val, toString: () => val.toString() }
+  async function rollDamage(d: DamageEvent) {
+    const [rolled] = await rollDamageRows([{ formula: d.DamageRollString || '' }], {
+      label: `Dano [${d.DamageType}]`,
+      isCrit: d.IsCrit,
+      overkill: d.Overkill,
+      reliable: d.Reliable,
+    })
+    const rollResult = {
+      total: rolled.total,
+      overkillRerolls: rolled.overkillRerolls,
+      toString: () => rolled.breakdown,
     }
     d.ApplyRoll(rollResult)
-
-    if (d.DamageRollString && d.DamageRollString.includes('d')) {
-      void dddiceService.rollDice({
-        diceString: d.DamageRollString,
-        label: `Dano [${d.DamageType}]`,
-      })
-    }
 
     const actorName =
       (props.event.Initiator as any)?.actor?.CombatController?.CombatName ||
@@ -231,40 +222,31 @@
       senderName: actorName,
       category: 'damage',
       title: `Dano [${d.DamageType}]`,
-      detail: rollResult.toString ? rollResult.toString() : String(rollResult.total),
+      detail: rolled.breakdown,
       targetName,
       roll: {
-        total: Number(rollResult.total) || 0,
-        formula: d.DamageRollString || String(rollResult.total),
+        total: rolled.total,
+        formula: d.DamageRollString || String(rolled.total),
         isCrit: !!d.IsCrit,
       },
       tags,
     })
   }
 
-  function rollBonus(d: DamageEvent) {
+  async function rollBonus(d: DamageEvent) {
     if (!d.BonusDamageEvent) return
     const bd = d.BonusDamageEvent
-    let rollResult: any
-    if (bd.DamageRollString && bd.DamageRollString.includes('d')) {
-      rollResult = DiceRoller.rollDamage(
-        bd.DamageRollString,
-        bd.IsCrit,
-        bd.Overkill,
-        bd.Reliable
-      )
-    } else {
-      const val = Number(bd.DamageRollString) || 0
-      rollResult = { total: val, toString: () => val.toString() }
-    }
-    bd.ApplyRoll(rollResult)
-
-    if (bd.DamageRollString && bd.DamageRollString.includes('d')) {
-      void dddiceService.rollDice({
-        diceString: bd.DamageRollString,
-        label: `Dano Bônus [${bd.DamageType}]`,
-      })
-    }
+    const [rolled] = await rollDamageRows([{ formula: bd.DamageRollString || '' }], {
+      label: `Dano Bônus [${bd.DamageType}]`,
+      isCrit: bd.IsCrit,
+      overkill: bd.Overkill,
+      reliable: bd.Reliable,
+    })
+    bd.ApplyRoll({
+      total: rolled.total,
+      overkillRerolls: rolled.overkillRerolls,
+      toString: () => rolled.breakdown,
+    })
 
     const actorName =
       (props.event.Initiator as any)?.actor?.CombatController?.CombatName ||
@@ -283,11 +265,11 @@
       senderName: actorName,
       category: 'damage',
       title: `Dano Bônus [${bd.DamageType}]`,
-      detail: rollResult.toString ? rollResult.toString() : String(rollResult.total),
+      detail: rolled.breakdown,
       targetName,
       roll: {
-        total: Number(rollResult.total) || 0,
-        formula: bd.DamageRollString || String(rollResult.total),
+        total: rolled.total,
+        formula: bd.DamageRollString || String(rolled.total),
         isCrit: !!bd.IsCrit,
       },
       tags,

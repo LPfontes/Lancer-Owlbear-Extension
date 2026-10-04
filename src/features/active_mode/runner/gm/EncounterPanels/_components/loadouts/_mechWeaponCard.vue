@@ -173,6 +173,8 @@
                 :key="action"
                 :profile="item.Profiles[item.ProfileIndex]"
                 :action="action"
+                broadcast
+                :mech="mech"
               />
             </div>
             <div v-else>
@@ -181,16 +183,10 @@
                 :key="action"
                 :profile="item.Profiles[0]"
                 :action="action"
+                broadcast
+                :mech="mech"
               />
             </div>
-          </div>
-
-          <div v-if="mod">
-            <mech-mod-card
-              :mod="mod"
-              :mech="mech"
-              @deploy="$emit('deploy', $event)"
-            />
           </div>
         </div>
 
@@ -199,6 +195,14 @@
             <p
               v-html-safe="item.Effect"
               class="mb-1 px-2"
+            />
+          </div>
+
+          <div v-if="mod">
+            <mech-mod-card
+              :mod="mod"
+              :mech="mech"
+              @deploy="$emit('deploy', $event)"
             />
           </div>
 
@@ -220,28 +224,6 @@
                 color="pilot"
                 :bonus="mech.LimitedBonus"
               />
-            </v-col>
-
-            <v-col
-              v-for="p in item.Profiles"
-              v-show="item.Profiles.length > 1"
-              :key="p.ID"
-              class="mr-4"
-              cols="auto"
-            >
-              <div v-if="p.Tags.length">
-                <div
-                  class="text-cc-overline"
-                  v-text="p.Name"
-                />
-                <cc-tags
-                  v-if="p.Tags"
-                  :tags="p.Tags"
-                  color="pilot"
-                  :bonus="mech.LimitedBonus"
-                  combat
-                />
-              </div>
             </v-col>
 
             <v-col cols="auto">

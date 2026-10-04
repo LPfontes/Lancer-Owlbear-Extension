@@ -3702,6 +3702,7 @@
       "half": "Medio",
       "addTarget": "Añadir Blanco",
       "target": "Blanco",
+      "damage": "Daño",
       "damageValue": "valor del daño",
       "bonusDamage": "Daños por Bono",
       "bonusDamageHalved": "El Daño por Bono se reducirá a la mitad (Área de efecto)",

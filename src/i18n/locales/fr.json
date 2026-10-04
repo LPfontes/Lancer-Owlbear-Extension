@@ -2211,6 +2211,7 @@
     },
     "combat": {
       "fromOrigin": "De {name}",
+      "damage": "Dégâts",
       "ifLabel": "SI",
       "cannotActivate": "Ne peut pas activer.",
       "cannotActivateShort": "Ne peut pas activer",

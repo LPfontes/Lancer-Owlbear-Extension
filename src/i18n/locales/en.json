@@ -3828,6 +3828,7 @@
       "addTarget": "Add Target",
       "target": "Target",
       "self": "Self",
+      "damage": "Damage",
       "damageValue": "damage value",
       "bonusDamage": "Bonus Damage",
       "bonusDamageHalved": "Bonus Damage will be halved (Area of Effect)",

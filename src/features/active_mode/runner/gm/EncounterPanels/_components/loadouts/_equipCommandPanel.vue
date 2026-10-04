@@ -233,6 +233,22 @@
         </template>
       </v-tooltip>
     </v-col>
+
+    <v-col
+      cols="auto"
+      class="ml-1"
+    >
+      <v-btn
+        icon="mdi-message-text"
+        variant="text"
+        size="small"
+        color="white"
+        title="Enviar para o chat"
+        class="mr-2"
+        style="height: inherit; opacity: 0.7;"
+        @click.stop="broadcastItem"
+      />
+    </v-col>
   </v-row>
 </template>
 
@@ -260,6 +276,11 @@
   import { NpcWeapon } from '@/classes/npc/feature/NpcItem/NpcWeapon'
   import { snapshot } from '@/classes/encounter/EncounterUndoStack'
   import { useI18n } from 'vue-i18n'
+  import { Damage } from '@/classes/Damage'
+  import { Range } from '@/classes/Range'
+  import Tag from '@/classes/Tag'
+  import { useTableActionStore } from '@/stores/tableActionStore'
+  import { enumLabel } from '@/i18n/enumLabel'
 
   const { t } = useI18n()
 
@@ -305,6 +326,51 @@
     if (props.item instanceof MechWeapon) return true
     return false
   })
+
+  /**
+   * Envia o item para o chat da mesa — vale para qualquer carta que use esta
+   * barra (arma de mecha, arma de piloto, sistema e feature de NPC).
+   */
+  function broadcastItem() {
+    const mech = props.controller?.Parent as any
+    const actorName =
+      mech?.Name || mech?.Pilot?.Name || (owner.value?.actor as any)?.Name || 'Piloto'
+    const weapon = props.item instanceof MechWeapon ? props.item : null
+
+    let label = 'Item'
+    if (props.item instanceof MechWeapon || props.item instanceof PilotWeapon) label = 'Arma'
+    else if (props.item instanceof MechSystem) label = 'Sistema'
+    else if (props.item instanceof NpcFeature)
+      label = (props.item as any).WeaponType ? 'Arma' : 'Característica'
+
+    const ranges = weapon
+      ? Range.CalculateRange(weapon, mech)
+          .map(r => r.Text)
+          .filter(Boolean)
+          .join(' / ')
+      : ''
+    const damages = weapon
+      ? Damage.CalculateDamage(weapon, mech)
+          .map(d => `${d.Value} ${enumLabel('damageType', d.Type)}`)
+          .join(' / ')
+      : ''
+    const detail = [
+      [ranges, damages].filter(Boolean).join(' — '),
+      (props.item as any).Description,
+      (props.item as any).Effect,
+    ]
+      .filter(Boolean)
+      .join('<br/>')
+
+    void useTableActionStore().broadcastCombatAction({
+      actorName,
+      actionName: `${label}: ${props.item.Name}`,
+      actionType: 'chat',
+      detail,
+      tags: Tag.Serialize((props.item as any).Tags || []),
+    })
+  }
+
   const skirmishAction = computed(() => {
     return CompendiumStore().Actions.find(x => x.ID === 'act_skirmish')!
   })

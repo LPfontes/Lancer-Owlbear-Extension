@@ -180,21 +180,6 @@
                 </div>
               </div>
             </div>
-
-            <!-- Targeting Section -->
-            <div class="hud-section pa-2 mb-3">
-              <div class="section-label mb-2">{{ $t('hud.targeting') }}</div>
-              <v-select
-                v-model="selectedTargetId"
-                :items="targetOptions"
-                item-title="title"
-                item-value="value"
-                density="compact"
-                variant="outlined"
-                hide-details
-                :placeholder="$t('hud.selectTarget')"
-              />
-            </div>
           </v-col>
 
           <!-- Configuration Column (Checkboxes) -->
@@ -391,6 +376,7 @@
   import { ref, computed, reactive } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { DiceRoller, DamageRollResult, DieSet } from '@/classes/dice/DiceRoller'
+  import { reducePhysicalDie, takeDddiceValue } from '@/util/diceRoll'
   import { dddiceService } from '@/services/dddiceService'
   import { useTableActionStore } from '@/stores/tableActionStore'
   import { useEncounterContext } from '../../../encounterContext'
@@ -582,9 +568,6 @@
     config.isCrit = false
 
     lastRollResults.value = []
-    if (!selectedTargetId.value && targetOptions.value.length) {
-      selectedTargetId.value = targetOptions.value[0].value
-    }
 
     openFn()
   }
@@ -666,23 +649,12 @@
                   const neededCount = config.isCrit ? dieSet.quantity * 2 : dieSet.quantity
                   const rolls: number[] = []
                   for (let i = 0; i < neededCount; i++) {
-                    const targetType = `d${dieSet.type <= 3 ? 6 : dieSet.type}`
-                    const dieIdx = pool.findIndex(d => d.type?.toLowerCase() === targetType)
-                    let rollVal = 0
-                    if (dieIdx !== -1 && typeof pool[dieIdx].value !== 'undefined') {
-                      rollVal = Number(pool.splice(dieIdx, 1)[0].value)
-                      if (dieSet.type <= 3) {
-                        rollVal = Math.ceil(rollVal / 2)
-                      }
-                    } else if (pool.length > 0 && typeof pool[0].value !== 'undefined') {
-                      rollVal = Number(pool.shift()!.value)
-                      if (dieSet.type <= 3) {
-                        rollVal = Math.ceil(rollVal / 2)
-                      }
-                    } else {
-                      rollVal = DiceRoller.rollDie(dieSet.type)
-                    }
-                    rolls.push(rollVal)
+                    const physical = takeDddiceValue(pool, dieSet.type)
+                    rolls.push(
+                      physical === undefined
+                        ? DiceRoller.rollDie(dieSet.type)
+                        : reducePhysicalDie(dieSet.type, physical)
+                    )
                   }
 
                   if (config.overkill) {
@@ -751,23 +723,12 @@
                     const neededCount = config.isCrit ? dieSet.quantity * 2 : dieSet.quantity
                     const rolls: number[] = []
                     for (let i = 0; i < neededCount; i++) {
-                      const targetType = `d${dieSet.type <= 3 ? 6 : dieSet.type}`
-                      const dieIdx = pool.findIndex(d => d.type?.toLowerCase() === targetType)
-                      let rollVal = 0
-                      if (dieIdx !== -1 && typeof pool[dieIdx].value !== 'undefined') {
-                        rollVal = Number(pool.splice(dieIdx, 1)[0].value)
-                        if (dieSet.type <= 3) {
-                          rollVal = Math.ceil(rollVal / 2)
-                        }
-                      } else if (pool.length > 0 && typeof pool[0].value !== 'undefined') {
-                        rollVal = Number(pool.shift()!.value)
-                        if (dieSet.type <= 3) {
-                          rollVal = Math.ceil(rollVal / 2)
-                        }
-                      } else {
-                        rollVal = DiceRoller.rollDie(dieSet.type)
-                      }
-                      rolls.push(rollVal)
+                      const physical = takeDddiceValue(pool, dieSet.type)
+                      rolls.push(
+                        physical === undefined
+                          ? DiceRoller.rollDie(dieSet.type)
+                          : reducePhysicalDie(dieSet.type, physical)
+                      )
                     }
 
                     if (config.overkill) {

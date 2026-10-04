@@ -1,15 +1,36 @@
 <template>
-  <div class="text-cc-overline">{{ $t('active.mechLoadout.weapons') }}</div>
+  <div
+    class="text-cc-overline d-flex align-center cursor-pointer"
+    :aria-expanded="!weaponsCollapsed"
+    @click="weaponsCollapsed = !weaponsCollapsed"
+  >
+    <v-icon
+      size="18"
+      class="mr-1"
+      :icon="weaponsCollapsed ? 'mdi-chevron-right' : 'mdi-chevron-down'"
+    />
+    {{ $t('active.mechLoadout.weapons') }}
+  </div>
   <cc-masonry-grid
+    v-show="!weaponsCollapsed"
     :items="mounts"
     :xl-columns="xlColumns"
   >
-    <template #default="{ item }">
+    <template #default="{ item, index }">
       <fieldset
         :class="mobile ? 'pa-1' : 'pb-2 px-3'"
         style="border-color: rgba(155, 155, 155, 0.6)"
       >
-        <legend class="heading h4 mx-2 px-2 text-accent">
+        <legend
+          class="heading h4 mx-2 px-2 text-accent cursor-pointer"
+          :aria-expanded="!collapsedMounts[index]"
+          @click="collapsedMounts[index] = !collapsedMounts[index]"
+        >
+          <v-icon
+            size="16"
+            class="mr-1"
+            :icon="collapsedMounts[index] ? 'mdi-chevron-right' : 'mdi-chevron-down'"
+          />
           {{ item.mount.Name }}
           <span
             v-if="item.isImpArm"
@@ -25,38 +46,52 @@
           </span>
         </legend>
 
-        <mech-mount-bonus-card
-          v-for="b in item.mount.Bonuses"
-          :key="b.ID"
-          :bonus="b"
-          :mech="mech"
-          @deploy="$emit('deploy', $event)"
-        />
-
-        <sh-lock-card v-if="item.mount.IsLocked" />
-        <div
-          v-for="(s, idx) in item.mount.Slots"
-          :key="`slot-${idx}`"
-        >
-          <div
-            v-if="Number(idx) > 0"
-            class="my-4"
-          />
-          <mech-weapon-card
-            v-if="s && s.Weapon"
-            :key="s.ID"
-            :item="s.Weapon"
+        <div v-show="!collapsedMounts[index]">
+          <mech-mount-bonus-card
+            v-for="b in item.mount.Bonuses"
+            :key="b.ID"
+            :bonus="b"
             :mech="mech"
-            :mount="item.mount"
-            :int-weapon="item.isIntWeapon || item.isIntegrated"
             @deploy="$emit('deploy', $event)"
           />
+
+          <sh-lock-card v-if="item.mount.IsLocked" />
+          <div
+            v-for="(s, idx) in item.mount.Slots"
+            :key="`slot-${idx}`"
+          >
+            <div
+              v-if="Number(idx) > 0"
+              class="my-4"
+            />
+            <mech-weapon-card
+              v-if="s && s.Weapon"
+              :key="s.ID"
+              :item="s.Weapon"
+              :mech="mech"
+              :mount="item.mount"
+              :int-weapon="item.isIntWeapon || item.isIntegrated"
+              @deploy="$emit('deploy', $event)"
+            />
+          </div>
         </div>
       </fieldset>
     </template>
   </cc-masonry-grid>
-  <div class="text-cc-overline mt-2">// {{ $t('stats.systems') }}</div>
+  <div
+    class="text-cc-overline mt-2 d-flex align-center cursor-pointer"
+    :aria-expanded="!systemsCollapsed"
+    @click="systemsCollapsed = !systemsCollapsed"
+  >
+    <v-icon
+      size="18"
+      class="mr-1"
+      :icon="systemsCollapsed ? 'mdi-chevron-right' : 'mdi-chevron-down'"
+    />
+    // {{ $t('stats.systems') }}
+  </div>
   <cc-masonry-grid
+    v-show="!systemsCollapsed"
     :items="systems"
     :xl-columns="xlColumns"
   >
@@ -65,10 +100,20 @@
         class="pb-2 px-3"
         style="border-color: rgba(155, 155, 155, 0.6)"
       >
-        <legend class="heading h4 mx-2 px-2 text-accent">
+        <legend
+          class="heading h4 mx-2 px-2 text-accent cursor-pointer"
+          :aria-expanded="!collapsedSystems[(item as any).ID]"
+          @click="collapsedSystems[(item as any).ID] = !collapsedSystems[(item as any).ID]"
+        >
+          <v-icon
+            size="16"
+            class="mr-1"
+            :icon="collapsedSystems[(item as any).ID] ? 'mdi-chevron-right' : 'mdi-chevron-down'"
+          />
           {{ (item as any).Name }}
         </legend>
         <mech-system-card
+          v-show="!collapsedSystems[(item as any).ID]"
           :key="(item as any).ID"
           :item="<any>item"
           :mech="mech"
@@ -85,7 +130,7 @@
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import type { Mech } from '@/classes/mech/Mech'
   import type Mount from '@/classes/mech/components/mount/Mount'
-  import { computed } from 'vue'
+  import { computed, ref } from 'vue'
   import { useDisplay } from 'vuetify'
   import ShLockCard from '@/features/pilot_management/_components/loadout/mech_loadout/components/mount/_ShLockCard.vue'
   import MechSystemCard from './_mechSystemCard.vue'
@@ -107,6 +152,10 @@
 
   const { layout } = useLayoutOptions()
   const xlColumns = computed(() => layout.value.maxColumns)
+  const weaponsCollapsed = ref(false)
+  const systemsCollapsed = ref(false)
+  const collapsedMounts = ref<Record<number, boolean>>({})
+  const collapsedSystems = ref<Record<string, boolean>>({})
   const mobile = computed(() => {
     return _display.mdAndDown.value
   })

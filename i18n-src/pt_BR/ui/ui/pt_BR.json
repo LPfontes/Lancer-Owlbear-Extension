@@ -973,6 +973,7 @@
             "singleTarget": "Alvo Único",
             "addTarget": "Adicionar Alvo",
             "target": "Alvo",
+            "damage": "Dano",
             "damageValue": "valor de Dano",
             "bonusDamage": "Dano Bônus",
             "bonusDamageHalved": "Dano Bônus será reduzido à metade (Área de Efeito)",

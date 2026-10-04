@@ -351,10 +351,11 @@ class DddiceService {
         const rawSides = parseInt(match[3], 10)
 
         // Mapeia lados para dados suportados pelo dddice (d4, d6, d8, d10, d12, d20, d100)
+        // Sem dado físico de d3/d2: rola-se o d4; a redução para d3
+        // (1→1, 2→2, 3→2, 4→3) é aplicada por quem lê o resultado.
         let sides = rawSides
         if (sides <= 3) {
           sides = 4
-          totalMod -= count // usa 1d4 - 1 para 1d3
         }
 
         const validTypes = [4, 6, 8, 10, 12, 20, 100]
@@ -467,9 +468,10 @@ class DddiceService {
           totalMod += (typeof d.value === 'number' ? d.value : 0)
         } else {
           let dieType = d.type
+          // Não existe dado físico de d3/d2: rola-se o d4 e a redução para d3
+          // (1→1, 2→2, 3→2, 4→3) é aplicada por quem lê o resultado.
           if (dieType === 'd3' || dieType === 'd2') {
             dieType = 'd4'
-            totalMod -= 1 // usa 1d4 - 1 para 1d3
           }
           diceList.push({
             type: dieType,

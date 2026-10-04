@@ -12,16 +12,66 @@
     </cc-button>
 
     <div
-      v-else-if="!embedded"
+      v-else-if="(hasRoll || announceOnly) && !embedded"
       class="d-flex flex-column"
     >
-      <div class="d-flex align-center justify-space-between flex-wrap ga-2 mt-2">
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2">
         <v-btn
           variant="plain"
           color="disabled"
           @click="cancel(close)"
         >
-          {{ $t('common.cancel') }}
+          {{ $t('hud.cancel') }}
+        </v-btn>
+
+        <v-btn
+          v-if="hasRoll"
+          color="error"
+          variant="elevated"
+          prepend-icon="mdi-dice-multiple"
+          size="large"
+          :loading="isRolling"
+          :disabled="disabled"
+          @click="broadcast(close)"
+        >
+          {{ $t('hud.roll') }}
+        </v-btn>
+
+        <v-btn
+          v-else
+          :color="color"
+          variant="elevated"
+          class="font-weight-bold px-4"
+          height="36"
+          :disabled="disabled"
+          @click="broadcast(close)"
+        >
+          <v-icon
+            v-if="icon"
+            :icon="icon"
+            start
+            size="18"
+          />
+          <span>{{ $t('ui.combat.activate') }}</span>
+        </v-btn>
+      </div>
+
+      <div class="text-center text-cc-overline text-disabled mt-2">
+        <div v-if="isApplied">{{ $t('ui.combat.alreadyActivated') }}</div>
+      </div>
+    </div>
+
+    <div
+      v-else-if="!embedded"
+      class="d-flex flex-column"
+    >
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+        <v-btn
+          variant="plain"
+          color="disabled"
+          @click="cancel(close)"
+        >
+          {{ $t('hud.cancel') }}
         </v-btn>
 
         <v-btn
@@ -40,7 +90,8 @@
             size="18"
           />
           <span v-if="activation">{{ $t('ui.combat.activate') }}</span>
-          <span v-else>{{ canOverride ? $t('ui.combat.applyAll') : $t('common.confirm') }}</span>
+          <span v-else-if="canOverride">{{ $t('ui.combat.applyAll') }}</span>
+          <span v-else>{{ $t('hud.finish') }} {{ effectName }}</span>
         </v-btn>
 
         <v-btn
@@ -53,7 +104,7 @@
           @click="apply(close)"
         >
           <v-icon icon="mdi-check-all" start size="18" />
-          <span>{{ $t('common.confirm') }}</span>
+          <span>{{ $t('hud.finish') }} {{ effectName }}</span>
         </v-btn>
       </div>
 
@@ -87,6 +138,7 @@
   import { CombatantData } from '@/classes/encounter/Encounter'
   import CcForceOverride from '@/ui/components/modals/CCForceOverride.vue'
   import { killTargets } from './_shared/killTargets'
+  import { broadcastEffectToChat } from './_shared/broadcastEffectToChat'
 
   const props = withDefaults(
     defineProps<{
@@ -119,6 +171,7 @@
 
   const ready = ref(false)
   const isFree = ref(false)
+  const isRolling = ref(false)
   const overridePrompt = ref(false)
 
   const events = computed((): ActiveEffectEvent[] =>
@@ -142,6 +195,43 @@
   )
 
   const activeEffect = computed(() => events.value[0]?.Effect)
+
+  const effectName = computed((): string => props.action?.Name || activeEffect.value.Name || '')
+
+  /**
+   * Efeito/ação aberto fora dos diálogos de ataque de arma (esses usam
+   * WeaponAttackEvent e o fluxo de dois estágios), ou seja: o diálogo sem alvo.
+   */
+  const isWeaponFlow = computed((): boolean => !!props.weaponEvent || !!props.actionId)
+
+  /** Tem fórmula de dano declarada: o rodapé vira o botão "Rolar". */
+  const hasRoll = computed((): boolean => {
+    if (isWeaponFlow.value) return false
+    const effect: any = activeEffect.value
+    if (!effect || effect.IsPassive) return false
+    return Boolean(effect.Damage?.length || effect.BonusDamage)
+  })
+
+  /**
+   * Efeito/ação que não aplica nada (nem dano, nem status, nem efeito, nem
+   * salvamento) e não tem rolagem: o passo de estágio + confirmar não teria o que
+   * aplicar — o útil é anunciar a informação no chat.
+   */
+  const announceOnly = computed((): boolean => {
+    if (isWeaponFlow.value || hasRoll.value) return false
+    const effect: any = activeEffect.value
+    if (!effect || effect.IsPassive) return false
+    const applies =
+      effect.Damage?.length ||
+      effect.AddStatus?.length ||
+      effect.AddOther?.length ||
+      effect.AddResist?.length ||
+      effect.AddSpecial?.length ||
+      effect.RemoveSpecial ||
+      effect.Save ||
+      effect.Attack
+    return !applies
+  })
 
   const icon = computed(
     () =>
@@ -262,6 +352,17 @@
   function cancel(close: () => void) {
     confirmedTargets.value.forEach((t: any) => (t.ConfirmedKill = false))
     close()
+  }
+
+  function broadcast(close: () => void) {
+    isRolling.value = true
+    void broadcastEffectToChat(activeEffect.value, {
+      summary: events.value[0]?.Summary,
+      owner: props.owner,
+    }).finally(() => {
+      isRolling.value = false
+      close()
+    })
   }
 
   function apply(close: () => void, force = false) {

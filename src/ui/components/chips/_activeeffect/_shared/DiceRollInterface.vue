@@ -133,7 +133,7 @@
 <script setup lang="ts">
   import type { DamageEvent } from '@/classes/components/feature/active_effects/effect_events/damageEvent'
   import { computed } from 'vue'
-  import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { rollDamageRows } from '@/util/diceRoll'
 
   const props = defineProps<{
     rollData: DamageEvent
@@ -194,35 +194,28 @@
     },
   })
 
-  import { dddiceService } from '@/services/dddiceService'
-
   function reset() {
     props.rollData.DamageRollResult = undefined
     props.rollData.OverkillHeat = 0
     if (count.value && die.value) props.rollData.DamageRolledValue = undefined
   }
 
-  function rollDamage() {
-    let rollResult: any
-    if (count.value && die.value) {
-      rollResult = DiceRoller.rollDamage(
-        `${count.value}d${die.value}+${plus.value || 0}`,
-        props.rollData.IsCrit,
-        props.rollData.Overkill,
-        props.rollData.Reliable
-      )
-    } else {
-      rollResult = { total: Number(plus.value), toString: () => plus.value.toString() }
-    }
-    props.rollData.ApplyRoll(rollResult)
+  async function rollDamage() {
+    const formula =
+      count.value && die.value ? `${count.value}d${die.value}+${plus.value || 0}` : String(plus.value || 0)
 
-    if (count.value && die.value) {
-      void dddiceService.rollDice({
-        diceString: `${count.value}d${die.value}`,
-        flatBonus: Number(plus.value) || 0,
-        label: `Dano [${props.rollData.DamageType}]`,
-      })
-    }
+    const [rolled] = await rollDamageRows([{ formula }], {
+      label: `Dano [${props.rollData.DamageType}]`,
+      isCrit: props.rollData.IsCrit,
+      overkill: props.rollData.Overkill,
+      reliable: props.rollData.Reliable,
+    })
+
+    props.rollData.ApplyRoll({
+      total: rolled.total,
+      overkillRerolls: rolled.overkillRerolls,
+      toString: () => rolled.breakdown,
+    })
   }
 
   defineExpose({

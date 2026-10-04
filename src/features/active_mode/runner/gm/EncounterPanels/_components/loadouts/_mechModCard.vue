@@ -5,6 +5,7 @@
     :title="mod.Name"
     title-color="mod"
     icon="cc:weaponmod"
+    collapsible
     class="mb-1"
   >
     <v-card-text class="pa-0">

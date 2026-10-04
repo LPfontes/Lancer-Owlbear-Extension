@@ -3559,6 +3559,7 @@
       "addTarget": "Ziel hinzufügen",
       "target": "Ziel",
       "self": "Selbst",
+      "damage": "Schaden",
       "damageValue": "Schadenswert",
       "bonusDamage": "Bonusschaden",
       "bonusDamageHalved": "Bonusschaden wird halbiert (Wirkungsbereich)",

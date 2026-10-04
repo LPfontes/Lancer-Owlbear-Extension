@@ -185,6 +185,9 @@ class CombatController implements ICounterContainer, IStatContainer {
     if (next === this._cover) return
     this._cover = next
     this.Record('cover', { cover: String(next) })
+    // Espelha a cobertura nos marcadores do token (softcover/hardcover) e limpa
+    // o marcador anterior quando volta para "Nenhum".
+    this.StatusController.NotifyStatusChange()
   }
   public CorePower = true
 

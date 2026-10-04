@@ -554,13 +554,13 @@
 
     // Dispara rolagem 3D compartilhada no Owlbear Rodeo
     const dicePayload: Array<{ type: string }> = []
-    let extraMod = 0
     for (const d of dice.value) {
       for (let i = 0; i < d.count; i++) {
         let sides = d.sides
+        // Sem dado físico de d3/d2: pede um d4; a redução para d3
+        // (1→1, 2→2, 3→2, 4→3) é aplicada na leitura do resultado.
         if (sides <= 3) {
           sides = 4
-          extraMod -= 1
         }
         const validTypes = [4, 6, 8, 10, 12, 20, 100]
         if (!validTypes.includes(sides)) sides = 6
@@ -570,7 +570,7 @@
     if (dicePayload.length > 0 || accuracy.value !== 0) {
       void dddiceService.rollDice({
         dice: dicePayload,
-        flatBonus: (flat.value || 0) + extraMod,
+        flatBonus: flat.value || 0,
         accuracy: accuracy.value,
         label: props.title || 'Roll',
       })

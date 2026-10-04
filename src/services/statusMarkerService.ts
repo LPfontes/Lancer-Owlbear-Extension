@@ -1,19 +1,54 @@
-import OBR, { buildImage, type Item } from '@owlbear-rodeo/sdk'
+import OBR, { buildImage, buildText, type Item } from '@owlbear-rodeo/sdk'
 import {
   getStatusDefinition,
   getStatusBadgeUrl,
+  getCustomStatusBadgeUrl,
+  customStatusMarkerId,
   normalizeStatusId,
+  parseCustomStatusMarkerId,
 } from './statusIcons'
 
 export const STATUS_MARKER_METADATA_KEY = 'com.compcon.status_marker'
 export const STATUS_MARKER_ID_KEY = 'com.compcon.status_id'
 export const STATUS_MARKER_PARENT_KEY = 'com.compcon.parent_token'
+export const STATUS_MARKER_LABEL_KEY = 'com.compcon.status_label'
 
 export class StatusMarkerService {
+  /**
+   * Fila de sincronizações em andamento, por token.
+   *
+   * `syncTokenStatusMarkers` é async e lê os anexos antes de escrever: duas
+   * chamadas concorrentes para o mesmo token (o evento de status + o watcher do
+   * seletor disparavam juntos) não enxergavam uma à outra e cada uma criava o
+   * seu próprio marcador — resultando em dois badges empilhados na mesma
+   * posição, um cobrindo o outro. Serializar por token elimina a corrida.
+   */
+  private syncQueues = new Map<string, Promise<void>>()
+
   /**
    * Sincroniza os marcadores de status visuais anexados a um token no mapa
    */
   public async syncTokenStatusMarkers(tokenId: string, rawStatusIds: string[]): Promise<void> {
+    const previous = this.syncQueues.get(tokenId) ?? Promise.resolve()
+
+    const next = previous
+      .catch(() => {})
+      .then(() => this.applyTokenStatusMarkers(tokenId, rawStatusIds))
+      .catch(err => {
+        console.warn('[StatusMarkerService] Erro ao sincronizar marcadores de status no token:', err)
+      })
+      .finally(() => {
+        if (this.syncQueues.get(tokenId) === next) this.syncQueues.delete(tokenId)
+      })
+
+    this.syncQueues.set(tokenId, next)
+    return next
+  }
+
+  /**
+   * Trabalho efetivo de uma sincronização (ver `syncTokenStatusMarkers`)
+   */
+  private async applyTokenStatusMarkers(tokenId: string, rawStatusIds: string[]): Promise<void> {
     if (!OBR.isAvailable) return
 
     try {
@@ -26,11 +61,13 @@ export class StatusMarkerService {
 
       const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 150
 
-      // 2. Filtra e normaliza a lista de status desejada
+      // 2. Filtra e normaliza a lista de status desejada.
+      // Os status PERSONALIZADOS (prefixo `custom:`) passam intactos: o nome é
+      // livre e não existe em STATUS_DEFINITIONS.
       const normalizedStatusIds = Array.from(
         new Set(
           rawStatusIds
-            .map(id => normalizeStatusId(id))
+            .map(id => (parseCustomStatusMarkerId(id) ? id.trim() : normalizeStatusId(id)))
             .filter((id): id is string => id !== null)
         )
       )
@@ -45,29 +82,46 @@ export class StatusMarkerService {
              item.metadata[STATUS_MARKER_ID_KEY] !== undefined))
       )
 
-      // 4. Remove marcadores que não estão mais ativos ou que possuem URL legada (data: URL ou não HTTP)
+      // 4. Remove marcadores que não estão mais ativos, que possuem URL legada
+      // (data: URL ou não HTTP) ou que estão DUPLICADOS. O sync já é serializado
+      // por token, mas marcadores duplicados podem ter sobrado de corridas
+      // anteriores: dois itens com o mesmo `status_id` ficam empilhados na mesma
+      // posição e um badge cobre o outro.
+      const seenStatusIds = new Set<string>()
       const markersToRemove = existingMarkers.filter(item => {
         const markerStatusId = item.metadata?.[STATUS_MARKER_ID_KEY] as string
         const img = (item as any).image
         const urlStr = img?.url ? String(img.url) : ''
         const isLegacyOrDataUrl = !urlStr.startsWith('http') || urlStr.startsWith('data:')
-        return !markerStatusId || !normalizedStatusIds.includes(markerStatusId) || isLegacyOrDataUrl
+        if (!markerStatusId || !normalizedStatusIds.includes(markerStatusId) || isLegacyOrDataUrl) {
+          return true
+        }
+        if (seenStatusIds.has(markerStatusId)) return true
+        seenStatusIds.add(markerStatusId)
+        return false
       })
 
       if (markersToRemove.length > 0) {
-        await OBR.scene.items.deleteItems(markersToRemove.map(m => m.id))
+        const removedIds = new Set(markersToRemove.map(m => m.id))
+        console.log(`[StatusMarkerService] Removendo ${markersToRemove.length} marcador(es) obsoleto(s)/duplicado(s)`)
+        await OBR.scene.items.deleteItems([...removedIds])
+        // A lista de anexos veio antes das remoções: descarta o que já foi apagado
+        // para o passo 6 não reaproveitar um item que não existe mais.
+        for (let i = existingMarkers.length - 1; i >= 0; i--) {
+          if (removedIds.has(existingMarkers[i].id)) existingMarkers.splice(i, 1)
+        }
       }
 
       if (normalizedStatusIds.length === 0) return
 
-      // 5. Calcula layout dos badges no topo do token
+      // 5. Calcula layout dos badges na lateral direita do token
       // O tamanho do badge é proporcional à largura do token (entre 26 e 44 unidades de cena)
       const targetSize = Math.max(26, Math.min(44, bounds.width * 0.28))
-      const spacing = 4
+      const spacing = 10
       const count = normalizedStatusIds.length
 
-      // Calcula posições das fileiras (máx 4 badges por fileira para não vazar)
-      const maxPerRow = 4
+      // Máximo de badges por coluna antes de quebrar para a próxima coluna à direita
+      const maxPerColumn = 6
 
       const itemsToAdd: Item[] = []
       const itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[] = []
@@ -77,24 +131,39 @@ export class StatusMarkerService {
 
       for (let i = 0; i < count; i++) {
         const statusId = normalizedStatusIds[i]
+
+        // Empilha até 6 status por coluna; a partir do 7º abre uma nova coluna à direita
+        const columnIndex = Math.floor(i / maxPerColumn)
+        const rowIndex = i % maxPerColumn
+
+        const posX = bounds.max.x - 40 + targetSize / 2 + columnIndex * (targetSize + spacing)
+
+        // O primeiro badge fica colado na borda superior do token e os demais descem
+        const posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+
+        // Status personalizado (nome livre): badge próprio + rótulo de texto ao lado
+        const customName = parseCustomStatusMarkerId(statusId)
+        if (customName) {
+          itemsToAdd.push(
+            ...this.ensureCustomStatusMarker({
+              tokenId,
+              name: customName,
+              posX,
+              posY,
+              targetSize,
+              scaleFactor,
+              dpi,
+              existingMarkers,
+            })
+          )
+          continue
+        }
+
         const def = getStatusDefinition(statusId)
         if (!def) continue
 
-        const rowIndex = Math.floor(i / maxPerRow)
-        const colIndex = i % maxPerRow
-        const itemsInThisRow = Math.min(count - rowIndex * maxPerRow, maxPerRow)
-
-        const rowWidth = itemsInThisRow * targetSize + (itemsInThisRow - 1) * spacing
-        const startX = bounds.center.x - rowWidth / 2 + targetSize / 2
-        const posX = startX + colIndex * (targetSize + spacing)
-
-        // Posicionado no topo do token, subindo em novas fileiras se houver muitos status
-        const posY = bounds.min.y + targetSize / 2 - rowIndex * (targetSize + spacing) + 2
-
         const existing = existingMarkers.find(
-          m =>
-            m.metadata[STATUS_MARKER_ID_KEY] === statusId &&
-            !markersToRemove.some(rem => rem.id === m.id)
+          m => m.metadata[STATUS_MARKER_ID_KEY] === statusId
         )
 
         if (existing) {
@@ -160,6 +229,129 @@ export class StatusMarkerService {
     } catch (err) {
       console.warn('[StatusMarkerService] Erro ao sincronizar marcadores de status no token:', err)
     }
+  }
+
+  /**
+   * Garante os itens visuais de um Status PERSONALIZADO no token.
+   *
+   * Diferente dos status de catálogo, o nome é livre — então o identificador do
+   * marcador é `custom:<nome>` e o rótulo é um item de TEXTO próprio ao lado do
+   * badge, porque a URL do SVG é fixa e não dá para parametrizar o nome numa
+   * imagem (o loader do Owlbear não renderiza `data:` URL nem texto externo).
+   *
+   * Cria o badge (estrela em círculo) e o rótulo na primeira vez, e só reposiciona
+   * nas vezes seguintes. Quando cria, registra os itens recém-criados em
+   * `existingMarkers` para que outro status personalizado da mesma passada não
+   * crie um par duplicado.
+   */
+  private ensureCustomStatusMarker(ctx: {
+    tokenId: string
+    name: string
+    posX: number
+    posY: number
+    targetSize: number
+    scaleFactor: number
+    dpi: number
+    existingMarkers: Item[]
+  }): Item[] {
+    const { tokenId, name, posX, posY, targetSize, scaleFactor, dpi, existingMarkers } = ctx
+
+    const markerId = customStatusMarkerId(name)
+    const suffix = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .substring(0, 40)
+    const badgeItemId = `cc_st_${tokenId.substring(0, 6)}_${suffix || 'custom'}`
+    const labelItemId = `${badgeItemId}_label`
+    const fontSize = Math.max(12, Math.min(18, Math.round(targetSize * 0.45)))
+
+    const badgeMeta = {
+      [STATUS_MARKER_METADATA_KEY]: true,
+      [STATUS_MARKER_ID_KEY]: markerId,
+      [STATUS_MARKER_PARENT_KEY]: tokenId,
+    }
+    const labelMeta = {
+      [STATUS_MARKER_METADATA_KEY]: true,
+      [STATUS_MARKER_ID_KEY]: markerId,
+      [STATUS_MARKER_PARENT_KEY]: tokenId,
+      [STATUS_MARKER_LABEL_KEY]: true,
+    }
+
+    // O rótulo é uma caixa de largura fixa centrada no item: para o texto começar
+    // logo à direita do badge, o centro fica em badge + margem + metade da caixa.
+    const labelWidth = 120
+    const gap = 6
+    const labelX = posX + targetSize / 2
+
+    const existingBadge = existingMarkers.find(
+      m => m.metadata[STATUS_MARKER_ID_KEY] === markerId && !m.metadata[STATUS_MARKER_LABEL_KEY]
+    )
+    const existingLabel = existingMarkers.find(
+      m => m.metadata[STATUS_MARKER_ID_KEY] === markerId && m.metadata[STATUS_MARKER_LABEL_KEY]
+    )
+
+    if (existingBadge && existingLabel) {
+      // Ambos já existem: nada a criar. O reposicionamento é responsabilidade do
+      // sync (o rótulo acompanha o badge), então não devolvemos item aqui.
+      return []
+    }
+
+    const created: Item[] = []
+
+    if (!existingBadge) {
+      const badge = buildImage(
+        { width: 100, height: 100, mime: 'image/svg+xml', url: getCustomStatusBadgeUrl() },
+        { offset: { x: 50, y: 50 }, dpi }
+      )
+        .id(badgeItemId)
+        .name(`[Estado] ${name}`)
+        .position({ x: posX, y: posY })
+        .scale({ x: scaleFactor, y: scaleFactor })
+        .layer('ATTACHMENT')
+        .attachedTo(tokenId)
+        .locked(true)
+        .disableHit(true)
+        .disableAttachmentBehavior(['ROTATION'])
+        .metadata(badgeMeta)
+        .build()
+
+      created.push(badge)
+      existingMarkers.push(badge)
+    }
+
+    if (!existingLabel) {
+      const label = buildText()
+        .id(labelItemId)
+        .name(`[Estado] ${name}`)
+        .plainText(name)
+        .width(labelWidth)
+        .height('AUTO')
+        .textType('PLAIN')
+        .fontSize(fontSize)
+        .fontWeight(600)
+        .textAlign('LEFT')
+        .textAlignVertical('TOP')
+        .fillColor('#FFFFFF')
+        .fillOpacity(1)
+        .strokeColor('#000000')
+        .strokeOpacity(0.85)
+        .strokeWidth(2)
+        .lineHeight(1)
+        .padding(0)
+        .position({ x: labelX, y: posY - 10})
+        .layer('ATTACHMENT')
+        .attachedTo(tokenId)
+        .locked(true)
+        .disableHit(true)
+        .metadata(labelMeta)
+        .build()
+
+      created.push(label)
+      existingMarkers.push(label)
+    }
+
+    return created
   }
 
   /**

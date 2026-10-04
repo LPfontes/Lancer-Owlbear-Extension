@@ -1,5 +1,6 @@
 import { markRaw } from 'vue'
 import { Status } from '@/classes/Status'
+import { customStatusMarkerId } from '@/services/statusIcons'
 import { ruleFor, customRuleFor, kindsFor } from './StatusRules'
 import type { IStatusRule } from './StatusRules'
 import { normalizeActivation } from './ActionPoolController'
@@ -11,6 +12,19 @@ import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
 import { CompendiumStore } from '@/features/compendium/store'
 import type { CombatController } from './CombatController'
 import { expiredIn } from './Duration'
+
+/**
+ * IDs de marcador visual usados para representar o campo `Cover` do CombatController.
+ *
+ * A Cobertura é um campo próprio (`none` | `soft` | `hard`), não um Status do compêndio:
+ * este mapa só existe para espelhá-la nos marcadores do token. Os IDs batem com
+ * `STATUS_DEFINITIONS` em `@/services/statusIcons` (escudo meio cheio / cheio).
+ */
+const COVER_STATUS_IDS: Record<string, string | null> = {
+  none: null,
+  soft: 'softcover',
+  hard: 'hardcover',
+}
 
 class StatusController {
   private _parent: CombatController
@@ -68,22 +82,55 @@ class StatusController {
     })
   }
 
+  /**
+   * Monta a lista completa de marcadores de status de um combatente.
+   *
+   * O serviço de marcadores substitui o conjunto inteiro a cada sync, então
+   * qualquer emissão (status, dangerzone ou cobertura) precisa mandar a lista
+   * completa — senão os outros marcadores seriam apagados do token.
+   *
+   * A ORDEM importa: `syncTokenStatusMarkers` distribui os badges na coluna à
+   * direita do token seguindo o índice desta lista. A Cobertura vai na frente
+   * para ocupar o topo da coluna e empurrar condições/status para baixo — se ela
+   * fosse anexada no fim (ordem natural dos status), ficaria abaixo da condição.
+   * Os status PERSONALIZADOS vão no fim, com o prefixo `custom:`.
+   */
+  public MarkerStatusIds(controller: CombatController = this._active): string[] {
+    const list = controller.StatusController.Statuses.map(s => s.status.ID)
+
+    if (controller.IsInDangerZone && !list.includes('dangerzone')) list.push('dangerzone')
+
+    const coverId = COVER_STATUS_IDS[controller.Cover]
+    if (coverId) {
+      const existing = list.indexOf(coverId)
+      if (existing > 0) list.splice(existing, 1)
+      if (!list.includes(coverId)) list.unshift(coverId)
+    }
+
+    // Status personalizados (nome livre) — o serviço de marcadores desenha o badge
+    // de estrela mais um rótulo de texto com o nome.
+    for (const custom of controller.StatusController.CustomStatuses) {
+      const name = custom?.status?.Attribute?.trim()
+      if (!name) continue
+      const markerId = customStatusMarkerId(name)
+      if (!list.includes(markerId)) list.push(markerId)
+    }
+
+    return list
+  }
+
   public NotifyStatusChange(): void {
     if (typeof window !== 'undefined') {
       try {
         const parent = (this._parent as any).Parent
         const parentId = parent?.ID
         if (parentId) {
-          const activeStatuses = this.Statuses.map(s => s.status.ID)
-          if (this._parent.IsInDangerZone && !activeStatuses.includes('dangerzone')) {
-            activeStatuses.push('dangerzone')
-          }
           window.dispatchEvent(
             new CustomEvent('compcon-combatant-statuses-changed', {
               detail: {
                 combatantId: parentId,
                 originId: parent?.OriginId || parentId,
-                statuses: activeStatuses,
+                statuses: this.MarkerStatusIds(),
               },
             })
           )
@@ -135,6 +182,8 @@ class StatusController {
       this.CustomStatuses.splice(existingIndex, 1)
       this._parent.Record('status.lose', { status: statusRef(special), reason: 'removed' })
     }
+    // Status personalizado também vira marcador no token — avisa quem desenha.
+    this.NotifyStatusChange()
   }
 
   public ApplyCustomStatus(
@@ -187,6 +236,8 @@ class StatusController {
     if (existingIndex !== -1) {
       const [removed] = target.CustomStatuses.splice(existingIndex, 1)
       this._parent.Record('status.lose', { status: statusRef(removed.status), reason: 'removed' })
+      // Remove também o marcador (badge + rótulo) do token
+      target.NotifyStatusChange()
     }
   }
 

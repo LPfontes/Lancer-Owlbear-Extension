@@ -454,10 +454,6 @@ class DiceRoller {
     } else if (simpleDieTest) {
       const count = simpleDieTest[1] === '' ? 1 : parseInt(simpleDieTest[1])
       const sides = parseInt(simpleDieTest[2])
-      if (sides === 3) {
-        // Usa 1d4 - 1 para 1d3
-        return new ParsedDieString([new DieSet(count, 4)], -count)
-      }
       const dieSet = new DieSet(count, sides)
       return new ParsedDieString([dieSet], 0)
     } else if (complexDieTest) {

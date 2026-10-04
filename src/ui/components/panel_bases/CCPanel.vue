@@ -18,6 +18,8 @@
       density="compact"
       :color="titleColor"
       class="ma-0 pa-0"
+      :class="collapsible ? 'cursor-pointer' : ''"
+      @click="collapsible && toggleCollapsed()"
     >
       <div class="mt-n1 px-2 pt-2 pb-1">
         <div class="text-cc-overline">
@@ -41,9 +43,34 @@
       <v-spacer />
       <v-toolbar-items class=" d-flex align-center h-full align-self-center">
         <slot name="toolbar-items" />
+        <v-tooltip
+          v-if="collapsible"
+          location="top"
+          :text="isCollapsed ? $t('active.charts.expandChart') : $t('active.charts.collapseChart')"
+        >
+          <template #activator="{ props: tipProps }">
+            <v-btn
+              v-bind="tipProps"
+              icon
+              flat
+              tile
+              size="x-small"
+              variant="text"
+              class="mr-1"
+              :aria-expanded="!isCollapsed"
+              @click.stop="toggleCollapsed()"
+            >
+              <v-icon
+                size="24"
+                :icon="isCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up'"
+              />
+            </v-btn>
+          </template>
+        </v-tooltip>
       </v-toolbar-items>
     </v-toolbar>
     <v-card-text
+      v-show="!isCollapsed"
       :class="[densityClass, variantClass]"
       :style="[height && `height: ${height}`]"
     >
@@ -57,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, useSlots } from 'vue'
+  import { computed, ref, useSlots } from 'vue'
 
   const slots = useSlots()
 
@@ -83,6 +110,8 @@
     icon?: string | boolean
     height?: string
     clickable?: boolean
+    collapsible?: boolean
+    startClosed?: boolean
     stark?: boolean
     small?: boolean
   }
@@ -96,11 +125,19 @@
     title: '',
     icon: '',
     clickable: false,
+    collapsible: false,
+    startClosed: false,
     stark: false,
     small: false,
   })
 
   defineEmits<{ click: [] }>()
+
+  const isCollapsed = ref(props.startClosed)
+
+  function toggleCollapsed() {
+    isCollapsed.value = !isCollapsed.value
+  }
 
   const hasTitle = computed(
     () => slots.title || props.title || props.icon || slots['toolbar-items']
