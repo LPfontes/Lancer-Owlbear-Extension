@@ -109,6 +109,10 @@
             {{ tableActionStore.actions.length }}
           </v-chip>
         </v-tab>
+        <v-tab value="trackers" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
+          <v-icon icon="mdi-shield-sun-outline" class="mr-1" size="18" />
+          {{ t('active.tokenTrackers.tab') }}
+        </v-tab>
       </v-tabs>
     </div>
 
@@ -215,11 +219,20 @@
       <!-- Rodapé de Ações Rápidas e Input de Chat -->
       <TableActionInput />
     </div>
+
+    <!-- Aba 3: Trackers dos Tokens (PV, Blindagem, Calor, Movimento, Estrutura, Estresse) -->
+    <div
+      v-show="currentTab === 'trackers'"
+      class="flex-grow-1 overflow-y-auto"
+    >
+      <TokenTrackerPanel v-if="currentTab === 'trackers'" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { EncounterStore } from '@/stores'
 import { closeTableChatWindow, detachTableChatWindow } from '@/services/tableChatWindow'
@@ -227,11 +240,14 @@ import { openMainWindow, isMainWindowOpen } from '@/services/mainWindow'
 import TableActionCard from '@/ui/components/TableActionDrawer/TableActionCard.vue'
 import TableActionInput from '@/ui/components/TableActionDrawer/TableActionInput.vue'
 import CombatTrackerTab from '@/ui/components/TableActionDrawer/CombatTrackerTab.vue'
+import TokenTrackerPanel from '@/ui/components/TokenTrackers/TokenTrackerPanel.vue'
+
+const { t } = useI18n()
 
 const tableActionStore = useTableActionStore()
 const encounterStore = EncounterStore()
 const feedContainer = ref<HTMLElement | null>(null)
-const currentTab = ref<'tracker' | 'chat'>('tracker')
+const currentTab = ref<'tracker' | 'chat' | 'trackers'>('tracker')
 const trackerSideFilters = ref<{ label: string; value: string; count: number }[]>([])
 const trackerActiveFilter = ref<'all' | 'enemy' | 'ally' | 'neutral' | 'pending'>('all')
 

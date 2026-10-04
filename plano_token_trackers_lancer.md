@@ -735,44 +735,79 @@ Nada em `owl-trackers/` é alterado.
 
 ## 9. Fases
 
-**F0 — Contratos (½ dia).** Tipos, preset LANCER, config default, resolver de ficha e
-`canRenderToken` (§7.5) com testes.
-*Critério:* `tokenTrackerModel.spec.ts` verde para mecha, unit, doodad e mecha destruído
-(`structure = 0`), incluindo Blindagem lida de `overshield` e não de `armor`; e a matriz da
-§7.5 coberta linha a linha (GM vê tudo; jogador vê aliado; jogador não vê inimigo por padrão;
-`hiddenFromPlayers` esconde até aliado).
+> **Progresso:** F0 ✅, F1 ✅, F2 ✅, F3 ✅, F4 ✅ e F5 ✅ (parte automatizada) —
+> 147 specs dos trackers verdes, suíte completa 1949 passando, `npm run typecheck` limpo e
+> `npm run build` ok (`✓ built in 18.48s`).
+> Arquivos: `src/types/token-tracker.ts`, `src/services/tokenTracker{Model,Policy,Summary,Layout,Render,Watchlist,Service}.ts`
+> (+ `.spec.ts`), `src/composables/useTokenTrackerBridge.ts`, `src/ui/components/TokenTrackers/*`,
+> integração em `src/services/obrBridge.ts`, `src/App.vue` e `src/features/active_mode/TableChatView.vue`,
+> i18n em `pt.json`/`en.json`.
+> **Pendente (humano, em sala real):** executar `docs/roteiro-token-trackers.md`. Nada do
+> comportamento no canvas (âncora dos itens, corrida entre janelas no resumo, política vista por
+> dois clientes) pode ser validado fora de uma sala do Owlbear.
+>
+> **Diagnóstico (para testar a sincronização com a ficha):** `src/services/tokenTrackerDebug.ts`.
+> Logs **ligados por padrão** (pedido do usuário); `__ccTokenTracker.disable()` silencia, e
+> `__ccTokenTracker.dump()` imprime a tabela por token
+> (vínculo, fonte do leitor, chaves cruas do `StatController`, resumo no token, valores finais,
+> motivo de não desenhar e contagem de itens no mapa). O roteiro em
+> `docs/roteiro-token-trackers.md` tem a tabela "como ler 'está vazio'".
+>
+> **Correções de robustez que saíram daí:** (1) o serviço agora sobe também na janela de
+> chat/ações — antes ele ficava fora do bloco `!isStandaloneChat`, e é justamente nessa janela
+> que fica o painel; (2) os rosters locais (`PilotStore`/`NpcStore`) são carregados pelo serviço
+> quando vazios, senão uma janela que nunca abriu o Hangar não encontrava ficha nenhuma;
+> (3) piloto sem `ActiveMech` nesta janela cai no primeiro mecha dele.
+>
+> **Falha pré-existente (não é desta feature):** `src/__tests__/rules/coverage.spec.ts` acusa
+> `T-MARKER-order-01..04` sem regra correspondente — o spec lê `lancer-rules.json` do disco e não
+> importa nada dos trackers. Verificado com `git status`/`git log` em `src/__tests__/rules`.
+>
+> **Nota de ambiente:** o `vite build` falha ao remover o temporário do esbuild no `%TEMP%` padrão
+> (`Access is denied`). Rodando com `TEMP`/`TMP` dentro do workspace, o build passa.
 
-**F1 — Geometria + render puro (1 dia).** `tokenTrackerLayout` + `tokenTrackerRender`.
-*Critério:* specs cobrem token pequeno/grande, `max = 0`, `current > max` (calor estourando),
-Blindagem zerada (some) e com valor (empurra a barra de PV), `maxSquares` excedido,
-`invertSquares` ligado/desligado, `pairWith` do PV+Blindagem.
+**F0 — Contratos ✅ (concluída).** Tipos, preset LANCER, config default, resolver de ficha,
+`canRenderToken` (§7.5) e o formato do resumo (§7.6) com sanitização e eleição de escritor.
+*Entregue:* `src/types/token-tracker.ts`, `tokenTrackerModel.ts`, `tokenTrackerPolicy.ts`,
+`tokenTrackerSummary.ts` + specs.
+*Critério atendido:* `structure = 0`, Blindagem lida de `overshield` (não de `armor`), matriz da
+§7.5 coberta linha a linha, resumo rejeitando versão/chave/número inválidos.
 
-**F2 — Serviço e resumo (2 dias).** `tokenTrackerService` + resumo no metadata do token (§7.6) +
-integração em `obrBridge` + limpeza. A política (§7.5) entra já aqui, com o default
-(`allies: true`, `enemies: false`): o serviço consulta a config da sala antes de desenhar, mesmo
-antes de existir UI para editá-la.
-*Critério:* em sala real, vincular token → painel aparece para o GM; um jogador vê o aliado e
-**não** vê o inimigo com a config default; o jogador **vê** o aliado mesmo sem ter a ficha dele
-no armazenamento (valor vindo do resumo do token); desvincular → some **e o resumo é removido**
-(conferir pelo inspetor do Owlbear); sem laço de `onChange` entre as duas janelas; mover/escalar
-o token → reposiciona; `refreshAll` no `onReadyChange`.
+**F1 — Geometria + render puro ✅ (concluída).** `tokenTrackerLayout.ts` (comandos de desenho
+neutros) + `tokenTrackerRender.ts` (itens do SDK) + `roundedBarPoints`.
+*Critério atendido:* token pequeno/grande/degenerado, `max = 0`, `current > max` (calor
+estourando), Blindagem zerada (some e devolve a largura à barra de PV) e com valor (bolha à
+direita da barra), `maxSquares` excedido com `+N`, `invertSquares` ligado/desligado, empilhamento
+sem sobreposição, ids determinísticos e camadas.
+*Nota:* os builders do SDK exigem o `playerId` do message bus, então a spec do render mocka o
+SDK com um proxy **estrito** (método desconhecido estoura) — valida quais métodos chamamos sem
+inventar API.
 
-**F3 — Gatilhos reativos (1 dia).** Composable + evento + debounce; watchers nos painéis do modo
-ativo. *Critério:* mudar PV, calor, estrutura ou **Blindagem** na ficha atualiza o mapa em
-≤ 300 ms, sem redesenho do que não mudou (conferir por log/assinatura).
+**F2 — Serviço e resumo ✅ (concluída).** `tokenTrackerService` (fila por token, assinatura para
+cortar redesenho, diff add/update/delete nos itens locais), resumo no metadata do token com
+eleição de escritor e throttle, watchlist local, e integração no `obrBridge` (get/save da config
+da sala, delegados, hooks em `bindTokenToSheet`/`unbindToken`, limpeza no boot).
+*Critério (verificação em sala real pendente na F5):* painel aparece para o GM ao vincular;
+desvincular apaga painel **e** resumo; sem laço de `onChange`.
 
-**F4 — Gestão, watchlist, política e i18n (1–2 dias).** Config por sala, UI de toggles, lista
-multi-token (§7.4), política de aliados/inimigos + olho de "ocultar dos jogadores" (§7.5),
-persistência local da watchlist, chaves nos locales.
-*Critério:* desligar "Estrutura" remove só os quadrados dela; marcar 3 tokens na lista desenha
-os 3 (quando permitidos); token marcado sem dados locais aparece como "sem dados aqui" e não
-desenha nada; **virar "Inimigos" no painel do GM faz os inimigos aparecerem na janela do jogador
-sem reload**; ocultar um aliado faz sumir só na janela dos jogadores; tentar marcar um inimigo
-bloqueado deixa o item como "bloqueado pelo mestre"; watchlist sobrevive ao reload da janela;
-token apagado some da lista; opções de sala persistem no reload; nenhuma string hardcoded.
+**F3 — Gatilhos reativos ✅ (concluída).** `src/composables/useTokenTrackerBridge.ts` montado no
+`App.vue`: assinatura reativa de tudo que o painel desenha (combatentes do encontro no GM +
+ficha própria no jogador) → evento de janela coalescido (200 ms) → `refreshAll`. Também registra
+o **encontro ativo** como fonte do serviço (lado e Fog of War) e carrega os encontros ativos
+quando o handshake do Owlbear confirma que a janela é GM.
 
-**F5 — Verificação final (½ dia).** `npm run typecheck`, `npm run test:run`, `npm run build`,
-roteiro manual no Owlbear (GM + jogador com fichas diferentes).
+**F4 — Gestão, watchlist, política e i18n ✅ (concluída).** Aba **"Trackers do Token"** na janela
+Ações da Mesa & Chat (`TokenTrackerPanel.vue`), com `TokenTrackerSettings.vue` (config da sala:
+ligar/desligar, rótulos, quadrados invertidos, teto de quadrados, chips por slot e a política
+Aliados/Inimigos/Neutros) e `TokenTrackerList.vue` (watchlist multi-token, chip de lado, motivo do
+desenho e olho de ocultar dos jogadores). Chaves `active.tokenTrackers.*` no `pt.json` e `en.json`
+(30 chaves cada; os outros locales caem no fallback `en`).
+
+**F5 — Verificação ✅ (automatizada).** `npm run typecheck` limpo, **1949 testes** passando (a
+única falha é a pré-existente de regras de marcador) e `npm run build` ok.
+*Pendente (humano):* roteiro em `docs/roteiro-token-trackers.md`, que cobre painel, desenho,
+tempo real, **política vista por dois clientes**, multi-token, inspeção do resumo no metadata,
+limpeza e ausência de laço.
 
 **Nota (ex-F6) — broadcast de valores: descartado.** A ideia original (publicar os valores para
 a mesa) deixou de ser necessária: o **resumo no metadata do token** (§7.6) cumpre o papel usando

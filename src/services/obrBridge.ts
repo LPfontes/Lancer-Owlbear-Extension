@@ -1,16 +1,22 @@
 import OBR, { buildImage, type Item } from '@owlbear-rodeo/sdk'
 import type { MechCombatState, CombatRollBroadcast, TokenSheetBinding } from '@/types/compcon-obr'
+import { COMPCON_METADATA_KEY } from '@/types/compcon-obr'
 import type { TableActionItem } from '@/types/table-actions'
 import type { SyncedTrackerSnapshot } from '@/types/tracker-sync'
+import type { TokenTrackerConfig } from '@/types/token-tracker'
 import { SetItem } from '@/io/Storage'
 import { toRaw } from 'vue'
 import { dddiceService } from './dddiceService'
 import { statusMarkerService } from './statusMarkerService'
+import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrackerService'
+import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
 import { isActiveModePrewarm } from './prewarmContext'
 import { TAB_ID } from './tabId'
 
-export const COMPCON_METADATA_KEY = 'com.compcon.activemode'
+// Reexportado para quem já importava a constante daqui (ver `types/compcon-obr`).
+export { COMPCON_METADATA_KEY }
+
 export const COMPCON_PILOT_PREFIX = 'com.compcon.activemode/p/'
 export const COMPCON_NPC_PREFIX = 'com.compcon.activemode/n/'
 export const COMPCON_PILOT_INDEX_KEY = 'com.compcon.activemode/pilots_index'
@@ -163,6 +169,21 @@ class OBRBridge {
             }
           })
         }
+      }
+
+      // Trackers dos tokens (PV, Blindagem, Calor, Movimento, Estrutura, Estresse).
+      //
+      // Fora do `if (!isStandaloneChat)` de propósito: a janela de chat/ações é
+      // justamente onde fica o painel de configuração, e o desenho é LOCAL — cada
+      // janela precisa do serviço rodando para desenhar o que ela conhece. O único
+      // documento de fora é o iframe oculto de pré-aquecimento, que não pode mexer
+      // em nada visível.
+      if (!isPrewarmDocument) {
+        await this.registerTokenTrackerStores()
+        await tokenTrackerService
+          .start()
+          .then(() => tokenTrackerService.cleanupLegacyItems())
+          .catch(err => console.warn('[OBRBridge] Falha ao iniciar os token trackers:', err))
       }
 
       if (onReadyCallback) onReadyCallback()
@@ -2218,6 +2239,9 @@ class OBRBridge {
     if (binding.statuses && binding.statuses.length > 0) {
       await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => {})
     }
+
+    // Trackers: o painel é derivado do estado da ficha, então redesenha já.
+    await tokenTrackerService.refreshToken(tokenId).catch(() => {})
   }
 
   /**
@@ -2234,6 +2258,11 @@ class OBRBridge {
 
     // Remove marcadores visuais de status anexados
     await statusMarkerService.clearTokenStatusMarkers(tokenId).catch(() => {})
+
+    // Sem vínculo não há tracker: apaga o painel E o resumo (um resumo órfão
+    // continuaria mentindo sobre um token que já não aponta para ficha nenhuma).
+    await tokenTrackerService.clearItems(tokenId).catch(() => {})
+    await tokenTrackerService.clearSummary(tokenId).catch(() => {})
 
     await OBR.notification.show('Ficha desvinculada do token.')
   }
@@ -2313,6 +2342,106 @@ class OBRBridge {
       }
     } catch (e) {
       console.warn('[OBRBridge] Erro ao sincronizar marcadores de status do combatente:', e)
+    }
+  }
+
+  // =========================================================================
+  // TOKEN TRACKERS (PV, Blindagem, Calor, Movimento, Estrutura, Estresse)
+  // =========================================================================
+
+  /**
+   * Liga o serviço de trackers aos stores desta janela.
+   *
+   * Os stores entram por import dinâmico: eles arrastam meio app (classes, content,
+   * i18n) e o bridge é carregado no boot de toda janela — inclusive o iframe de
+   * pré-aquecimento, que nem chega a chamar isto.
+   */
+  private async registerTokenTrackerStores(): Promise<void> {
+    try {
+      const [{ PilotStore }, { NpcStore }, { useTrackerSyncStore }, { PilotSheetStore }] =
+        await Promise.all([
+          import('@/features/pilot_management/store'),
+          import('@/features/gm/store/npc_store'),
+          import('@/stores/trackerSyncStore'),
+          import('@/features/pilot_management/store/PilotSheetStore'),
+        ])
+
+      tokenTrackerService.setStoreAccessors({
+        pilot: () => PilotStore(),
+        npc: () => NpcStore(),
+        cards: () => useTrackerSyncStore().cards,
+        // Fichas do MODO ATIVO moram aqui, não em `pilots`.
+        sheets: () => PilotSheetStore().PilotSheets,
+        // A ficha aberta nesta janela é a fonte mais viva: é nela que o combate escreve.
+        activeSheet: () => PilotSheetStore().GetActiveSheet(),
+      })
+
+      // "A ficha desta janela": é ela que autoriza este cliente a gravar o resumo
+      // do token quando não há GM na sala (§7.6).
+      tokenTrackerService.setOwnSheetIdsResolver(() => {
+        const sheet: any = PilotSheetStore().GetActiveSheet()
+        if (!sheet) return []
+        const actor = sheet.Combatant?.actor
+        return [sheet.ID, actor?.ID, actor?.ActiveMech?.ID].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Falha ao registrar os stores dos token trackers:', e)
+    }
+  }
+
+  /** Redesenha o painel de um token (ou de todos, sem argumento). */
+  public async refreshTokenTrackers(tokenId?: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    if (tokenId) await tokenTrackerService.refreshToken(tokenId)
+    else await tokenTrackerService.refreshAll()
+  }
+
+  /** Redesenha os tokens que apontam para uma ficha (ela mudou de estado). */
+  public async refreshTokenTrackersForSheet(sheetId: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    await tokenTrackerService.refreshTokensForSheet(sheetId)
+  }
+
+  /** Apaga o painel e o resumo de um token. */
+  public async clearTokenTrackers(tokenId: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    await tokenTrackerService.clearItems(tokenId)
+    await tokenTrackerService.clearSummary(tokenId)
+  }
+
+  /** Limpa itens do painel que ficaram órfãos na cena. */
+  public async cleanupLegacyTokenTrackers(): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    await tokenTrackerService.cleanupLegacyItems()
+  }
+
+  /** Config dos trackers desta sala (sanitizada; nunca lança). */
+  public async getRoomTokenTrackerConfig(): Promise<TokenTrackerConfig> {
+    if (!this.isReady || !OBR.isAvailable) return sanitizeTokenTrackerConfig(undefined)
+    try {
+      const metadata = await OBR.room.getMetadata()
+      return sanitizeTokenTrackerConfig(metadata?.[TOKEN_TRACKER_ROOM_CONFIG_KEY])
+    } catch {
+      return sanitizeTokenTrackerConfig(undefined)
+    }
+  }
+
+  /**
+   * Grava a config dos trackers na sala.
+   *
+   * Só o GM escreve, e só em AÇÃO de UI — nunca disparado por estado de combate.
+   */
+  public async saveRoomTokenTrackerConfig(config: TokenTrackerConfig): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    if (this.role !== 'GM') return
+    try {
+      await OBR.room.setMetadata({
+        [TOKEN_TRACKER_ROOM_CONFIG_KEY]: sanitizeTokenTrackerConfig(config),
+      })
+    } catch (e) {
+      console.warn('[OBRBridge] Falha ao gravar a config dos token trackers:', e)
     }
   }
 

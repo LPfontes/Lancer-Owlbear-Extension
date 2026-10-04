@@ -1,3 +1,12 @@
+/**
+ * Chave de metadata do vínculo token → ficha.
+ *
+ * Mora aqui (e não no `obrBridge`) porque módulos puros — inclusive os specs — e o
+ * serviço de trackers precisam dela sem arrastar o bridge inteiro: o bridge
+ * reexporta esta constante para quem já importava de lá.
+ */
+export const COMPCON_METADATA_KEY = 'com.compcon.activemode'
+
 export interface ResourceMeter {
   current: number
   max: number

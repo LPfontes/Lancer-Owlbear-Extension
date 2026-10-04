@@ -26,6 +26,7 @@ import {
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { preloadTableChatWindow } from '@/services/tableChatWindow'
 import { isActiveModePrewarm } from '@/services/prewarmContext'
+import { useTokenTrackerBridge } from '@/composables/useTokenTrackerBridge'
 import { UserStore, CompendiumStore } from './stores'
 
 import type { UserProfile } from '@/user'
@@ -55,6 +56,14 @@ const isStandaloneView = computed(() => {
 // É uma segunda instância do app: carrega stores e sincronização, mas não mexe na
 // janela do usuário nem cria a janela persistente da ficha.
 const isPrewarmView = isActiveModePrewarm()
+
+// Trackers dos tokens no mapa (PV, Blindagem, Calor, Movimento, Estrutura,
+// Estresse). Precisa ser chamado no setup (e não no `onMounted`) por causa do
+// `onScopeDispose` lá dentro. O iframe de pré-aquecimento não participa: ele não
+// desenha nada.
+if (!isPrewarmView) {
+  useTokenTrackerBridge()
+}
 
 provide<CompendiumDataProvider>(CompendiumDataKey, {
   get Statuses() {

@@ -1960,8 +1960,8 @@
 
 /* Structure Pips (Amber) */
 .pip-structure.active {
-  background: #f59e0b;
-  border-color: #fbbf24;
+  background: #cccccc;
+  border-color: #3d3d3d;
 }
 
 .pip-structure:not(.active) {
