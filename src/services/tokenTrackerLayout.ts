@@ -382,8 +382,6 @@ export function layoutTokenTrackers(input: TokenTrackerLayoutInput): TokenTracke
       isSlotVisible(slot, input.values[slot.id], input.config)
   )
 
-  // Por que cada slot ficou de fora: é o que responde "o Estresse não aparece".
-  // Slots PAREA DOS (a Blindagem vive na linha do PV) contam como desenhados.
   const skipped: Array<{ slot: TokenTrackerSlotId; reason: TokenTrackerSlotSkipReason }> = []
   const drawnRows = new Set(rows.map(row => row.slot.id))
   for (const row of rows) {

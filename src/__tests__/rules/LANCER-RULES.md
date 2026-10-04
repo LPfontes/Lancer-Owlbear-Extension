@@ -3,7 +3,7 @@
 **Generated from `lancer-rules.json` by `scripts/gen-rules-table.mjs`. Do not edit.**
 Run `yarn rules:table` after adding or changing a rule. CI fails if this file is out of date.
 
-135 rules and 15 interaction rules, covered by 301 tests in `src/__tests__/rules/`.
+139 rules and 15 interaction rules, covered by 305 tests in `src/__tests__/rules/`.
 
 | File | Holds |
 |---|---|
@@ -227,6 +227,15 @@ Run `yarn rules:table` after adding or changing a rule. CI fails if this file is
 | Rule | Title | Statement | Class | Spec |
 |---|---|---|---|---|
 | `T-MOVE-cover-01` | cover | Once cover is declared, soft cover imposes +1 difficulty and hard cover +2 on ranged attacks. Melee and tech attacks ignore cover. | ASSIST | `actions`, `statuses` (2) |
+
+## Token status markers (4)
+
+| Rule | Title | Statement | Class | Spec |
+|---|---|---|---|---|
+| `T-MARKER-order-01` | COVER MARKER ON TOP | Token status markers are stacked in list order, index 0 being the top badge. The active cover (SOFT or HARD) always comes first, ahead of any status or condition, regardless of the order in which they were applied. | AUTO | `markerOrder` (1) |
+| `T-MARKER-order-02` | COVER MARKER IS UNIQUE | The cover marker appears at most once in the marker list; reading the list again never stacks the same cover id. | AUTO | `markerOrder` (1) |
+| `T-MARKER-order-03` | COVER MARKER REPLACES | Changing cover replaces the cover marker instead of accumulating: SOFT and HARD are mutually exclusive, and removing cover removes both ids from the list. | AUTO | `markerOrder` (1) |
+| `T-MARKER-order-04` | NATURAL STATUS ORDER | Without cover, status and condition markers keep the order in which they were applied. | AUTO | `markerOrder` (1) |
 
 ---
 
