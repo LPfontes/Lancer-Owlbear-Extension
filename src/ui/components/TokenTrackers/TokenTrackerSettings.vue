@@ -57,8 +57,6 @@
         <v-text-field
           :model-value="config.panelGap"
           type="number"
-          min="-30"
-          max="30"
           density="compact"
           variant="outlined"
           hide-details
