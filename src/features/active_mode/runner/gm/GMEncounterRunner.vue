@@ -237,6 +237,7 @@ import {
   import ActorTelemetry from './EncounterPanels/_components/ActorTelemetry.vue'
   import RunnerLeaveDialog from '../_shared/_RunnerLeaveDialog.vue'
   import { consumeLeaveGuardBypass } from '../_shared/useRunnerOptions'
+  import { containerCombatVersions } from '../_shared/combatVersion'
   import CcPanelToggle from '@/ui/components/buttons/CCPanelToggle.vue'
   import GmCombatantHorizontalBar from './_components/GmCombatantHorizontalBar.vue'
 
@@ -299,12 +300,10 @@ const mainLeftOffset = computed(() => {
   let cachedVersions: number[] = []
   let cachedRound = 0
 
-const versionSignal = computed(() => {
-    if (!instance.value) return [] as number[]
-    return instance.value.Combatants.map(
-      (c: any) => c.actor.CombatController.CombatLogVersion as number
-    )
-  })
+// Sinal de mudança de estado de combate de cada combatente. Cobre o ator, o mech
+// ativo, as camadas de eidolon e os deployables — PV, calor e ações de um mech
+// vivem no `CombatController` do próprio mech, não no do piloto.
+const versionSignal = computed(() => containerCombatVersions(instance.value))
 
 function recacheUndoBaseline() {
     if (!instance.value) return

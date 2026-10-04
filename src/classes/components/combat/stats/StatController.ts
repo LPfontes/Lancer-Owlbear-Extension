@@ -248,8 +248,28 @@ class StatController {
     this.save()
   }
 
+  /**
+   * Leitura/escrita dos stats máximos.
+   *
+   * O Proxy existe para que escritas diretas (`MaxStats['hp'] = 12`, como fazem o
+   * HUD do Modo Ativo e o painel de opções do mestre) passem por `setMax` e
+   * marquem a versão de combate — sem isso, editar o PV/calor MÁXIMO durante a
+   * partida não era percebido pelo autosave.
+   */
   public get MaxStats(): any {
-    return this._maxStats
+    return new Proxy(this._maxStats, {
+      set: (_target, key, value) => {
+        if (typeof key !== 'string') return false
+        this.setMax(key, value)
+        return true
+      },
+      deleteProperty: (_target, key) => {
+        if (typeof key !== 'string') return false
+        delete this._maxStats[key]
+        this.bumpCombatVersion()
+        return true
+      },
+    })
   }
 
   public set MaxStats(val: any) {
@@ -261,6 +281,12 @@ class StatController {
       set: (_t, key, value) => {
         if (typeof key !== 'string') return false
         this.setCurrentStat(key, Number(value))
+        return true
+      },
+      deleteProperty: (_t, key) => {
+        if (typeof key !== 'string') return false
+        delete this._currentStats[key]
+        this.bumpCombatVersion()
         return true
       },
     })
@@ -300,8 +326,19 @@ class StatController {
     const next = Math.max(val, this._statFloors[k] ?? -Infinity)
     this._currentStats[k] = next
     if (next < prev) (this.Parent as any).onStatDecrease?.(k, prev, next, opts)
+    this.bumpCombatVersion()
+  }
+
+  /**
+   * Marca o estado de combate como alterado.
+   *
+   * `CombatLogVersion` é o sinal reativo que o Modo Ativo usa para autosave e para
+   * transmitir deltas à mesa; qualquer escrita de stat precisa incrementá-lo,
+   * inclusive as silenciosas (que não entram no log, mas mudam o estado salvo).
+   */
+  private bumpCombatVersion(): void {
     const parent = this.Parent as any
-    if (typeof parent.CombatLogVersion === 'number') parent.CombatLogVersion++
+    if (typeof parent?.CombatLogVersion === 'number') parent.CombatLogVersion++
   }
 
   public bumpCurrentStat(stat: string, by: number, opts: IStatWriteOpts = {}): void {
@@ -317,7 +354,10 @@ class StatController {
   }
 
   public setMax(stat: string, val: any) {
-    this._maxStats[Stats.cleanKey(stat)] = val
+    const key = Stats.cleanKey(stat)
+    if (this._maxStats[key] === val) return
+    this._maxStats[key] = val
+    this.bumpCombatVersion()
   }
 
   public resetCurrentStats() {

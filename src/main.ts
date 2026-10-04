@@ -38,35 +38,7 @@ import { flushNotifyQueue } from '@/util/notify'
 import Startup from './io/Startup'
 import { reportWebVitals } from '@/util/performance'
 
-import { Amplify } from 'aws-amplify'
 import VueSecureHTML from 'vue-html-secure' // provides v-html-safe
-
-Amplify.configure({
-  Auth: {
-    Cognito: {
-      userPoolId: import.meta.env.VITE_APP_USER_POOL_ID || '',
-      userPoolClientId: import.meta.env.VITE_APP_USER_POOL_CLIENT_ID || '',
-      identityPoolId: import.meta.env.VITE_APP_IDENTITY_POOL_ID || '',
-      loginWith: {
-        email: true,
-      },
-      signUpVerificationMethod: 'code',
-      userAttributes: {
-        email: {
-          required: true,
-        },
-      },
-      allowGuestAccess: false,
-      passwordFormat: {
-        minLength: 8,
-        requireLowercase: true,
-        requireUppercase: true,
-        requireNumbers: true,
-        requireSpecialCharacters: true,
-      },
-    },
-  },
-})
 
 const compcon = createApp(App)
 
@@ -166,6 +138,13 @@ if (import.meta.env.DEV) {
 }
 
 import { obrBridge } from '@/services/obrBridge'
+import { initSheetWindowVisibility } from '@/services/mainWindow'
+
+// Antes de montar o Vue: a janela persistente da ficha nasce já oculta quando o
+// usuário a ocultou (evita o flash da ficha aparecendo por um frame) e passa a
+// anunciar presença para as outras janelas da sala.
+initSheetWindowVisibility()
+
 void obrBridge.init()
 
 compcon.mount('#app')

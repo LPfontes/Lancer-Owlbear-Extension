@@ -81,47 +81,6 @@
         align="center"
         justify="space-around"
       >
-        <v-col cols="auto">
-          <cc-dialog
-            :title="$t('common.cloudAccount')"
-            icon="mdi-cloud-sync"
-            :close-on-click="false"
-            major
-            full-height
-            max-width="90vw"
-          >
-            <template #activator="{ open }">
-              <cc-button
-                v-if="landscape"
-                :loading="startingUp"
-                size="small"
-                class="mx-2"
-                :variant="isLoggedIn ? '' : 'outlined'"
-                :color="isLoggedIn ? 'success' : ''"
-                @click="open"
-              >
-                {{ isLoggedIn ? $t('mainMenu.menu.connected') : $t('mainMenu.auth.signIn') }}
-              </cc-button>
-
-              <cc-button
-                v-else
-                :loading="startingUp"
-                size="small"
-                class="mx-2"
-                :variant="isLoggedIn ? '' : 'outlined'"
-                :color="isLoggedIn ? 'success' : ''"
-                :icon="isLoggedIn ? 'mdi-cloud-sync' : 'mdi-cloud-off-outline'"
-                @click="open"
-              />
-            </template>
-            <sign-in />
-          </cc-dialog>
-        </v-col>
-
-        <v-divider
-          vertical
-          class="mr-2"
-        />
 
         <v-col cols="auto">
           <cc-dialog
@@ -229,7 +188,6 @@
   import HelpPage from '../nav/pages/Help.vue'
   import OptionsPage from '../nav/pages/Options/index.vue'
   import { UserStore } from '@/stores'
-  import SignIn from './_components/login/index.vue'
   import V2Auto from '../nav/pages/ExtraContent/components/v2Auto.vue'
 
   const _display = useDisplay()
@@ -240,12 +198,6 @@
 
   const userstore = computed(() => {
     return UserStore()
-  })
-  const isLoggedIn = computed(() => {
-    return UserStore().IsLoggedIn
-  })
-  const startingUp = computed(() => {
-    return UserStore().IsLoading
   })
   const appVersion = computed(() => {
     return APP_VERSION || 'dev'

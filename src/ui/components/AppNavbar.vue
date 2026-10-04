@@ -76,17 +76,7 @@
           size="x-small"
           color="accent"
           :title="$t('ow.restoreWindow')"
-          @click="windowManager.restore()"
-        />
-
-        <!-- Close Window -->
-        <v-btn
-          icon="mdi-close"
-          variant="text"
-          size="x-small"
-          color="grey-lighten-1"
-          :title="$t('ow.closeWindow')"
-          @click="windowManager.closeWindow()"
+          @click="windowManager.reopenWindow()"
         />
       </div>
     </v-container>
@@ -223,17 +213,6 @@
         </v-chip>
       </div>
 
-      <!-- Gerenciador de Fichas da Mesa (Mestre) -->
-      <v-btn
-        icon="mdi-account-group-outline"
-        variant="text"
-        color="accent"
-        size="small"
-        class="nav-btn rounded-0 mr-1"
-        title="Gerenciar Fichas da Mesa (Mestre - Adicionar / Excluir)"
-        @click="openTableSheetsManager"
-      />
-
       <!-- Owlbear Room Sync Button -->
       <v-btn
         icon="mdi-cloud-sync"
@@ -290,7 +269,7 @@
       </v-btn>
 
 
-      <!-- Window Control Cluster (Minimize, Close) -->
+      <!-- Window Control Cluster (Minimize) -->
       <div class="window-controls d-flex align-center border-l border-grey-darken-3 pl-2 ga-1">
         <!-- Minimize Window -->
         <v-btn
@@ -300,16 +279,6 @@
           color="grey-lighten-2"
           :title="$t('ow.minimizeCompactBar')"
           @click="windowManager.minimize()"
-        />
-
-        <!-- Close Window -->
-        <v-btn
-          icon="mdi-close"
-          variant="text"
-          size="small"
-          color="grey-lighten-2"
-          :title="$t('ow.closeWindow')"
-          @click="windowManager.closeWindow()"
         />
       </div>
     </v-container>
@@ -414,14 +383,6 @@
         :title="$t('ow.importShareCodeJson')"
         class="my-1 rounded-0 text-accent font-weight-bold"
         @click="drawer = false; showImportDialog = true"
-      />
-
-      <v-list-item
-        prepend-icon="mdi-account-group-outline"
-        title="Gerenciar Fichas da Mesa"
-        subtitle="Adicionar, excluir ou sincronizar fichas"
-        class="my-1 rounded-0 text-accent font-weight-bold"
-        @click="drawer = false; openTableSheetsManager()"
       />
 
       <v-list-item
@@ -598,12 +559,6 @@ function resumeEncounter() {
   if (activeEncounter.value) {
     router.push(`/active-mode/gm-encounter-runner/${activeEncounter.value.ID}`)
   }
-}
-
-import { openTableSheetsWindow } from '@/services/tableSheetsWindow'
-
-function openTableSheetsManager() {
-  void openTableSheetsWindow()
 }
 
 function handleOpenImportDialog() {

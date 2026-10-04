@@ -3,7 +3,7 @@
     <cc-notify />
     <AppNavbar v-if="!isStandaloneView" />
     <TokenLinkDialog />
-    <TableSheetManagerDialog v-if="!isStandaloneView" />
+    <TableSheetManagerDialog />
     <v-main id="main-content" v-show="isStandaloneView || !windowManager.isMinimized.value">
       <router-view :key="route.fullPath" />
     </v-main>
@@ -20,6 +20,11 @@ import AppNavbar from '@/ui/components/AppNavbar.vue'
 import TokenLinkDialog from '@/ui/components/Owlbear/TokenLinkDialog.vue'
 import TableSheetManagerDialog from '@/ui/components/Owlbear/TableSheetManagerDialog.vue'
 import { windowManager } from '@/services/windowManager'
+import {
+  bootSheetWindow,
+  ensureSheetWindowOnRoomJoin,
+  isSheetWindowContext,
+} from '@/services/mainWindow'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { preloadTableChatWindow } from '@/services/tableChatWindow'
 import { UserStore, CompendiumStore } from './stores'
@@ -42,8 +47,6 @@ const activeTheme = computed(() => {
 const route = useRoute()
 const isStandaloneView = computed(() => {
   return (
-    route.path === '/table-sheets' ||
-    route.path.startsWith('/table-sheets') ||
     route.path === '/table-chat' ||
     route.path.startsWith('/table-chat')
   )
@@ -97,12 +100,41 @@ import { PilotStore } from '@/features/pilot_management/store'
 
 const router = useRouter()
 
+/**
+ * Navegação sem reload: a mesma janela persistente troca de ficha atendendo ao
+ * pedido de outro iframe (ficha do tracker, broadcast da mesa, etc.).
+ */
+function handleNavigateRequested(event: Event) {
+  const path = (event as CustomEvent<{ path?: string }>).detail?.path
+  if (!path) return
+  const target = path.startsWith('/') ? path : `/${path}`
+  if (route.fullPath === target) return
+  router.push(target).catch(err => console.warn('[App] Falha ao navegar sem reload:', err))
+}
+
+/**
+ * Navegação pedida por outro iframe (ex.: Gerenciador de Fichas da Mesa).
+ * Só a própria janela persistente executa, e sempre sem recarregar o iframe.
+ */
+function handleNavigateMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) return
+  const data = event.data
+  if (!data || typeof data !== 'object' || data.obrBridgeBroadcast !== true) return
+  const payload = data.payload
+  if (!payload || payload.type !== 'NAVIGATE' || !payload.path) return
+  if (!isSheetWindowContext()) return
+  const target = String(payload.path).startsWith('/') ? String(payload.path) : `/${payload.path}`
+  if (route.fullPath === target) return
+  router.push(target).catch(err => console.warn('[App] Falha ao navegar sem reload:', err))
+}
+
 async function handleOpenSheetRequested(event: Event) {
   const customEvent = event as CustomEvent<{ sheetType: 'pilot' | 'npc'; sheetId: string; npcType?: string }>
   const detail = customEvent.detail
   if (!detail) return
 
-  windowManager.restore()
+  // Reexibe a janela persistente (mesmo iframe) antes de navegar para a ficha.
+  void windowManager.reopenWindow()
   if (detail.sheetType === 'pilot') {
     try {
       const pilotSheetStore = PilotSheetStore()
@@ -159,9 +191,29 @@ async function handleOpenSheetRequested(event: Event) {
 
 onMounted(async () => {
   window.addEventListener('compcon-open-sheet-requested', handleOpenSheetRequested)
+  window.addEventListener('compcon-navigate', handleNavigateRequested)
+  window.addEventListener('message', handleNavigateMessage)
   void useTableActionStore().init()
 
-  // Janelas standalone (como o chat /table-chat) nunca devem sincronizar ou reposicionar a janela principal da ficha
+  // Reaplica o estado visual da janela persistente e executa qualquer navegação
+  // pendente (ficha pedida enquanto a janela estava oculta) sem recarregar o iframe.
+  if (isSheetWindowContext()) {
+    void bootSheetWindow({
+      navigate: path => {
+        if (!path) return
+        const current = route.fullPath || ''
+        if (`/${current.replace(/^\//, '')}` === path) return
+        router.push(path).catch(() => {})
+      },
+    })
+  }
+
+  // Garante que a janela persistente da ficha exista desde a abertura da sala —
+  // inclusive a partir da janela de chat/ações, que é a que o Owlbear carrega
+  // sozinho. Uma vez criada, ela nunca é destruída: "fechar" apenas oculta via CSS.
+  void ensureSheetWindowOnRoomJoin()
+
+  // Janelas standalone (como o chat /table-chat) nunca devem reposicionar a janela principal da ficha
   if (!isStandaloneView.value) {
     try {
       await windowManager.init()
@@ -185,6 +237,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('compcon-open-sheet-requested', handleOpenSheetRequested)
+  window.removeEventListener('compcon-navigate', handleNavigateRequested)
+  window.removeEventListener('message', handleNavigateMessage)
 })
 
 document.documentElement.setAttribute('data-font', 'inter')
@@ -200,6 +254,32 @@ html:has(.app-minimized),
 body:has(.app-minimized) {
   background: transparent !important;
   overflow: hidden !important;
+}
+
+/*
+ * "Fechar" a janela da ficha = apenas ocultar (nada é desmontado).
+ *
+ * `display: none` remove a árvore inteira do layout de uma vez. Isso é aplicado
+ * aos filhos diretos de <body> — não ao <body> — para que as variáveis de tema
+ * definidas nele continuem valendo caso a janela seja reexibida.
+ *
+ * O elemento <iframe class="extension-frame"> em si pertence ao DOM do Owlbear
+ * Rodeo (outra origem) e não pode ser estilizado daqui; o equivalente é o
+ * colapso 0×0 via `OBR.popover.setWidth/setHeight(0)` em `collapsePopoverSize()`
+ * (mainWindow.ts), que tira o iframe do layout e dos cliques no canvas.
+ *
+ * A classe é aplicada em `mainWindow.applyHiddenClass` e já nasce no boot
+ * (`initSheetWindowVisibility`, antes do mount) para não piscar um frame.
+ */
+html.sheet-window-hidden body > *,
+body.sheet-window-hidden body > * {
+  display: none !important;
+}
+
+html.sheet-window-hidden,
+body.sheet-window-hidden {
+  background: transparent !important;
+  pointer-events: none !important;
 }
 
 .app-minimized {

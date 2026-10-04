@@ -124,6 +124,37 @@ export async function handleProxyRequest(req, res) {
     return;
   }
 
+  if (reqUrl.pathname.startsWith('/api/rooms')) {
+    const match = reqUrl.pathname.match(/^\/api\/rooms\/([^/]+)\/sheets(?:\/([^/?#]+))?/);
+    if (match) {
+      const roomId = decodeURIComponent(match[1]);
+      const sheetId = match[2] ? decodeURIComponent(match[2]) : undefined;
+      const type = reqUrl.searchParams.get('type') || undefined;
+
+      req.query = {
+        ...(req.query || {}),
+        roomId,
+        sheetId,
+        type,
+      };
+
+      try {
+        if (sheetId) {
+          const { default: handler } = await import('../api/rooms/[roomId]/sheets/[sheetId].js');
+          await handler(req, res);
+        } else {
+          const { default: handler } = await import('../api/rooms/[roomId]/sheets.js');
+          await handler(req, res);
+        }
+      } catch (err) {
+        console.error('[Proxy] Erro ao processar cold storage:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message || 'Erro interno no cold storage' }));
+      }
+      return;
+    }
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Rota não encontrada' }));
 }

@@ -36,7 +36,7 @@
           color="accent"
           variant="flat"
         >
-          Vinculado: {{ currentBinding.name }}
+          Vinculado: {{ bindingLabel }}
         </v-chip>
       </div>
 
@@ -223,6 +223,26 @@ function selectSheet(type: 'pilot' | 'npc', id: string, name: string, item: any)
   selectedItemRef.value = item
 }
 
+/**
+ * O token guarda apenas o LINK (sheetId). O nome exibido é resolvido agora, a
+ * partir da ficha no armazenamento local — nada de cópia da ficha no token.
+ */
+function resolveSheetName(type: 'pilot' | 'npc', sheetId: string): string {
+  if (!sheetId) return ''
+  if (type === 'pilot') {
+    const pilot = pilotStore.Pilots.find((p: any) => p.ID === sheetId)
+    if (pilot) return pilot.Callsign || pilot.Name || sheetId
+  }
+  const npc = npcStore.Npcs.find((n: any) => n.ID === sheetId)
+  if (npc) return npc.Name || sheetId
+  return sheetId
+}
+
+const bindingLabel = computed(() => {
+  if (!currentBinding.value) return ''
+  return resolveSheetName(currentBinding.value.sheetType, currentBinding.value.sheetId)
+})
+
 async function handleBindRequested(event: Event) {
   const customEvent = event as CustomEvent<{ tokenIds: string[]; token?: any }>
   const tokenIds = customEvent.detail?.tokenIds
@@ -243,12 +263,12 @@ async function handleBindRequested(event: Event) {
     }
   }
 
-  // Verifica se o token já tem vínculo
+  // Verifica se o token já tem vínculo (só IDs) e resolve o nome pela ficha local
   currentBinding.value = await obrBridge.getTokenBinding(selectedTokenId.value)
   if (currentBinding.value) {
     selectedType.value = currentBinding.value.sheetType
     selectedId.value = currentBinding.value.sheetId
-    selectedName.value = currentBinding.value.name
+    selectedName.value = resolveSheetName(currentBinding.value.sheetType, currentBinding.value.sheetId)
     activeTab.value = currentBinding.value.sheetType === 'pilot' ? 'pilots' : 'npcs'
   }
 

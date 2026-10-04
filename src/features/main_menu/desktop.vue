@@ -81,44 +81,9 @@
     >
       <v-row
         no-gutters
-        justify="space-around"
+        justify="space-between"
         align="center"
       >
-        <v-col
-          cols="auto"
-          class="text-center mr-1"
-        >
-          <cc-dialog
-            :title="$t('common.cloudAccount')"
-            icon="mdi-cloud-sync"
-            :close-on-click="false"
-            major
-            full-height
-            max-width="90vw"
-          >
-            <template #activator="{ open }">
-              <cc-button
-                size="small"
-                :color="isLoggedIn ? 'success' : ''"
-                :loading="startingUp"
-                :prepend-icon="isLoggedIn ? 'mdi-cloud-sync' : 'mdi-cloud-off-outline'"
-                class="mr-2"
-                @click="open"
-              >
-                <span>
-                  {{ isLoggedIn ? $t('mainMenu.menu.connected') : $t('mainMenu.menu.logIn') }}
-                </span>
-              </cc-button>
-            </template>
-            <sign-in />
-          </cc-dialog>
-        </v-col>
-        <v-col
-          cols="auto"
-          class="text-center"
-        >
-          <cloud-notifications />
-        </v-col>
 
         <v-col
           cols="auto"
@@ -243,14 +208,12 @@
   import MainTitle from './_components/MainTitle.vue'
   import MainBtn from './_components/MainBtn.vue'
   import CCLog from './_components/CCLog.vue'
-  import SignIn from './_components/login/index.vue'
   import ExtraContent from '../nav/pages/ExtraContent/index.vue'
   import AboutPage from '../nav/pages/About.vue'
   import CreditsPage from '../nav/pages/Credits.vue'
   import HelpPage from '../nav/pages/Help.vue'
   import OptionsPage from '../nav/pages/Options/index.vue'
   import { UserStore } from '@/stores'
-  import CloudNotifications from '../nav/CloudNotifications.vue'
   import { getV2Backups } from '@/io/V2Importer'
 
   defineOptions({ name: 'LandingPageDesktop' })
@@ -266,12 +229,6 @@
     await loadV2BackupCount()
   })
 
-  const isLoggedIn = computed(() => {
-    return UserStore().IsLoggedIn
-  })
-  const startingUp = computed(() => {
-    return UserStore().IsLoading
-  })
   const hasV2Backups = computed(() => {
     return v2BackupCount.value > 0
   })

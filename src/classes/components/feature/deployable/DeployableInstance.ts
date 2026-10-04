@@ -1,14 +1,20 @@
 import logger from '@/user/logger'
 import { CombatantData } from '@/classes/encounter/Encounter'
 import type { SaveController } from '../../save/SaveController'
-import { CombatController } from '../../combat/CombatController'
+import { CombatController, CombatData } from '../../combat/CombatController'
 import { Deployable, IDeployableData } from './Deployable'
 import { ICombatant } from '../../combat/ICombatant'
 import { FeatureController } from '../FeatureController'
 
 interface IDeployableInstanceData {
+  /** Identidade estável: sem ela, cada serialização recria o deployable com outro id. */
+  id?: string
   name: string
   data: IDeployableData
+  is_deployed?: boolean
+  number?: number
+  /** PV, calor, ações, status, condições e efeitos do deployable. */
+  combat_data?: CombatData
 }
 
 class DeployableInstance implements ICombatant {
@@ -30,8 +36,8 @@ class DeployableInstance implements ICombatant {
     save: () => {},
   } as SaveController
 
-  public constructor(data: IDeployableData, owner: CombatantData) {
-    this.ID = `${data.type || 'deployable'}_${crypto.randomUUID()}`
+  public constructor(data: IDeployableData, owner: CombatantData, id?: string) {
+    this.ID = id || `${data.type || 'deployable'}_${crypto.randomUUID()}`
     this.ItemData = data
     this.Base = new Deployable(data)
     this.Owner = owner
@@ -202,16 +208,31 @@ class DeployableInstance implements ICombatant {
   }
 
   public static Serialize(instance: DeployableInstance): IDeployableInstanceData {
-    return {
+    const data = {
+      id: instance.ID,
       name: instance.name,
       data: instance.ItemData,
-      id: instance.ID,
+      is_deployed: instance.IsDeployed,
+      number: instance._number,
+      combat_data: {} as CombatData,
     } as IDeployableInstanceData
+
+    // Deployables são instâncias de combate como qualquer outra: sem o
+    // CombatController serializado, o PV/calor/ações do drone voltavam ao máximo
+    // a cada sincronização (e não sobreviviam ao reload).
+    CombatController.Serialize(instance.CombatController, data.combat_data)
+
+    return data
   }
 
   public static Deserialize(d: IDeployableInstanceData, owner: CombatantData): DeployableInstance {
     if (!d.data) throw new Error('Deployable data is missing.')
-    const dep = new DeployableInstance(d.data, owner)
+    const dep = new DeployableInstance(d.data, owner, d.id)
+    // Durante o map da deserialização o dono ainda não recebeu os irmãos, então o
+    // número calculado no construtor não distingue dois drones iguais.
+    if (typeof d.number === 'number' && d.number > 0) dep._number = d.number
+    if (typeof d.is_deployed === 'boolean') dep.IsDeployed = d.is_deployed
+    if (d.combat_data) CombatController.Deserialize(dep.CombatController, d.combat_data)
     return dep
   }
 }

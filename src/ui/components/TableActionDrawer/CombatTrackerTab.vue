@@ -1267,8 +1267,9 @@ function resolveNpcSheet(c: any): { type: string; id: string } | null {
 function openNpcSheet(c: any) {
   const target = resolveNpcSheet(c)
   if (!target) return
-  // Abre a ficha ativa do NPC na janela principal (iframe da direita)
-  void openMainWindow(false, `/active-mode/npc-runner/${target.id}`)
+  // Abre a ficha ativa do NPC na janela principal (iframe da direita), reutilizando
+  // o iframe já montado — nunca recriando a janela (isso descartava o estado).
+  void openMainWindow({ restoreIfHidden: true, targetRoute: `/active-mode/npc-runner/${target.id}` })
   // local-only: abre só na janela principal do mestre, sem afetar os jogadores
   void obrBridge.sendBroadcastMessage(
     {

@@ -14,6 +14,12 @@ dist-ssr/
 .env.local
 .env.*.local
 
+# Certificado de dev do HTTPS local (nunca commitar chave privada)
+.certs/
+
+# Backups locais de diagnóstico
+.backup-diagnostico/
+
 # IDE and Editor files
 .vscode/
 !.vscode/extensions.json

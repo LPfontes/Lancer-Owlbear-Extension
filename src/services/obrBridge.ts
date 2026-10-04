@@ -125,7 +125,8 @@ class OBRBridge {
         // Solicita sincronização cross-scene com todos os jogadores na sala
         await this.requestSyncFromRoom().catch(() => {})
 
-        // Limpa chaves legadas pesadas do room que estouram os 16 kB
+        // Remove payloads de ficha que instalações antigas deixaram gravados na
+        // sala/cena (a sincronização acima já os migrou para o storage local).
         void this.cleanupRoomMetadata()
 
         // Limpa marcadores legados de status com URLs inválidas que possam ter ficado gravados na cena
@@ -314,6 +315,8 @@ class OBRBridge {
         await this.syncFromRoom()
         await this.pushAllLocalPilotsToRoom()
         await this.pushAllLocalNpcsToRoom()
+        // A cena não guarda fichas: só índices de IDs.
+        void this.cleanupRoomMetadata()
         void statusMarkerService.cleanupLegacyMarkers().catch(() => {})
       }
     })
@@ -382,6 +385,17 @@ class OBRBridge {
         await this.handleIncomingChunk('npc', msg.npcId, msg.chunkIndex, msg.totalChunks, msg.chunkData)
       } else if (msg.type === 'OPEN_TABLE_SHEETS') {
         window.dispatchEvent(new CustomEvent('compcon-open-table-sheets'))
+      } else if (msg.type === 'RESTORE_MAIN_WINDOW') {
+        // Reexibe a janela persistente da ficha (mesmo iframe, sem recarregar).
+        const { restoreSheetWindow } = await import('./mainWindow')
+        await restoreSheetWindow()
+      } else if (msg.type === 'NAVIGATE') {
+        // Navegação sem reload: outro iframe pediu para a janela persistente
+        // trocar de ficha. Só a própria janela da ficha executa.
+        const { isSheetWindowContext } = await import('./mainWindow')
+        if (isSheetWindowContext() && msg.path) {
+          window.dispatchEvent(new CustomEvent('compcon-navigate', { detail: { path: msg.path } }))
+        }
       } else if (msg.type === 'OPEN_SHEET_REQUESTED') {
         window.dispatchEvent(
           new CustomEvent('compcon-open-sheet-requested', {
@@ -1031,31 +1045,58 @@ class OBRBridge {
   }
 
   /**
-   * Remove chaves legadas e pesadas do metadata do Room para não estourar a cota de 16 kB
+   * Remove dos metadados qualquer PAYLOAD de ficha (sala e cena).
+   *
+   * A ficha é persistida apenas no `pilot_sheets`/`pilots`/`npcs` local; nos
+   * metadados do Owlbear fica somente um link por id (roster e índices). Esta
+   * rotina limpa INSTALAÇÕES ANTIGAS que ainda carregam cópias comprimidas das
+   * fichas — que além de desatualizadas, estouravam a cota da sala (16 kB) e
+   * inflavam a cena (25 MB).
    */
   public async cleanupRoomMetadata(): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
+
+    const isSheetPayloadKey = (key: string) =>
+      key.startsWith(COMPCON_PILOT_PREFIX) ||
+      key.startsWith(COMPCON_NPC_PREFIX) ||
+      key === COMPCON_PILOTS_METADATA_KEY ||
+      key === COMPCON_NPCS_METADATA_KEY
+
     try {
       const roomMeta = await OBR.room.getMetadata()
-      const toDelete: Record<string, undefined> = {}
+      // O room nunca precisa de índice: rosters são os manifestos leves da sala.
+      const roomDelete: Record<string, undefined> = {}
       for (const key of Object.keys(roomMeta)) {
         if (
-          key.startsWith(COMPCON_PILOT_PREFIX) ||
-          key.startsWith(COMPCON_NPC_PREFIX) ||
-          key === COMPCON_PILOTS_METADATA_KEY ||
-          key === COMPCON_NPCS_METADATA_KEY ||
+          isSheetPayloadKey(key) ||
           key === COMPCON_PILOT_INDEX_KEY ||
           key === COMPCON_NPC_INDEX_KEY
         ) {
-          toDelete[key] = undefined
+          roomDelete[key] = undefined
         }
       }
-      if (Object.keys(toDelete).length > 0) {
-        console.log('[OBRBridge] Limpando metadados legados do room para liberar cota de 16 kB:', Object.keys(toDelete))
-        await OBR.room.setMetadata(toDelete)
+      if (Object.keys(roomDelete).length > 0) {
+        console.log('[OBRBridge] Limpando payloads de ficha do room:', Object.keys(roomDelete))
+        await OBR.room.setMetadata(roomDelete)
       }
     } catch (e) {
-      console.warn('[OBRBridge] Aviso ao limpar metadados legados do room:', e)
+      console.warn('[OBRBridge] Aviso ao limpar metadados do room:', e)
+    }
+
+    try {
+      const sceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!sceneReady) return
+      const sceneMeta = await OBR.scene.getMetadata()
+      const sceneDelete: Record<string, undefined> = {}
+      for (const key of Object.keys(sceneMeta)) {
+        if (isSheetPayloadKey(key)) sceneDelete[key] = undefined
+      }
+      if (Object.keys(sceneDelete).length > 0) {
+        console.log('[OBRBridge] Limpando payloads de ficha da cena:', Object.keys(sceneDelete))
+        await OBR.scene.setMetadata(sceneDelete)
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Aviso ao limpar metadados da cena:', e)
     }
   }
 
@@ -1192,25 +1233,12 @@ class OBRBridge {
     return val
   }
 
-  private async encodeDataToChunks(baseKey: string, data: any): Promise<Record<string, any>> {
-    const compressed = await this.compressData(data)
-    const MAX_CHUNK_SIZE = 12000
-
-    if (compressed.length <= MAX_CHUNK_SIZE) {
-      return { [baseKey]: compressed }
-    }
-
-    const chunks: Record<string, any> = {}
-    const chunkCount = Math.ceil(compressed.length / MAX_CHUNK_SIZE)
-    chunks[baseKey] = `gz_chunked:${chunkCount}`
-
-    for (let i = 0; i < chunkCount; i++) {
-      chunks[`${baseKey}_${i}`] = compressed.slice(i * MAX_CHUNK_SIZE, (i + 1) * MAX_CHUNK_SIZE)
-    }
-
-    return chunks
-  }
-
+  /**
+   * Lê um payload que instalações antigas gravaram nos metadados da sala/cena,
+   * possivelmente fragmentado em chunks. A ESCRITA correspondente foi removida:
+   * fichas não vão mais para metadados, só o link por id. Este leitor permanece
+   * apenas para migrar dados legados para o armazenamento local.
+   */
   private async decodeDataFromChunks(baseKey: string, metadata: Record<string, any>): Promise<any> {
     const val = metadata[baseKey]
     if (!val) return null
@@ -1285,18 +1313,13 @@ class OBRBridge {
         // 2. Transmite via broadcast para os outros jogadores e GM na sala (cross-scene)
         await this.broadcastSinglePilot(sanitized)
 
-        // 3. Monta entrada ultra-leve para o manifest global da sala (< 100 bytes)
+        // 3. Monta a entrada do roster da sala: APENAS o link por id.
+        // Nome, callsign e qualquer estado da ficha são lidos da ficha local,
+        // nunca duplicados no metadata da sala.
         rosterEntries[id] = {
           id,
-          name: sanitized.name || sanitized.Name || 'Piloto',
-          callsign: sanitized.callsign || sanitized.Callsign || '',
           updatedAt: Date.now(),
         }
-
-        // 4. Prepara cache para a cena caso haja cena ativa
-        const key = COMPCON_PILOT_PREFIX + id
-        const compressed = await this.compressData(sanitized)
-        sceneUpdates[key] = compressed
       }
 
       if (Object.keys(rosterEntries).length > 0) {
@@ -1310,9 +1333,11 @@ class OBRBridge {
           console.warn('[OBRBridge] Falha ao atualizar roster no room:', e)
         }
 
-        // Se houver cena ativa aberta no Owlbear, atualiza também a cena como cache adicional
+        // A cena guarda apenas o ÍNDICE de IDs das fichas da mesa — nunca o
+        // conteúdo delas. O payload vive no armazenamento local (IndexedDB) e é
+        // replicado por broadcast.
         const isSceneReady = await OBR.scene.isReady().catch(() => false)
-        if (isSceneReady && Object.keys(sceneUpdates).length > 0) {
+        if (isSceneReady) {
           const sceneMetadata = await OBR.scene.getMetadata()
           const existingIndex: string[] = (sceneMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || []
           const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
@@ -1326,7 +1351,7 @@ class OBRBridge {
         }
       }
 
-      // Libera chaves do metadata legado do ROOM
+      // Libera chaves de payload de ficha que tenham ficado no metadata legado
       void this.cleanupRoomMetadata()
 
       console.log(`[OBRBridge] ${Object.keys(rosterEntries).length} piloto(s) sincronizado(s) via broadcast + local.`)
@@ -1613,17 +1638,11 @@ class OBRBridge {
         // 2. Broadcast em tempo real
         await this.broadcastSingleNpc(sanitized)
 
-        // 3. Roster leve
+        // 3. Roster leve: apenas o link por id (a ficha em si não vai para os metadados)
         rosterEntries[id] = {
           id,
-          name: sanitized.name || sanitized.Name || 'NPC',
           updatedAt: Date.now(),
         }
-
-        // 4. Cache para cena
-        const key = COMPCON_NPC_PREFIX + id
-        const compressed = await this.compressData(sanitized)
-        sceneUpdates[key] = compressed
       }
 
       if (Object.keys(rosterEntries).length > 0) {
@@ -1637,8 +1656,9 @@ class OBRBridge {
           console.warn('[OBRBridge] Falha ao atualizar roster de NPCs no room:', e)
         }
 
+        // A cena guarda apenas o ÍNDICE de IDs, nunca o conteúdo das fichas.
         const isSceneReady = await OBR.scene.isReady().catch(() => false)
-        if (isSceneReady && Object.keys(sceneUpdates).length > 0) {
+        if (isSceneReady) {
           const sceneMetadata = await OBR.scene.getMetadata()
           const existingIndex: string[] = (sceneMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || []
           const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
@@ -2107,19 +2127,29 @@ class OBRBridge {
       const portrait = typeof portraitSource.Portrait === 'string' ? portraitSource.Portrait : ''
 
       // O Owlbear Rodeo carrega a imagem do token via fetch() (não <img>), o que exige CORS.
-      // Tenta nesta ordem: 1) retrato direto (se CORS-fetchable); 2) retrato via nosso
-      // proxy (/api/image), que serve com CORS; 3) imagem padrão do tipo.
+      // Hosts sabidamente sem CORS (ex.: CloudFront do COMP/CON) passam direto pelo nosso
+      // proxy (/api/image) para evitar poluir o console do navegador com erros de CORS.
       let imageUrl = this.resolveTokenImageUrl(portrait, type)
-      let fetched = await this.fetchImageBlob(imageUrl)
       let tokenUrl = imageUrl
+      let fetched: { ok: boolean; blob?: Blob } = { ok: false }
 
-      if (!fetched.ok) {
+      if (this.isKnownNoCorsHost(imageUrl)) {
         const proxied = this.proxyImageUrl(imageUrl)
         if (proxied) {
           tokenUrl = proxied
           fetched = await this.fetchImageBlob(proxied)
         }
+      } else {
+        fetched = await this.fetchImageBlob(imageUrl)
+        if (!fetched.ok) {
+          const proxied = this.proxyImageUrl(imageUrl)
+          if (proxied) {
+            tokenUrl = proxied
+            fetched = await this.fetchImageBlob(proxied)
+          }
+        }
       }
+
       if (!fetched.ok) {
         imageUrl = this.defaultTokenUrl(type)
         tokenUrl = imageUrl
@@ -2153,8 +2183,6 @@ class OBRBridge {
             sheetType: type,
             sheetId: sheet.ID,
             ...(mechId ? { mechId } : {}),
-            name,
-            size,
           },
         })
         .build()
@@ -2165,6 +2193,21 @@ class OBRBridge {
     } catch (e) {
       console.warn('[OBRBridge] Erro ao criar token para ficha:', e)
       return null
+    }
+  }
+
+  /**
+   * Identifica se a URL pertence a um host que sabidamente não envia cabeçalhos CORS
+   * (como o CloudFront do COMP/CON). Fazer fetch direto pelo navegador nesses hosts
+   * faz o engine do browser disparar erros vermelhos de CORS no console antes do try/catch.
+   */
+  private isKnownNoCorsHost(url: string): boolean {
+    try {
+      const u = new URL(url)
+      const host = u.hostname.toLowerCase()
+      return host.endsWith('cloudfront.net') || host.endsWith('compcon.app')
+    } catch {
+      return false
     }
   }
 
@@ -2340,35 +2383,34 @@ class OBRBridge {
   // =========================================================================
 
   /**
-   * Vincula um token do mapa a uma ficha de Piloto ou NPC
+   * Vincula um token do mapa a uma ficha de Piloto ou NPC.
+   *
+   * O token recebe APENAS o link (`sheetType`, `sheetId` e, quando houver, os IDs
+   * de mecha/combatente). Nenhum dado da ficha — nome, HP, heat, estrutura,
+   * stress ou condições — é gravado nos metadados do token: o estado de combate
+   * é lido da ficha no armazenamento local, então não há cópia para divergir
+   * nem payload para estourar a cota do Owlbear.
    */
   public async bindTokenToSheet(tokenId: string, binding: TokenSheetBinding): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
 
+    const link: Record<string, any> = {
+      sheetType: binding.sheetType,
+      sheetId: binding.sheetId,
+    }
+    if (binding.mechId) link.mechId = binding.mechId
+    if (binding.combatantId) link.combatantId = binding.combatantId
+
     await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
       for (const item of items) {
-        item.metadata[COMPCON_METADATA_KEY] = JSON.parse(JSON.stringify({
-          ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
-          sheetType: binding.sheetType,
-          sheetId: binding.sheetId,
-          mechId: binding.mechId,
-          name: binding.name,
-          hp: binding.hp,
-          heat: binding.heat,
-          structure: binding.structure,
-          stress: binding.stress,
-          statuses: binding.statuses,
-        }))
-        // Atualiza o nome do token no Owlbear se desejado
-        if (item.name !== binding.name) {
-          item.name = binding.name
-        }
+        item.metadata[COMPCON_METADATA_KEY] = { ...link }
       }
     })
 
-    await OBR.notification.show(`Token vinculado com sucesso a: ${binding.name}`)
+    const label = binding.name || binding.sheetId
+    await OBR.notification.show(`Token vinculado com sucesso a: ${label}`)
 
-    // Sincroniza marcadores visuais no token se houver estados ativos
+    // Marcadores visuais são derivados do estado atual da ficha, não do vínculo.
     if (binding.statuses && binding.statuses.length > 0) {
       await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => {})
     }
@@ -2393,7 +2435,7 @@ class OBRBridge {
   }
 
   /**
-   * Obtém a ficha vinculada a um token
+   * Obtém o vínculo (apenas IDs) de ficha de um token
    */
   public async getTokenBinding(tokenId: string): Promise<TokenSheetBinding | null> {
     if (!this.isReady || !OBR.isAvailable) return null
@@ -2405,46 +2447,31 @@ class OBRBridge {
         sheetType: meta.sheetType,
         sheetId: meta.sheetId,
         mechId: meta.mechId,
-        name: meta.name,
-        hp: meta.hp,
-        heat: meta.heat,
-        structure: meta.structure,
-        stress: meta.stress,
-        statuses: meta.statuses,
+        combatantId: meta.combatantId,
       }
     }
     return null
   }
 
   /**
-   * Atualiza os metadados visuais de combate em um token
+   * Aplica os marcadores visuais de status nos tokens vinculados a um mecha.
+   *
+   * O estado de combate (HP/heat/estrutura/stress) NÃO é copiado para o token:
+   * ele é lido da ficha. Aqui só sincronizamos os ícones de status, que são
+   * itens próprios da cena, e apenas para o token que pediu a atualização.
    */
   public async updateTokenVisuals(tokenId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
-
-    await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
-      for (const item of items) {
-        item.metadata[COMPCON_METADATA_KEY] = {
-          ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
-          mechId: state.id,
-          name: state.name,
-          hp: state.hp,
-          heat: state.heat,
-          structure: state.structure,
-          stress: state.stress,
-          statuses: state.statuses,
-        }
-      }
-    })
-
-    // Atualiza marcadores visuais no canvas do Owlbear
     if (state.statuses) {
       await statusMarkerService.syncTokenStatusMarkers(tokenId, state.statuses).catch(() => {})
     }
   }
 
   /**
-   * Atualiza todos os tokens no mapa que estão vinculados à ficha informada
+   * Sincroniza os marcadores de status de todos os tokens vinculados à ficha.
+   *
+   * O vínculo é resolvido pelos IDs no metadata do token (`sheetId`/`mechId`);
+   * nada de estado de combate é persistido no token.
    */
   public async updateTokensForCombatant(sheetId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
@@ -2454,28 +2481,9 @@ class OBRBridge {
       return meta && (meta.sheetId === sheetId || meta.mechId === sheetId)
     })
 
-    if (items.length > 0) {
-      const tokenIds = items.map((i) => i.id)
-      await OBR.scene.items.updateItems(tokenIds, (sceneItems: Item[]) => {
-        for (const item of sceneItems) {
-          item.metadata[COMPCON_METADATA_KEY] = {
-            ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
-            mechId: state.id,
-            name: state.name,
-            hp: state.hp,
-            heat: state.heat,
-            structure: state.structure,
-            stress: state.stress,
-            statuses: state.statuses,
-          }
-        }
-      })
-
-      // Atualiza marcadores visuais em cada token vinculado
-      if (state.statuses) {
-        for (const tid of tokenIds) {
-          await statusMarkerService.syncTokenStatusMarkers(tid, state.statuses).catch(() => {})
-        }
+    if (items.length > 0 && state.statuses) {
+      for (const item of items) {
+        await statusMarkerService.syncTokenStatusMarkers(item.id, state.statuses).catch(() => {})
       }
     }
   }
@@ -2644,15 +2652,6 @@ class OBRBridge {
         mechId,
         name,
         combatantId: combatant.id,
-      } as any)
-
-      await OBR.scene.items.updateItems([tokenId], (items) => {
-        for (const item of items) {
-          item.metadata[COMPCON_METADATA_KEY] = {
-            ...((item.metadata[COMPCON_METADATA_KEY] as object) || {}),
-            combatantId: combatant.id,
-          }
-        }
       })
 
       await OBR.notification.show(`Token vinculado com sucesso a ${name}!`)
@@ -2726,27 +2725,6 @@ class OBRBridge {
   }
 
   /**
-   * Salva todo o estado do combate no Metadata da Sala do Owlbear
-   */
-  public async syncRoomEncounterState(encounters: Record<string, MechCombatState>) {
-    if (!this.isReady || !OBR.isAvailable) return
-    await OBR.room.setMetadata({
-      [COMPCON_METADATA_KEY]: JSON.parse(JSON.stringify(encounters)),
-    })
-  }
-
-  /**
-   * Escuta atualizações de estado de combate da sala
-   */
-  public onRoomStateChange(callback: (encounters: Record<string, MechCombatState>) => void) {
-    if (!this.isReady || !OBR.isAvailable) return
-    OBR.room.onMetadataChange((metadata) => {
-      const state = metadata[COMPCON_METADATA_KEY] as Record<string, MechCombatState>
-      if (state) callback(state)
-    })
-  }
-
-  /**
    * Obtém o catálogo/roster leve de pilotos da sala
    */
   public async getTablePilotRoster(): Promise<Record<string, any>> {
@@ -2777,7 +2755,8 @@ class OBRBridge {
   }
 
   /**
-   * Obtém os tokens da cena ativa que estão vinculados a fichas do COMP/CON
+   * Obtém os tokens da cena ativa que estão vinculados a fichas do COMP/CON.
+   * Retorna apenas o LINK (IDs); o conteúdo da ficha é lido do storage local.
    */
   public async getSceneTokensWithBindings(): Promise<Array<{ tokenId: string; tokenName: string; binding: TokenSheetBinding }>> {
     if (!this.isReady || !OBR.isAvailable) return []
@@ -2797,12 +2776,7 @@ class OBRBridge {
             sheetType: meta.sheetType,
             sheetId: meta.sheetId,
             mechId: meta.mechId,
-            name: meta.name || item.name,
-            hp: meta.hp,
-            heat: meta.heat,
-            structure: meta.structure,
-            stress: meta.stress,
-            statuses: meta.statuses,
+            combatantId: meta.combatantId,
           },
         }
       })
@@ -2843,12 +2817,7 @@ class OBRBridge {
             sheetType: meta.sheetType,
             sheetId: meta.sheetId,
             mechId: meta.mechId,
-            name: meta.name || item.name,
-            hp: meta.hp,
-            heat: meta.heat,
-            structure: meta.structure,
-            stress: meta.stress,
-            statuses: meta.statuses,
+            combatantId: meta.combatantId,
           }
         }
         return {

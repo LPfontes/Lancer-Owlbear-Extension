@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { debounce } from 'lodash-es'
 import * as Client from '../index'
 import { getUser, patchItem, UnauthorizedError } from '@/io/apis/account'
-import { signOut } from 'aws-amplify/auth'
 import { AuthStore } from './AuthStore'
 import { NotificationStore } from './NotificationStore'
 import { checkV2CloudData, type V2CloudDetectResult } from '@/io/V2CloudImporter'
@@ -146,11 +145,6 @@ export const UserMetadataStore = defineStore('userMetadata', {
       } catch (e) {
         if (e instanceof UnauthorizedError) {
           logger.warn('Unauthorized response from server, signing out')
-          try {
-            await signOut()
-          } catch (signOutErr) {
-            logger.warn(`Best-effort signOut during unauthorized handling failed: ${signOutErr}`)
-          }
           authStore.signOut()
           throw e
         }

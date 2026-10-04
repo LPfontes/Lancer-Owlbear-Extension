@@ -1,5 +1,4 @@
 import { UserStore } from '@/stores'
-import { fetchAuthSession } from 'aws-amplify/auth'
 import logger from '@/user/logger'
 import { parseApiError, NotFoundError, BadRequestError } from './apiErrors'
 
@@ -22,16 +21,7 @@ function buildApiUrl(endpoint: string): URL {
   }
 }
 
-export async function getHeaders(forceRefresh = false): Promise<Record<string, string>> {
-  try {
-    const session = await fetchAuthSession({ forceRefresh })
-    const idToken = session.tokens?.idToken?.toString()
-    if (idToken) {
-      return { ...baseHeaders, Authorization: idToken }
-    }
-  } catch (e) {
-    logger.warn('Unable to get auth session for request headers:', e)
-  }
+export async function getHeaders(_forceRefresh = false): Promise<Record<string, string>> {
   return { ...baseHeaders }
 }
 

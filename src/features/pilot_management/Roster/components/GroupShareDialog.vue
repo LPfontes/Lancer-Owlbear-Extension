@@ -42,6 +42,7 @@
   import { DownloadViaCode } from '@/io/apis/account'
   import { UserStore } from '@/stores'
   import ShareCodeResult from '@/shared/ShareCodeResult.vue'
+  import { notify } from '@/util/notify'
 
   const props = withDefaults(defineProps<{ importType?: string; blockBtn?: boolean }>(), {
     importType: 'item',
@@ -69,22 +70,43 @@
 
   async function downloadAsCopy(remote = false) {
     dlLoading.value = true
-    const itemData = await DownloadViaCode(queryResult.value.code)
-    const itemType = queryResult.value.sortkey.split('_')[1]
-    const item = await CloudController.NewByType(itemType, itemData)
-    if (remote) {
-      const codeToTrack = shareCode.value || queryResult.value.code
-      item.CloudController.setRemoteMetadata(queryResult.value)
-      item.SaveController.RemoteCode = codeToTrack
-      if (UserStore().IsLoggedIn) UserStore().addRemoteItem(codeToTrack)
-    } else {
-      item.CloudController.GenerateMetadata()
-      item.SaveController.ClearRemote()
-    }
-    await CloudController.AddByType(itemType, item)
+    try {
+      const itemData = queryResult.value?._payload || (await DownloadViaCode(queryResult.value.code))
+      const itemType = (queryResult.value?.sortkey || 'item_pilot').split('_')[1]
+      const item = await CloudController.NewByType(itemType, itemData)
+      if (remote) {
+        const codeToTrack = shareCode.value || queryResult.value.code
+        item.CloudController.setRemoteMetadata(queryResult.value)
+        item.SaveController.RemoteCode = codeToTrack
+        if (UserStore().IsLoggedIn) UserStore().addRemoteItem(codeToTrack)
+      } else {
+        item.CloudController.GenerateMetadata()
+        item.SaveController.ClearRemote()
+      }
+      await CloudController.AddByType(itemType, item)
 
-    dlLoading.value = false
-    importer.value.reset()
-    importer.value.$refs.modal.close()
+      try {
+        const { obrBridge } = await import('@/services/obrBridge')
+        if (itemType === 'pilot') {
+          await obrBridge.savePilotToRoom(item, true)
+        }
+      } catch {}
+
+      notify({
+        type: 'success',
+        text: `${item.Name || (item as any).Callsign || 'Ficha'} adicionada com sucesso!`,
+      })
+
+      importer.value?.reset?.()
+      importer.value?.$refs?.modal?.close?.()
+    } catch (err: any) {
+      console.error('Erro ao importar ficha:', err)
+      notify({
+        type: 'error',
+        text: err?.message || 'Erro ao adicionar cópia da ficha',
+      })
+    } finally {
+      dlLoading.value = false
+    }
   }
 </script>

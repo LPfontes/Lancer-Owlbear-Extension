@@ -84,6 +84,7 @@
   import GmDiceRoller from '../gm/_components/GmDiceRoller.vue'
   import ActorLogs from '../gm/EncounterPanels/_components/ActorLogs.vue'
   import CombatStatblockExport from '../gm/EncounterPanels/_components/CombatStatblockExport.vue'
+  import { combatantCombatVersion } from '../_shared/combatVersion'
 
   const typeMap: Record<string, any> = {
     unit: UnitPanel,
@@ -162,9 +163,10 @@
   })
 
   // Sincroniza mudanças de combate do NPC para o encontro geral (mestre é autoritativo)
+  // A versão agregada cobre camadas de eidolon e deployables além do ator.
   let syncTimeout: ReturnType<typeof setTimeout> | null = null
   watch(
-    () => combatant.value?.actor?.CombatController?.CombatLogVersion,
+    () => (combatant.value ? combatantCombatVersion(combatant.value) : 0),
     () => {
       const enc = sharedEncounter.value
       if (!enc) return

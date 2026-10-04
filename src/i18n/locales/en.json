@@ -185,7 +185,8 @@
       "mainNavigation": "Main navigation",
       "toggleNavigation": "Toggle navigation panel"
     },
-    "deselectAll": "Deselect All"
+    "deselectAll": "Deselect All",
+    "pilotDisplayName": "{callsign} // {name}"
   },
   "language": {
     "selectLanguage": "Language",
@@ -4569,7 +4570,6 @@
     "bottomLeftDesc": "Bottom left corner",
     "centerDesc": "Middle of the screen",
     "restoreWindow": "Restore Window",
-    "closeWindow": "Close Window",
     "collapseHeight": "Collapse Window Height",
     "expandHeight": "Expand Window Height",
     "minimizeToBar": "Minimize to Floating Bar",

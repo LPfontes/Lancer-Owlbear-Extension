@@ -1,6 +1,4 @@
 import { defineStore } from 'pinia'
-import { getCurrentUser, fetchAuthSession, signOut } from 'aws-amplify/auth'
-import logger from '../logger'
 
 export const AuthStore = defineStore('auth', {
   state: () => ({
@@ -9,14 +7,8 @@ export const AuthStore = defineStore('auth', {
   }),
   actions: {
     async setCognito(): Promise<void> {
-      try {
-        this.Cognito = await getCurrentUser()
-        await fetchAuthSession()
-        this.IsLoggedIn = true
-      } catch (e) {
-        logger.warn(`User not logged in or cannot autologin`)
-        this.IsLoggedIn = false
-      }
+      this.IsLoggedIn = false
+      this.Cognito = {}
     },
     signOut(): void {
       if (this.Cognito.userId) {

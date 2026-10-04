@@ -8,6 +8,8 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
   state: () => ({
     PilotSheets: [] as PilotSheet[],
     CurrentActiveID: '' as string,
+    /** Já rodamos `LoadPilotSheets()` nesta sessão? */
+    SheetsLoaded: false,
   }),
   getters: {
     getPilotSheetByID: state => (id: string) => {
@@ -24,6 +26,7 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
         data.map(x => PilotSheet.Deserialize(x))
       )
       await this.LoadSheetId()
+      this.SheetsLoaded = true
     },
     async AddPilotSheet(pilot: Pilot, campaign?: string): Promise<void> {
       const newSheet = PilotSheet.FromPilot(pilot, campaign)
@@ -61,15 +64,24 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       if (id) this.CurrentActiveID = id
     },
     GetSheet(id: string): PilotSheet | null {
+      // Id vazio é um estado normal durante o boot (rota `pilot-runner` sem id,
+      // ficha ativa ainda não resolvida), então não é erro.
+      if (!id) return null
       const sheet = this.PilotSheets.find((ps: any) => ps.ID === id)
       if (sheet) return sheet as PilotSheet
-      logger.error('No pilot sheet found with ID ' + id)
+      // Ainda não carregamos do storage: um "não encontrado" aqui é transitório,
+      // não uma ficha perdida.
+      if (!this.SheetsLoaded) return null
+      logger.error(`No pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
       return null
     },
     GetActiveSheet(): PilotSheet | null {
-      const activeSheet = this.PilotSheets.find((ps: any) => ps.ID === this.CurrentActiveID)
+      const id = this.CurrentActiveID
+      if (!id) return null
+      const activeSheet = this.PilotSheets.find((ps: any) => ps.ID === id)
       if (activeSheet) return activeSheet as PilotSheet
-      logger.error('No active pilot sheet found')
+      if (!this.SheetsLoaded) return null
+      logger.error(`No active pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
       return null
     },
     async AssignActiveSheet(payload: PilotSheet): Promise<void> {

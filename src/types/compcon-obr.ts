@@ -44,11 +44,22 @@ export interface CombatRollBroadcast {
   timestamp: number
 }
 
+/**
+ * Vínculo entre um token do mapa e uma ficha do COMP/CON.
+ *
+ * Só carrega IDs: o token guarda um LINK para a ficha (`sheetType` + `sheetId`),
+ * nunca o conteúdo dela. Estado de combate (HP, heat, estrutura, stress,
+ * condições) e nome vivem exclusivamente na ficha, no armazenamento local.
+ *
+ * Os campos opcionais `id`, `hp`, `structure`... existem apenas como parâmetro
+ * de ENTRADA em chamadas legadas; eles não são gravados nos metadados.
+ */
 export interface TokenSheetBinding {
   sheetType: 'pilot' | 'npc'
   sheetId: string
-  name: string
+  name?: string
   mechId?: string
+  combatantId?: string
   hp?: ResourceMeter
   structure?: ResourceMeter
   heat?: ResourceMeter

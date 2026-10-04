@@ -75,40 +75,53 @@
     </div>
 
     <!-- Abas de Navegação Superior: Tracker de Combate vs Ações & Chat -->
-    <v-tabs
-      v-model="currentTab"
-      density="compact"
-      color="accent"
-      bg-color="grey-darken-4"
-      class="border-b border-grey-darken-3 flex-shrink-0"
-    >
-      <v-tab value="tracker" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
-        <v-icon icon="cc:encounter" class="mr-1" size="18" />
-        Tracker
-        <v-chip
-          v-if="encounterRound"
-          size="x-small"
-          color="accent"
-          class="ml-1 px-1 font-weight-bold text-black"
-          style="height: 16px; font-size: 9.5px;"
-        >
-          R{{ encounterRound }}
-        </v-chip>
-      </v-tab>
-      <v-tab value="chat" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
-        <v-icon icon="mdi-sword-cross" class="mr-1" size="18" />
-        Ações & Chat
-        <v-chip
-          v-if="tableActionStore.actions.length > 0"
-          size="x-small"
-          color="grey-darken-2"
-          class="ml-1 px-1"
-          style="height: 16px; font-size: 9.5px;"
-        >
-          {{ tableActionStore.actions.length }}
-        </v-chip>
-      </v-tab>
-    </v-tabs>
+    <div class="d-flex align-center border-b border-grey-darken-3 bg-grey-darken-4 flex-shrink-0">
+      <v-tabs
+        v-model="currentTab"
+        density="compact"
+        color="accent"
+        bg-color="grey-darken-4"
+        class="flex-grow-1"
+      >
+        <v-tab value="tracker" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
+          <v-icon icon="cc:encounter" class="mr-1" size="18" />
+          Tracker
+          <v-chip
+            v-if="encounterRound"
+            size="x-small"
+            color="accent"
+            class="ml-1 px-1 font-weight-bold text-black"
+            style="height: 16px; font-size: 9.5px;"
+          >
+            R{{ encounterRound }}
+          </v-chip>
+        </v-tab>
+        <v-tab value="chat" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
+          <v-icon icon="mdi-sword-cross" class="mr-1" size="18" />
+          Ações & Chat
+          <v-chip
+            v-if="tableActionStore.actions.length > 0"
+            size="x-small"
+            color="grey-darken-2"
+            class="ml-1 px-1"
+            style="height: 16px; font-size: 9.5px;"
+          >
+            {{ tableActionStore.actions.length }}
+          </v-chip>
+        </v-tab>
+      </v-tabs>
+
+      <!-- Gerenciador de Fichas da Mesa (MongoDB) -->
+      <v-btn
+        icon="mdi-database-outline"
+        variant="text"
+        size="small"
+        color="accent"
+        class="mr-2 flex-shrink-0"
+        title="Gerenciador de Fichas (MongoDB)"
+        @click="openSheetManagerDialog"
+      />
+    </div>
 
     <!-- Aba 1: Tracker de Combate -->
     <div
@@ -221,6 +234,7 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { EncounterStore } from '@/stores'
 import { closeTableChatWindow, detachTableChatWindow } from '@/services/tableChatWindow'
+import { openTableSheetsWindow } from '@/services/tableSheetsWindow'
 import { openMainWindow, isMainWindowOpen } from '@/services/mainWindow'
 import TableActionCard from '@/ui/components/TableActionDrawer/TableActionCard.vue'
 import TableActionInput from '@/ui/components/TableActionDrawer/TableActionInput.vue'
@@ -245,7 +259,12 @@ const encounterRound = computed(() => {
 })
 
 function handleOpenMainWindow() {
-  void openMainWindow(false)
+  // Reexibe a janela persistente (mesmo iframe); só cria uma se ainda não existir.
+  // Não recria nem recarrega: isso descartaria o estado da ficha.
+  void openMainWindow({
+    restoreIfHidden: true,
+    targetRoute: '/active-mode',
+  })
 }
 
 const filterOptions = [
@@ -276,6 +295,10 @@ function closeWindow() {
 
 function detachWindow() {
   detachTableChatWindow()
+}
+
+function openSheetManagerDialog() {
+  void openTableSheetsWindow()
 }
 
 function confirmClearHistory() {

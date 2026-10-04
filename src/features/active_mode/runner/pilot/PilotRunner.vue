@@ -128,13 +128,15 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted } from 'vue'
+  import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
   import { useDisplay } from 'vuetify'
   import { useRoute, onBeforeRouteLeave } from 'vue-router'
   import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import { PilotStore } from '@/features/pilot_management/store'
   import { EncounterStore } from '@/stores'
   import { makeCombatant } from '@/classes/encounter/Encounter'
+  import type { CombatantData } from '@/classes/encounter/Encounter'
+  import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { obrBridge } from '@/services/obrBridge'
   import ActorTelemetry from '../gm/EncounterPanels/_components/ActorTelemetry.vue'
   import ActorLogs from '../gm/EncounterPanels/_components/ActorLogs.vue'
@@ -153,6 +155,7 @@ import { Pilot } from '@/classes/pilot/Pilot'
   import PcEndEncounter from './_components/PcEndEncounter.vue'
   import RunnerLeaveDialog from '../_shared/_RunnerLeaveDialog.vue'
   import { consumeLeaveGuardBypass } from '../_shared/useRunnerOptions'
+  import { combatantCombatVersion } from '../_shared/combatVersion'
   import CcPanelToggle from '@/ui/components/buttons/CCPanelToggle.vue'
 
 const panelMap: Record<string, any> = {
@@ -258,8 +261,14 @@ const panelMap: Record<string, any> = {
     )
   })
 
-  const combatant = computed(() => encounterCombatant.value ?? sheet.value!.Combatant)
-  const encounterInstance = computed(() => sharedEncounter.value ?? sheet.value!.EncounterInstance)
+  // A ficha só existe depois que `onMounted` carrega o store, e os watchers
+  // avaliam o valor inicial no setup: este acesso não pode estourar.
+  const combatant = computed(
+    () => (encounterCombatant.value ?? sheet.value?.Combatant) as CombatantData
+  )
+  const encounterInstance = computed(
+    () => (sharedEncounter.value ?? sheet.value?.EncounterInstance) as EncounterInstance
+  )
 
   // Conecta o jogador ao encontro geral: garante que seu combatente esteja
   // presente no encontro e transmite as informações para a mesa.
@@ -293,23 +302,49 @@ const panelMap: Record<string, any> = {
     void obrBridge.sendPlayerCombatantUpdate(enc.ID, newCombatant)
   }
 
-  // Sincroniza mudanças de combate do jogador para o mestre (delta, debounced)
+  // Autosave + sincronização: qualquer alteração de combate (PV, calor, ações,
+  // condições) precisa (a) sobreviver ao reload local e (b) chegar ao mestre.
+  //
+  // O painel edita a cópia do combatente que está no encontro compartilhado
+  // quando ele existe (`combatant`), e a ficha local quando não existe — então a
+  // persistência segue a mesma escolha, senão gravamos um estado que ninguém
+  // editou. A versão agregada cobre o mech (onde vivem PV/calor/ações).
+  const combatStateSignal = computed(() => {
+    // Sem ficha carregada (setup inicial) não há estado de combate para observar.
+    if (!sheet.value) return 0
+    return combatant.value ? combatantCombatVersion(combatant.value) : 0
+  })
+
   let syncTimeout: ReturnType<typeof setTimeout> | null = null
-  watch(
-    () => {
-      if (!sheet.value) return undefined
-      return combatant.value?.actor?.CombatController?.CombatLogVersion
-    },
-    () => {
-      const enc = sharedEncounter.value
-      const c = sheet.value ? combatant.value : null
-      if (!enc || !c) return
-      if (syncTimeout) clearTimeout(syncTimeout)
-      syncTimeout = setTimeout(() => {
-        void obrBridge.sendPlayerCombatantUpdate(enc.ID, c)
-      }, 600)
+
+  function persistCombatState() {
+    const currentSheet = sheet.value
+    if (!currentSheet) return
+    const enc = sharedEncounter.value
+    const c = combatant.value
+    if (enc && encounterCombatant.value) {
+      // Grava localmente o encontro editado; quem transmite o encontro completo
+      // para a mesa continua sendo o mestre (single-writer).
+      void enc.Save?.()
+      if (c) void obrBridge.sendPlayerCombatantUpdate(enc.ID, c)
+      return
     }
-  )
+    currentSheet.Save()
+  }
+
+  watch(combatStateSignal, () => {
+    if (syncTimeout) clearTimeout(syncTimeout)
+    syncTimeout = setTimeout(persistCombatState, 600)
+  })
+
+  onBeforeUnmount(() => {
+    if (syncTimeout) {
+      clearTimeout(syncTimeout)
+      syncTimeout = null
+    }
+    // Não deixa alteração pendente do debounce morrer com a janela.
+    persistCombatState()
+  })
 
   // Quando o encontro chega (ex.: broadcast do mestre), conecta o jogador
   watch(sharedEncounter, () => {
@@ -337,7 +372,8 @@ onBeforeRouteLeave(async () => {
     if (consumeLeaveGuardBypass()) return true
     const choice = await openLeaveDialog()
   if (choice === 'save') {
-      sheet.value?.Save()
+      // Persiste o container realmente editado (encontro compartilhado ou ficha).
+      persistCombatState()
       return true
   } else if (choice === 'exit') {
       return true

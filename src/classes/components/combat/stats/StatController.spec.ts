@@ -49,3 +49,35 @@ describe('CurrentStats', () => {
     expect(mech.CombatController.PendingCheckController.PendingChecks.length).toBe(1)
   })
 })
+
+describe('MaxStats', () => {
+  it('routes a write through setMax, bumps the combat version and stays observable', async () => {
+    const sc = reactive(mech.StatController) as any
+    const spy = vi.spyOn(mech.StatController, 'setMax')
+    const versionBefore = mech.CombatController.CombatLogVersion
+
+    const seen: number[] = []
+    watchEffect(() => {
+      seen.push(sc.MaxStats[StatKey.HP])
+    })
+
+    const next = (sc.MaxStats[StatKey.HP] as number) + 3
+    sc.MaxStats[StatKey.HP] = next
+    await nextTick()
+
+    expect(spy).toHaveBeenCalledWith(StatKey.HP, next)
+    expect(mech.StatController.getMax(StatKey.HP)).toBe(next)
+    expect(mech.CombatController.CombatLogVersion).toBeGreaterThan(versionBefore)
+    expect(seen.at(-1)).toBe(next)
+  })
+
+  it('does not bump the version when the value is unchanged', () => {
+    const sc = reactive(mech.StatController) as any
+    const current = sc.MaxStats[StatKey.HP]
+    const versionBefore = mech.CombatController.CombatLogVersion
+
+    sc.MaxStats[StatKey.HP] = current
+
+    expect(mech.CombatController.CombatLogVersion).toBe(versionBefore)
+  })
+})

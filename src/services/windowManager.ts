@@ -1,5 +1,11 @@
 import { ref } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
+import {
+  hideSheetWindow as hidePersistentSheetWindow,
+  isSheetWindowContext,
+  isSheetWindowHidden,
+  restoreSheetWindow,
+} from './mainWindow'
 
 export interface WindowPosition {
   left: number
@@ -104,6 +110,12 @@ class WindowManager {
     const ready = await this.ensureReady()
     if (!ready) return
 
+    // A janela persistente da ficha é criada por `mainWindow`.
+    // Aqui apenas aplicamos as dimensões salvas — nunca fechamos nem recriamos o iframe.
+    if (isSheetWindowContext()) {
+      this.isFloating.value = true
+    }
+
     if (!this.isFloating.value) {
       await this.alignRight()
     } else {
@@ -167,7 +179,7 @@ class WindowManager {
     if (!hash || hash === '#' || hash === '#/') {
       hash = '#/active-mode'
     }
-    if (hash.includes('/table-chat') || hash.includes('/table-sheets')) {
+    if (hash.includes('/table-chat')) {
       hash = '#/active-mode'
     }
     const cleanHash = hash.startsWith('#') ? hash : `#${hash}`
@@ -192,7 +204,7 @@ class WindowManager {
   public async syncWithObr(targetPos?: WindowPosition) {
     if (
       typeof window !== 'undefined' &&
-      (window.location.hash.includes('/table-chat') || window.location.hash.includes('/table-sheets'))
+      window.location.hash.includes('/table-chat')
     ) {
       return
     }
@@ -215,6 +227,14 @@ class WindowManager {
 
     const finalLeft = clampedPos.left
     const finalTop = clampedPos.top
+
+    // Nunca recriar/recarregar o iframe que já está montado: apenas reposiciona e
+    // redimensiona a janela persistente. `OBR.popover.open` no mesmo id descartaria
+    // todo o estado em memória (fichas abertas, saves pendentes).
+    if (await this.repositionExistingPopover(clampedPos, width, height)) {
+      this.isSyncing = false
+      return
+    }
 
     try {
       console.log('[WindowManager] 🚀 OBR.popover.open disparado com margens seguras:', {
@@ -262,6 +282,47 @@ class WindowManager {
   private wasAutoMinimized = false
 
   /**
+   * Reposiciona/redimensiona a janela persistente SEM recriar o iframe.
+   * Retorna `true` quando a janela já existia e foi apenas ajustada.
+   */
+  /**
+   * Reposiciona/redimensiona a janela persistente SEM recriar o iframe.
+   *
+   * Distingue "não existe" de "existe e está oculta": uma janela oculta está em
+   * 0×0 de propósito (`collapsePopoverSize`), e redimensioná-la aqui a traria de
+   * volta à tela sem o usuário pedir. Nesse caso respondemos `true` (o iframe foi
+   * reaproveitado) sem tocar nas dimensões.
+   */
+  private async repositionExistingPopover(
+    pos: WindowPosition,
+    width: number,
+    height: number
+  ): Promise<boolean> {
+    if (!OBR.isAvailable) return false
+    try {
+      const existingWidth = await OBR.popover.getWidth(OBR_POPOVER_ID).catch(() => undefined)
+      if (existingWidth === undefined || existingWidth === null) return false
+
+      if (existingWidth <= 0) {
+        console.log('[WindowManager] Janela persistente existe porém oculta (0×0); preservando.')
+        return true
+      }
+
+      await OBR.popover.setWidth(OBR_POPOVER_ID, width)
+      await OBR.popover.setHeight(OBR_POPOVER_ID, height)
+      console.log('[WindowManager] ♻️ Janela persistente reaproveitada (sem recarregar o iframe):', {
+        left: pos.left,
+        top: pos.top,
+        width,
+        height,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Minimiza temporariamente a janela durante uma rolagem de dados
    * e a restaura automaticamente após a duração especificada (em segundos).
    */
@@ -277,7 +338,8 @@ class WindowManager {
 
     this.restoreTimeout = setTimeout(() => {
       if (this.wasAutoMinimized) {
-        void this.restore()
+        // Nunca reexibe uma janela que o usuário ocultou de propósito.
+        if (!isSheetWindowHidden()) void this.restore()
         this.wasAutoMinimized = false
       }
       this.restoreTimeout = null
@@ -296,17 +358,32 @@ class WindowManager {
    * Alterna entre minimizado (apenas barra) e tamanho completo
    */
   public async toggleMinimize() {
+    if (isSheetWindowHidden()) {
+      await this.reopenWindow()
+      return
+    }
     this.cancelRollMinimize()
     this.isMinimized.value = !this.isMinimized.value
     await this.applyHeight()
   }
 
   public async minimize() {
+    if (isSheetWindowHidden()) return
     this.isMinimized.value = true
     await this.applyHeight()
   }
 
+  /**
+   * Restaura a janela ao tamanho completo.
+   *
+   * Se ela estiver OCULTA (0×0 + `display:none`), o caminho correto não é
+   * redimensionar: é reexibir, ou seja, `reopenWindow()`.
+   */
   public async restore() {
+    if (isSheetWindowHidden()) {
+      await this.reopenWindow()
+      return
+    }
     this.cancelRollMinimize()
     this.isMinimized.value = false
     await this.applyHeight()
@@ -315,6 +392,14 @@ class WindowManager {
   private async applyHeight() {
     const height = this.isMinimized.value ? this.minHeight : this.defaultHeight
     const width = this.isMinimized.value ? 400 : this.currentWidth
+
+    // Uma janela oculta está em 0×0 de propósito. Redimensioná-la aqui (minimizar,
+    // restaurar ou o minimize automático de rolagem) a traria de volta à tela sem
+    // o usuário pedir — vale para o popover e para o action dock.
+    if (isSheetWindowHidden()) {
+      console.log('[WindowManager] Janela da ficha está oculta; dimensões preservadas.')
+      return
+    }
 
     if (OBR.isAvailable) {
       const ready = await this.ensureReady()
@@ -348,6 +433,8 @@ class WindowManager {
     if (!this.isMinimized.value && OBR.isAvailable) {
       const ready = await this.ensureReady()
       if (!ready) return
+      // Não expande uma janela oculta de propósito (0×0).
+      if (isSheetWindowHidden()) return
       const width = this.currentWidth
       try {
         await OBR.popover.setWidth(OBR_POPOVER_ID, width)
@@ -410,7 +497,7 @@ class WindowManager {
   public async alignRight(marginRight = OBR_SAFE_MARGIN.RIGHT, topMargin = OBR_SAFE_MARGIN.TOP_RIGHT) {
     if (
       typeof window !== 'undefined' &&
-      (window.location.hash.includes('/table-chat') || window.location.hash.includes('/table-sheets'))
+      window.location.hash.includes('/table-chat')
     ) {
       return
     }
@@ -432,7 +519,7 @@ class WindowManager {
   public async setPercentagePosition(leftPercent = 0.8, topPercent = 0.05) {
     if (
       typeof window !== 'undefined' &&
-      (window.location.hash.includes('/table-chat') || window.location.hash.includes('/table-sheets'))
+      window.location.hash.includes('/table-chat')
     ) {
       return
     }
@@ -457,7 +544,7 @@ class WindowManager {
   public async snapTo(corner: SnapCorner) {
     if (
       typeof window !== 'undefined' &&
-      (window.location.hash.includes('/table-chat') || window.location.hash.includes('/table-sheets'))
+      window.location.hash.includes('/table-chat')
     ) {
       return
     }
@@ -500,20 +587,52 @@ class WindowManager {
   }
 
   /**
-   * Fecha a janela no Owlbear Rodeo (seja no modo Action ou no modo Popover Flutuante)
+   * "Fecha" a janela da ficha.
+   *
+   * Importante: NÃO destrói o iframe. O app é apenas ocultado via CSS e continua
+   * montado, sincronizado e com todos os dados em memória — que é o que impede a
+   * perda de ficha ao abrir/fechar. Recriar o iframe (OBR.popover.open no mesmo id)
+   * ou removê-lo (OBR.popover.close) causava exatamente a perda relatada.
    */
   public async closeWindow() {
+    this.cancelRollMinimize()
+
+    if (isSheetWindowContext()) {
+      await hidePersistentSheetWindow()
+      return
+    }
+
+    // Não estamos dentro da janela persistente: encerra popovers auxiliares.
     if (!OBR.isAvailable) return
     const ready = await this.ensureReady()
     if (!ready) return
-
     try {
       await OBR.popover.close(OBR_POPOVER_ID)
     } catch {
       // ignore
     }
+  }
+
+  /** Reexibe a janela persistente (mesmo iframe) e sai do modo minimizado. */
+  public async reopenWindow() {
+    this.cancelRollMinimize()
+    this.isMinimized.value = false
+    if (isSheetWindowContext()) {
+      this.isFloating.value = true
+      await restoreSheetWindow()
+      return
+    }
+    await this.applyHeight()
+  }
+
+  /** Fecha (destrói) o iframe da janela persistente. Uso deliberado e explícito. */
+  public async destroyWindow() {
+    this.cancelRollMinimize()
+    if (!OBR.isAvailable) return
+    const ready = await this.ensureReady()
+    if (!ready) return
     try {
-      await OBR.action.close()
+      await OBR.popover.close(OBR_POPOVER_ID)
     } catch {
       // ignore
     }

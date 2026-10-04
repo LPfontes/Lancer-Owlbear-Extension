@@ -1,9 +1,15 @@
 import logger from '@/user/logger'
 import localforage from 'localforage'
+import { ref } from 'vue'
 
 const dbName = 'COMPCON Persistent'
 
 const memoryStores: Record<string, Map<string, string>> = {}
+
+/** Driver de armazenamento efetivamente em uso (informativo). */
+export const storageDriver = ref<'INDEXEDDB' | 'LOCALSTORAGE' | 'MEMORY'>('INDEXEDDB')
+/** `false` quando nem IndexedDB nem LocalStorage estão disponíveis. */
+export const storageIsDurable = ref(true)
 
 function getMemoryStore(collection: string): Map<string, string> {
   const col = collection.toLowerCase()
@@ -11,6 +17,20 @@ function getMemoryStore(collection: string): Map<string, string> {
     memoryStores[col] = new Map<string, string>()
   }
   return memoryStores[col]
+}
+
+/**
+ * Grava em memória — último recurso, quando não há driver durável.
+ *
+ * Ponto único de escrita em memória: sem ele, uma falha de persistência some sem
+ * deixar rastro, e a ficha "desaparece" no reload sem nenhuma pista.
+ */
+function writeMemory(collection: string, key: string, serialized: string): void {
+  getMemoryStore(collection).set(key, serialized)
+  logger.error(
+    `Storage: escrita em "${collection}" não pôde ser persistida e ficou apenas em memória. ` +
+      'As alterações serão perdidas no reload.',
+  )
 }
 
 function isPermissionDenied(err: any): boolean {
@@ -28,15 +48,94 @@ function isPermissionDenied(err: any): boolean {
 
 let isFallbackMode = false
 
-function enableFallbackDrivers() {
-  if (isFallbackMode) return
-  isFallbackMode = true
-  logger.warn('Storage: IndexedDB access restricted or denied in this environment. Falling back to LocalStorage/Memory storage.')
-  for (const store of Object.values(storeRegistry)) {
-    try {
-      void store.setDriver([localforage.LOCALSTORAGE])
-    } catch (_) {}
+/** O `localStorage` está realmente acessível neste contexto? */
+function localStorageWorks(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return false
+    const probe = '__cc_storage_probe__'
+    window.localStorage.setItem(probe, '1')
+    const ok = window.localStorage.getItem(probe) === '1'
+    window.localStorage.removeItem(probe)
+    return ok
+  } catch {
+    return false
   }
+}
+
+/** O IndexedDB está realmente utilizável neste contexto? */
+function indexedDbIsUsable(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.indexedDB) return false
+    if (localforage.supports && !localforage.supports(localforage.INDEXEDDB)) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Migra para um driver que funcione e ESPERA a troca de fato.
+ *
+ * `setDriver` é assíncrono: o driver só passa a valer no evento `ready`. Se
+ * chamarmos sem `await` e tentarmos gravar na linha seguinte, a escrita ainda
+ * roda no IndexedDB, falha de novo e o dado vai silenciosamente para a memória.
+ */
+async function ensureFallbackDrivers(): Promise<'LOCALSTORAGE' | 'MEMORY'> {
+  // Já estamos em LocalStorage: nada a fazer. Mas não retornamos cedo se a última
+  // tentativa terminou em MEMORY — uma nova carga pode conseguir driver durável.
+  if (isFallbackMode && storageDriver.value === 'LOCALSTORAGE') {
+    return 'LOCALSTORAGE'
+  }
+  isFallbackMode = true
+
+  if (!localStorageWorks()) {
+    storageDriver.value = 'MEMORY'
+    storageIsDurable.value = false
+    logger.error(
+      'Storage: IndexedDB e LocalStorage indisponíveis neste contexto. ' +
+        'As alterações não sobreviverão a um reload.',
+    )
+    return 'MEMORY'
+  }
+
+  const ready = Promise.all(
+    Object.values(storeRegistry).map(store =>
+      store.setDriver([localforage.LOCALSTORAGE]).catch(err => {
+        logger.error('Storage: falha ao trocar o driver para LocalStorage', {}, err)
+      }),
+    ),
+  )
+
+  // `ready()` não resolve quando o driver pedido não existe; o evento `ready` é o
+  // sinal confiável de que a troca terminou.
+  await Promise.race([
+    ready,
+    new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, 3000)
+      try {
+        localforage.ready(() => {
+          clearTimeout(timer)
+          resolve()
+        })
+      } catch {
+        clearTimeout(timer)
+        resolve()
+      }
+    }),
+  ])
+
+  // Confirma com uma escrita real — `setDriver` pode resolver sem ter trocado.
+  const resolved: 'LOCALSTORAGE' | 'MEMORY' = localStorageWorks() ? 'LOCALSTORAGE' : 'MEMORY'
+  storageDriver.value = resolved
+  storageIsDurable.value = resolved !== 'MEMORY'
+
+  if (resolved === 'MEMORY') {
+    logger.error('Storage: LocalStorage indisponível. Operando em memória — dados serão perdidos no reload.')
+  } else {
+    logger.warn('Storage: IndexedDB indisponível; operando em LocalStorage (cota menor).')
+  }
+
+  return resolved
 }
 
 function createStore(storeName: string, description: string): LocalForage {
@@ -69,30 +168,28 @@ const storeRegistry: Record<string, LocalForage> = {
   table_actions: createStore('table_actions', 'Stores Table Actions and Chat history'),
 }
 
-// Proactive test for IndexedDB permission in iframe
-if (typeof window !== 'undefined' && window.indexedDB) {
-  try {
-    const probe = window.indexedDB.open('__compcon_storage_probe__')
-    probe.onerror = () => {
-      enableFallbackDrivers()
-    }
-  } catch (_) {
-    enableFallbackDrivers()
-  }
-}
-
 const Initialize = async function () {
   localforage.config({
     name: dbName,
     driver: [localforage.INDEXEDDB, localforage.LOCALSTORAGE],
   })
+
+  // Resolve o driver já no boot: assim a primeira escrita não precisa descobrir
+  // (e falhar) que o IndexedDB está bloqueado neste contexto.
+  if (indexedDbIsUsable()) {
+    storageDriver.value = 'INDEXEDDB'
+    storageIsDurable.value = true
+    return
+  }
+
+  await ensureFallbackDrivers()
 }
 
 const SetValue = async function (key: string, value: any) {
   const serialized = JSON.stringify(value)
   const store = storeRegistry['settings']
   if (!store) {
-    getMemoryStore('settings').set(key, serialized)
+    writeMemory('settings', key, serialized)
     return value
   }
 
@@ -100,11 +197,13 @@ const SetValue = async function (key: string, value: any) {
     return await store.setItem(key, serialized)
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      // Precisa AGUARDAR a troca de driver: sem isso o retry roda no driver
+      // antigo, falha de novo e o dado vai silenciosamente para a memória.
+      await ensureFallbackDrivers()
       try {
         return await store.setItem(key, serialized)
       } catch (_) {
-        getMemoryStore('settings').set(key, serialized)
+        writeMemory('settings', key, serialized)
         return value
       }
     }
@@ -125,7 +224,7 @@ const GetValue = async function (key: string): Promise<any> {
     return JSON.parse(item)
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         const item = (await store.getItem(key)) as string
         if (item == null) return null
@@ -144,18 +243,18 @@ const SetItem = async function (collection: string, item: any) {
   if (typeof item === 'string') {
     const sr = storeRegistry[col]
     if (!sr) {
-      getMemoryStore(col).set(item, item)
+      writeMemory(col, item, item)
       return
     }
     try {
       await sr.setItem(item, item)
     } catch (err) {
       if (isPermissionDenied(err)) {
-        enableFallbackDrivers()
+        await ensureFallbackDrivers()
         try {
           await sr.setItem(item, item)
         } catch (_) {
-          getMemoryStore(col).set(item, item)
+          writeMemory(col, item, item)
         }
       }
     }
@@ -178,7 +277,7 @@ const SetItem = async function (collection: string, item: any) {
   const store = storeRegistry[col]
   const serialized = JSON.stringify(item)
   if (!store) {
-    getMemoryStore(col).set(id, serialized)
+    writeMemory(col, id, serialized)
     return
   }
 
@@ -186,11 +285,11 @@ const SetItem = async function (collection: string, item: any) {
     await store.setItem(id, serialized)
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         await store.setItem(id, serialized)
       } catch (_) {
-        getMemoryStore(col).set(id, serialized)
+        writeMemory(col, id, serialized)
       }
     } else {
       logger.error('Error saving item to collection', { collection, id }, err)
@@ -212,7 +311,7 @@ const GetItem = async function (collection: string, id: string) {
     return JSON.parse(item as string)
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         const item = await store.getItem(id)
         if (item == null) return null
@@ -238,7 +337,7 @@ const RemoveItem = async function (collection: string, id: string) {
     return await store.removeItem(id)
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         return await store.removeItem(id)
       } catch (_) {
@@ -265,7 +364,7 @@ const GetAll = async function (collection: string) {
     })
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         await store.iterate(function (value: any) {
           try {
@@ -296,7 +395,7 @@ const SetAll = async function (collection: string, items: any[]) {
       await store.clear()
     } catch (err) {
       if (isPermissionDenied(err)) {
-        enableFallbackDrivers()
+        await ensureFallbackDrivers()
       }
     }
   }
@@ -316,7 +415,7 @@ const ClearAll = async function (collection: string) {
     return await store.clear()
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         return await store.clear()
       } catch (_) {}
@@ -333,7 +432,7 @@ const GetLength = async function (collection: string) {
     return await store.length()
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         return await store.length()
       } catch (_) {
@@ -353,7 +452,7 @@ const GetKeys = async function (collection: string) {
     return await store.keys()
   } catch (err) {
     if (isPermissionDenied(err)) {
-      enableFallbackDrivers()
+      await ensureFallbackDrivers()
       try {
         return await store.keys()
       } catch (_) {

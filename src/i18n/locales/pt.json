@@ -185,7 +185,8 @@
     },
     "shiftEnterNewline": "Shift + Enter para nova linha",
     "unknown": "Desconhecido",
-    "deselectAll": "Desmarcar Tudo"
+    "deselectAll": "Desmarcar Tudo",
+    "pilotDisplayName": "{callsign} // {name}"
   },
   "print": {
     "generalOptions": "Opções Gerais de Impressão"
@@ -4417,7 +4418,6 @@
     "bottomLeftDesc": "Canto inferior esquerdo",
     "centerDesc": "Meio da tela",
     "restoreWindow": "Restaurar Janela",
-    "closeWindow": "Fechar Janela",
     "collapseHeight": "Reduzir Altura da Janela",
     "expandHeight": "Expandir Altura da Janela",
     "minimizeToBar": "Minimizar para Barra Flutuante",

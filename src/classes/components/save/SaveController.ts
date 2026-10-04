@@ -1,5 +1,6 @@
 import { ISaveable } from './ISaveable'
 import { SetItem, RemoveItem } from '@/io/Storage'
+import { registerPersistenceFlusher } from '@/io/persistenceFlush'
 import logger from '@/user/logger'
 import * as _ from 'lodash-es'
 import { assertController } from '../../utility/assertController'
@@ -26,11 +27,29 @@ class SaveController {
   public RemoteAuthor = ''
   public RemoteCollection = ''
 
+  /**
+   * Gravação agrupada: rajadas de alterações (stats, contadores, condições) viram
+   * uma única escrita. `leading` garante resposta imediata; `trailing` garante que
+   * o estado final sempre chega ao storage — e `flushPendingSaves()` força a
+   * gravação quando a janela da ficha é ocultada ou a página é descarregada.
+   */
+  private readonly _throttledSave: (() => void) & { flush: () => void }
+
+  /** Argumento repassado no `flush` (true = gravação silenciosa, não marca dirty). */
+  private _flushSilent = false
+
   public constructor(parent: ISaveable) {
     this.Parent = parent
     this.DeleteTime = 0
 
-    this.save = _.throttle(this._save, 1500).bind(this)
+    this._throttledSave = _.throttle(() => {
+      void this._save(this._flushSilent)
+    }, 1500, {
+      leading: true,
+      trailing: true,
+    })
+
+    registerPersistenceFlusher(() => this._throttledSave.flush())
   }
 
   public static NewSaveData(): ISaveData {
@@ -53,7 +72,11 @@ class SaveController {
       )
     }
 
-    this._save(silent)
+    // O throttle agrupa rajadas: 1 escrita por janela de 1,5s, sempre com o
+    // estado mais recente (trailing). `flushPendingSaves()` força a gravação
+    // imediata quando a janela da ficha é ocultada ou a página é descarregada.
+    this._flushSilent = silent
+    this._throttledSave()
   }
 
   private async _save(silent = false) {

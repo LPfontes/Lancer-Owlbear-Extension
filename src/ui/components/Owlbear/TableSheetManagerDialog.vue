@@ -15,10 +15,10 @@
           </v-avatar>
           <div>
             <div class="text-subtitle-1 font-weight-bold text-uppercase" style="letter-spacing: 1.5px; line-height: 1.2;">
-              Gerenciador de Fichas da Mesa
+              Gerenciador de Fichas (MongoDB)
             </div>
             <div class="text-caption text-grey-lighten-2">
-              Sincronização e controle de fichas compartilhadas com a sala Owlbear
+              Catálogo da sala — salvar, carregar e apagar fichas no banco
             </div>
           </div>
         </div>
@@ -76,13 +76,16 @@
             align-tabs="start"
             class="border-b-0"
           >
+            <v-tab value="catalog" prepend-icon="mdi-database-outline" class="font-weight-bold text-accent">
+              Catálogo ({{ coldSheets.length }})
+            </v-tab>
             <v-tab value="pilots" prepend-icon="cc:pilot" class="font-weight-bold">
               Pilotos da Mesa ({{ pilotsList.length }})
             </v-tab>
             <v-tab value="npcs" prepend-icon="cc:npc" class="font-weight-bold">
               NPCs da Mesa ({{ npcsList.length }})
             </v-tab>
-            <v-tab value="add" prepend-icon="mdi-plus-circle-outline" class="font-weight-bold text-accent">
+            <v-tab value="add" prepend-icon="mdi-plus-circle-outline" class="font-weight-bold">
               Adicionar Ficha
             </v-tab>
           </v-tabs>
@@ -214,6 +217,16 @@
 
                 <!-- Action Buttons -->
                 <div class="d-flex align-center ga-1">
+                  <v-btn
+                    icon="mdi-database-arrow-up"
+                    variant="text"
+                    color="success"
+                    size="small"
+                    title="Salvar no catálogo (MongoDB)"
+                    :loading="exportingId === pilot.ID"
+                    @click="sendPilotToCold(pilot)"
+                  />
+
                   <v-btn
                     icon="mdi-broadcast"
                     variant="text"
@@ -369,6 +382,16 @@
 
                 <!-- Action Buttons -->
                 <div class="d-flex align-center ga-1">
+                  <v-btn
+                    icon="mdi-database-arrow-up"
+                    variant="text"
+                    color="success"
+                    size="small"
+                    title="Salvar no catálogo (MongoDB)"
+                    :loading="exportingId === npc.ID"
+                    @click="sendNpcToCold(npc)"
+                  />
+
                   <v-btn
                     icon="mdi-broadcast"
                     variant="text"
@@ -546,6 +569,146 @@
               </v-card>
             </v-col>
           </v-row>
+        </div>
+
+        <!-- TAB 4: CATÁLOGO (MongoDB / Cold Storage) -->
+        <div v-else-if="activeTab === 'catalog'">
+          <!-- Enviar fichas para o catálogo -->
+          <v-card class="mb-4 bg-grey-darken-3 border-accent pa-3">
+            <div class="d-flex align-center ga-2 mb-3 text-accent">
+              <v-icon icon="mdi-database-arrow-up" size="20" />
+              <span class="text-subtitle-2 font-weight-bold text-uppercase">Enviar ficha para o catálogo</span>
+            </div>
+            <div class="d-flex flex-wrap ga-3">
+              <div class="flex-grow-1" style="min-width: 260px;">
+                <v-select
+                  v-model="selectedCatalogPilotId"
+                  :items="localPilotsOptions"
+                  item-title="title"
+                  item-value="id"
+                  label="Piloto local"
+                  variant="outlined"
+                  density="compact"
+                  prepend-inner-icon="cc:pilot"
+                  clearable
+                  hide-details
+                  class="mb-2"
+                />
+                <v-btn
+                  color="accent"
+                  variant="tonal"
+                  block
+                  prepend-icon="mdi-database-arrow-up"
+                  :disabled="!selectedCatalogPilotId"
+                  :loading="exportingId === selectedCatalogPilotId"
+                  @click="sendCatalogPilot"
+                >
+                  Salvar Piloto no Catálogo
+                </v-btn>
+              </div>
+
+              <div class="flex-grow-1" style="min-width: 260px;">
+                <v-select
+                  v-model="selectedCatalogNpcId"
+                  :items="localNpcsOptions"
+                  item-title="title"
+                  item-value="id"
+                  label="NPC local"
+                  variant="outlined"
+                  density="compact"
+                  prepend-inner-icon="cc:npc"
+                  clearable
+                  hide-details
+                  class="mb-2"
+                />
+                <v-btn
+                  color="secondary"
+                  variant="tonal"
+                  block
+                  prepend-icon="mdi-database-arrow-up"
+                  :disabled="!selectedCatalogNpcId"
+                  :loading="exportingId === selectedCatalogNpcId"
+                  @click="sendCatalogNpc"
+                >
+                  Salvar NPC no Catálogo
+                </v-btn>
+              </div>
+            </div>
+          </v-card>
+
+          <div class="d-flex align-center justify-space-between mb-3">
+            <div class="text-caption text-grey">
+              Fichas salvas no catálogo desta sala. Carregue para a mesa ou apague do banco.
+            </div>
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="accent"
+              prepend-icon="mdi-refresh"
+              :loading="isLoadingCold"
+              @click="refreshColdCatalog"
+            >
+              Atualizar
+            </v-btn>
+          </div>
+
+          <div v-if="isLoadingCold" class="text-center py-10">
+            <v-progress-circular indeterminate color="accent" size="32" />
+            <div class="text-caption text-grey mt-2">Consultando catálogo da sala...</div>
+          </div>
+
+          <div v-else-if="filteredColdSheets.length === 0" class="text-center py-10 text-grey">
+            <v-icon icon="mdi-database-off-outline" size="48" class="mb-3 opacity-60" />
+            <div class="text-h6 text-grey-lighten-1">Nenhuma ficha no catálogo</div>
+            <div class="text-caption text-grey">
+              Use o botão verde de banco de dados nos cards de Piloto/NPC para salvar fichas aqui.
+            </div>
+          </div>
+
+          <div v-else class="d-flex flex-column ga-2">
+            <v-card
+              v-for="s in filteredColdSheets"
+              :key="s.sheetId"
+              variant="outlined"
+              class="pa-3 bg-grey-darken-3 border-grey-darken-2 d-flex align-center justify-space-between flex-wrap ga-2"
+            >
+              <div class="d-flex align-center ga-3">
+                <v-avatar size="40" rounded="0" :color="s.entityType === 'pilot' ? 'primary' : 'secondary'">
+                  <v-icon :icon="s.entityType === 'pilot' ? 'cc:pilot' : 'cc:npc'" size="20" color="white" />
+                </v-avatar>
+                <div>
+                  <div class="font-weight-bold text-white text-body-2">
+                    {{ s.name }}
+                    <span v-if="s.callsign" class="text-grey">({{ s.callsign }})</span>
+                  </div>
+                  <div class="text-caption text-grey-lighten-1">
+                    {{ s.entityType === 'pilot' ? 'PILOTO' : 'NPC' }} • revisão {{ s.revision }} • {{ new Date(s.updatedAt).toLocaleString() }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="d-flex align-center ga-2">
+                <v-btn
+                  size="small"
+                  color="accent"
+                  variant="flat"
+                  prepend-icon="mdi-database-arrow-down"
+                  :loading="loadingColdId === s.sheetId"
+                  @click="loadFromCold(s)"
+                >
+                  Carregar na Mesa
+                </v-btn>
+                <v-btn
+                  size="small"
+                  color="error"
+                  variant="tonal"
+                  icon="mdi-trash-can-outline"
+                  title="Apagar do catálogo (não remove da mesa)"
+                  @click="confirmDeleteFromCold(s)"
+                />
+              </div>
+            </v-card>
+          </div>
         </div>
       </v-card-text>
 
@@ -754,6 +917,8 @@ import { NpcStore } from '@/features/gm/store/npc_store'
 import { PilotGroupStore } from '@/features/pilot_management/store/PilotGroupStore'
 import { obrBridge } from '@/services/obrBridge'
 import { openStandardWindow } from '@/services/tableSheetsWindow'
+import { exportSheetToCold, importSheetFromCold, deleteSheetFromCold } from '@/services/roomColdStorage'
+import { listRoomSheets, type ColdSheetSummary } from '@/io/apis/roomStorage'
 import ImportDialog from '@/features/active_mode/_components/ImportDialog.vue'
 import OBR from '@owlbear-rodeo/sdk'
 
@@ -761,12 +926,20 @@ const router = useRouter()
 
 const isOpen = ref(false)
 const showImportModal = ref(false)
-const activeTab = ref<'pilots' | 'npcs' | 'add'>('pilots')
+const activeTab = ref<'pilots' | 'npcs' | 'add' | 'catalog'>('catalog')
 const searchQuery = ref('')
 const isRefreshing = ref(false)
 const isPublishingPilot = ref(false)
 const isPublishingNpc = ref(false)
 const isDeleting = ref(false)
+
+// Catálogo (MongoDB / cold storage)
+const coldSheets = ref<ColdSheetSummary[]>([])
+const isLoadingCold = ref(false)
+const exportingId = ref<string | null>(null)
+const loadingColdId = ref<string | null>(null)
+const selectedCatalogPilotId = ref<string | null>(null)
+const selectedCatalogNpcId = ref<string | null>(null)
 
 const selectedLocalPilotId = ref<string | null>(null)
 const selectedLocalNpcId = ref<string | null>(null)
@@ -840,6 +1013,17 @@ const filteredNpcs = computed(() => {
   })
 })
 
+const filteredColdSheets = computed(() => {
+  const query = searchQuery.value?.trim().toLowerCase()
+  if (!query) return coldSheets.value
+  return coldSheets.value.filter((s) => {
+    const nameMatch = s.name?.toLowerCase().includes(query)
+    const callsignMatch = s.callsign?.toLowerCase().includes(query)
+    const typeMatch = (s.entityType === 'pilot' ? 'piloto' : 'npc').includes(query)
+    return nameMatch || callsignMatch || typeMatch
+  })
+})
+
 // Opções para o select de publicação
 const localPilotsOptions = computed(() => {
   return (PilotStore().Pilots || []).map((p: any) => ({
@@ -876,6 +1060,95 @@ async function refreshTableData() {
   } catch (err) {
     console.warn('[TableSheetManager] Erro ao atualizar lista de tokens/roster:', err)
   }
+}
+
+async function refreshColdCatalog() {
+  if (!OBR.room?.id) return
+  isLoadingCold.value = true
+  try {
+    coldSheets.value = await listRoomSheets(OBR.room.id)
+  } catch (err) {
+    console.warn('[TableSheetManager] Erro ao carregar catálogo:', err)
+    if (OBR.isAvailable) {
+      await OBR.notification.show('Não foi possível carregar o catálogo (MongoDB).').catch(() => {})
+    }
+  } finally {
+    isLoadingCold.value = false
+  }
+}
+
+async function sendPilotToCold(pilot: any) {
+  exportingId.value = pilot.ID
+  try {
+    await exportSheetToCold(pilot, 'pilot', async () =>
+      window.confirm('A ficha no servidor mudou. Sobrescrever com a versão local?')
+    )
+  } catch (err) {
+    console.error('[TableSheetManager] Erro ao salvar piloto no catálogo:', err)
+  } finally {
+    exportingId.value = null
+  }
+}
+
+async function sendNpcToCold(npc: any) {
+  exportingId.value = npc.ID
+  try {
+    await exportSheetToCold(npc, 'npc', async () =>
+      window.confirm('A ficha no servidor mudou. Sobrescrever com a versão local?')
+    )
+  } catch (err) {
+    console.error('[TableSheetManager] Erro ao salvar NPC no catálogo:', err)
+  } finally {
+    exportingId.value = null
+  }
+}
+
+async function loadFromCold(s: ColdSheetSummary) {
+  loadingColdId.value = s.sheetId
+  try {
+    await importSheetFromCold(s.sheetId, s.entityType)
+    await refreshColdCatalog()
+    await refreshTableData()
+  } catch (err) {
+    console.error('[TableSheetManager] Erro ao carregar do catálogo:', err)
+    if (OBR.isAvailable) {
+      await OBR.notification.show(`Não foi possível carregar "${s.name}".`).catch(() => {})
+    }
+  } finally {
+    loadingColdId.value = null
+  }
+}
+
+function confirmDeleteFromCold(s: ColdSheetSummary) {
+  confirmTitle.value = `Apagar "${s.name}" do catálogo?`
+  confirmMessage.value =
+    'Remove a ficha do banco (MongoDB) da sala. NÃO remove da mesa Owlbear nem do seu COMP/CON local.'
+  confirmActionCallback = async () => {
+    await deleteSheetFromCold(s.sheetId)
+    await refreshColdCatalog()
+    if (OBR.isAvailable) {
+      await OBR.notification.show(`"${s.name}" removido do catálogo.`)
+    }
+  }
+  showConfirmDialog.value = true
+}
+
+async function sendCatalogPilot() {
+  if (!selectedCatalogPilotId.value) return
+  const pilot = PilotStore().Pilots.find((p: any) => (p.ID || p.id) === selectedCatalogPilotId.value)
+  if (!pilot) return
+  await sendPilotToCold(pilot)
+  selectedCatalogPilotId.value = null
+  await refreshColdCatalog()
+}
+
+async function sendCatalogNpc() {
+  if (!selectedCatalogNpcId.value) return
+  const npc = NpcStore().Npcs.find((n: any) => (n.ID || n.id) === selectedCatalogNpcId.value)
+  if (!npc) return
+  await sendNpcToCold(npc)
+  selectedCatalogNpcId.value = null
+  await refreshColdCatalog()
 }
 
 async function syncTableNow() {
@@ -1066,58 +1339,16 @@ async function bindSceneToken(token: any) {
   try {
     const { id: sheetId, type: sheetType, name, raw } = bindTargetSheet.value
 
-    let hp = { current: 10, max: 10 }
-    let heat = { current: 0, max: 6 }
-    let structure = { current: 4, max: 4 }
-    let stress = { current: 4, max: 4 }
-    let mechId = undefined
-
-    if (sheetType === 'pilot' && raw) {
-      mechId = raw.ActiveMech?.ID
-      const currentHP = raw.ActiveMech?.CurrentHP ?? raw.ActiveMech?.MaxHP ?? 10
-      const maxHP = raw.ActiveMech?.MaxHP ?? currentHP ?? 10
-      hp = { current: currentHP, max: maxHP }
-
-      const currentHeat = raw.ActiveMech?.CurrentHeat ?? 0
-      const maxHeat = raw.ActiveMech?.HeatCap ?? 6
-      heat = { current: currentHeat, max: maxHeat }
-
-      const currentStruct = raw.ActiveMech?.CurrentStructure ?? 4
-      const maxStruct = raw.ActiveMech?.MaxStructure ?? 4
-      structure = { current: currentStruct, max: maxStruct }
-
-      const currentStress = raw.ActiveMech?.CurrentStress ?? 4
-      const maxStress = raw.ActiveMech?.MaxStress ?? 4
-      stress = { current: currentStress, max: maxStress }
-    } else if (sheetType === 'npc' && raw) {
-      const maxHP = raw.Stats?.HP ?? 10
-      const currentHP = raw.CurrentHP ?? maxHP
-      hp = { current: currentHP, max: maxHP }
-
-      const maxHeat = raw.Stats?.HeatCap ?? 0
-      const currentHeat = raw.CurrentHeat ?? 0
-      heat = { current: currentHeat, max: maxHeat }
-
-      const maxStruct = raw.Stats?.Structure ?? 1
-      const currentStruct = raw.CurrentStructure ?? maxStruct
-      structure = { current: currentStruct, max: maxStruct }
-
-      const maxStress = raw.Stats?.Stress ?? 1
-      const currentStress = raw.CurrentStress ?? maxStress
-      stress = { current: currentStress, max: maxStress }
-    }
-
-    const activeStatuses = (raw.CombatController?.Statuses || []).map((s: any) => s.status.ID)
+    // O token guarda apenas o LINK (sheetType + sheetId + IDs de mecha). O estado
+    // de combate continua na ficha: nada de HP/heat/estrutura/stress nos metadados.
+    const mechId = sheetType === 'pilot' ? raw?.ActiveMech?.ID : undefined
+    const activeStatuses = (raw?.CombatController?.Statuses || []).map((s: any) => s.status.ID)
 
     await obrBridge.bindTokenToSheet(token.id, {
       sheetType,
       sheetId,
       mechId,
       name,
-      hp,
-      heat,
-      structure,
-      stress,
       statuses: activeStatuses,
     })
 
@@ -1323,6 +1554,7 @@ function navigateToCreateNpc() {
 function handleOpenTableSheets() {
   isOpen.value = true
   void refreshTableData()
+  void refreshColdCatalog()
 }
 
 function handleSyncEvent() {
@@ -1340,6 +1572,7 @@ onMounted(async () => {
   window.addEventListener('compcon-npc-removed', handleSyncEvent)
   await obrBridge.syncFromRoom().catch(() => {})
   await refreshTableData()
+  await refreshColdCatalog().catch(() => {})
 })
 
 onUnmounted(() => {

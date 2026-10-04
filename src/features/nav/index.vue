@@ -443,7 +443,6 @@
   import CreditsPage from './pages/Credits.vue'
   import OptionsPage from './pages/Options/index.vue'
   import ContentPage from './pages/ExtraContent/index.vue'
-  import CloudPage from './pages/Cloud.vue'
   import AchievementsPage from './pages/Achievements.vue'
   import Reference from '../compendium/Views/Reference/Reference.vue'
   import SearchComponent from './search/index.vue'
