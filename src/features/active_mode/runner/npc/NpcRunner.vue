@@ -162,7 +162,7 @@
     }
   })
 
-  // Sincroniza mudanças de combate do NPC para o encontro geral (mestre é autoritativo)
+  // Salva localmente as mudanças de combate do NPC no encontro geral.
   // A versão agregada cobre camadas de eidolon e deployables além do ator.
   let syncTimeout: ReturnType<typeof setTimeout> | null = null
   watch(
@@ -173,7 +173,6 @@
       if (syncTimeout) clearTimeout(syncTimeout)
       syncTimeout = setTimeout(() => {
         void enc.Save?.()
-        void obrBridge.broadcastActiveEncounter(enc)
       }, 600)
     }
   )

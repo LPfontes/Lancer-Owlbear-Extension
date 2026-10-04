@@ -311,20 +311,16 @@
     await EncounterStore().AddEncounterInstance(instance)
     await EncounterStore().SetActiveEncounter(instance.ID)
 
-    // Envia o encontro ativo para o outro iframe (Owlbear Rodeo / Combat Tracker) e sincroniza com a mesa
     try {
-      const { obrBridge } = await import('@/services/obrBridge')
-      await obrBridge.broadcastActiveEncounter(instance)
-
       const { useTableActionStore } = await import('@/stores/tableActionStore')
       void useTableActionStore().postAction({
         senderName: 'COMP/CON',
         category: 'full_action',
         title: `Combate Iniciado — ${instance.Name}`,
-        detail: `O encontro foi criado e sincronizado em tempo real com o Combat Tracker. Rodada 1.`,
+        detail: `O encontro foi criado no Combat Tracker. Rodada 1.`,
       })
     } catch (err) {
-      console.warn('[NewEncounter] Erro ao sincronizar encontro via obrBridge:', err)
+      console.warn('[NewEncounter] Erro ao registrar a ação de combate:', err)
     }
 
     if (launch) router.push('gm-encounter-runner')

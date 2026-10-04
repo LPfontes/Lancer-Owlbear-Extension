@@ -23,15 +23,30 @@ npm run test:run       # Vitest single-run (dois projetos: domain e component)
 1. **Estado ativo (tempo real)** — `src/services/obrBridge.ts`. Tudo via SDK do Owlbear:
    `OBR.room.setMetadata/getMetadata/onMetadataChange`, `OBR.scene.*`, broadcast e item metadata
    de tokens. É a **fonte da verdade durante o jogo**.
-2. **Orquestração** — `src/services/roomColdStorage.ts` + `src/io/apis/roomStorage.ts`.
-   Ações **explícitas** de Enviar/Carregar/Apagar.
+2. **Orquestração** — `src/services/roomColdStorage.ts` + `src/services/sheetColdSync.ts` +
+   `src/io/apis/roomStorage.ts`. Ações **explícitas** de Enviar/Carregar/Apagar **e** a
+   sincronização automática das fichas do Hangar/roster.
 3. **Cold storage (MongoDB Atlas)** — `api/rooms/**` (Vercel Functions) + `server/coldStorage.mjs`.
    CRUD estreito sobre a coleção `room_sheets`, particionado por `room.id`.
 
-**Regra de ouro:** a camada 1 **nunca** fala com a camada 3 a cada clique/rolagem/atributo. Só a
-camada 2 fala com a 3, e apenas quando o usuário aciona um botão. **Não** adicione chamadas de
-Mongo/HTTP dentro de `onMetadataChange`, `onMetadataChange` da cena nem em watchers de atributo
-(HP, heat, etc.).
+**Regra de ouro:** a camada 1 **nunca** fala com a camada 3 a cada clique/rolagem/atributo. **Não**
+adicione chamadas de Mongo/HTTP dentro de `onMetadataChange`, `onMetadataChange` da cena nem em
+watchers de atributo (HP, heat, etc.).
+
+A sincronização automática das fichas é a **única** porta que não passa por um botão, e ela é
+deliberadamente estreita: o gatilho vem de eventos de ficha (importada/criada, salva, excluída em
+definitivo), nunca de estado de combate. Quem garante isso é o `sheetColdSync`, que:
+
+- só aceita a **ficha canônica** do `PilotStore().Pilots` / `NpcStore().Npcs` (o mesmo objeto, via
+  `toRaw`). As fichas do modo ativo são cópias desacopladas (`pilot_sheets`, `active_encounters`) e
+  mudam a cada PV/calor/ação — ficam de fora;
+- **coalesce** a rajada num único PUT por ficha, com uma requisição em voo por vez, debounce de 3 s e
+  teto de espera de 10 s (o `SaveController` grava duas vezes por `save()`), respeitando o rate
+  limit de 120 req/min por IP;
+- é **silencioso** (sem `OBR.notification`) e **last-write-wins** (não envia `expectedRevision`).
+
+Se for mexer aqui: nada de `save()` de instância de encontro, nada de watcher de atributo, e nunca
+chame `pushSheetToCold`/`purgeSheetFromCold` direto dos componentes — use a fila.
 
 ## Convenções críticas
 
@@ -78,7 +93,8 @@ Mongo/HTTP dentro de `onMetadataChange`, `onMetadataChange` da cena nem em watch
 | `api/rooms/[roomId]/sheets.js` | `GET` lista (projeção sem `payload`) |
 | `api/rooms/[roomId]/sheets/[sheetId].js` | `GET`/`PUT` (upsert + revision)/`DELETE` |
 | `src/io/apis/roomStorage.ts` | Client HTTP (`listRoomSheets`, `getRoomSheet`, `saveRoomSheet`, `deleteRoomSheet`) |
-| `src/services/roomColdStorage.ts` | `exportSheetToCold`, `importSheetFromCold`, `deleteSheetFromCold` |
+| `src/services/roomColdStorage.ts` | Ações explícitas: `exportSheetToCold`, `importSheetFromCold`, `deleteSheetFromCold`; e as portas automáticas `pushSheetToCold`/`purgeSheetFromCold` (silenciosas, LWW) |
+| `src/services/sheetColdSync.ts` | Fila da sincronização automática: gatilhos de importar/salvar/excluir, coalescência, retry e estado por ficha |
 | `.env.example` | `MONGODB_URI`, `MONGODB_DB` |
 | `docs/arquitetura-persistencia-cold-storage.md` | arquitetura completa |
 

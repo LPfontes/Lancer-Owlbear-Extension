@@ -134,7 +134,6 @@
   import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import { PilotStore } from '@/features/pilot_management/store'
   import { EncounterStore } from '@/stores'
-  import { makeCombatant } from '@/classes/encounter/Encounter'
   import type { CombatantData } from '@/classes/encounter/Encounter'
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
   import { obrBridge } from '@/services/obrBridge'
@@ -233,8 +232,6 @@ const panelMap: Record<string, any> = {
       }
     }
 
-    await connectToEncounter()
-
     // Cria automaticamente o token no Owlbear Rodeo para esta ficha (se habilitado)
     if (sheet.value) {
       void obrBridge.createTokenForSheet(sheet.value.Combatant?.actor, 'pilot').catch(() => {})
@@ -270,40 +267,8 @@ const panelMap: Record<string, any> = {
     () => (sharedEncounter.value ?? sheet.value?.EncounterInstance) as EncounterInstance
   )
 
-  // Conecta o jogador ao encontro geral: garante que seu combatente esteja
-  // presente no encontro e transmite as informações para a mesa.
-  async function connectToEncounter() {
-    const enc = sharedEncounter.value
-    if (!enc || !sheet.value) return
-    const p = sheet.value.Combatant.actor as Pilot
-
-    const existing = enc.Combatants.find(
-      (c: any) => c.type === 'pilot' && (c.actor.ID === p.ID || c.id === p.ID)
-    )
-    if (existing) return // já está no encontro do mestre; renderiza a versão autoritativa
-
-    // Jogador ainda não está no encontro: envia o próprio combatente (delta)
-    const pc = Pilot.Deserialize(JSON.parse(JSON.stringify(Pilot.Serialize(p))))
-    if (!pc.ActiveMech && pc.Mechs?.length) pc.ActiveMech = pc.Mechs[0]
-    pc.SetStats()
-    pc.CombatController?.ResetForEncounter?.()
-    pc.CombatController?.StatController?.resetCurrentStats?.()
-
-    const newCombatant = makeCombatant(pc, 'pilot', {
-      id: pc.ID,
-      index: -1,
-      number: -1,
-      side: 'ally',
-      status: undefined,
-      pilotStatus: undefined,
-      mechStatus: undefined,
-    })
-
-    void obrBridge.sendPlayerCombatantUpdate(enc.ID, newCombatant)
-  }
-
-  // Autosave + sincronização: qualquer alteração de combate (PV, calor, ações,
-  // condições) precisa (a) sobreviver ao reload local e (b) chegar ao mestre.
+  // Autosave local: qualquer alteração de combate (PV, calor, ações, condições)
+  // precisa sobreviver ao reload. O encontro ativo vive só nesta janela.
   //
   // O painel edita a cópia do combatente que está no encontro compartilhado
   // quando ele existe (`combatant`), e a ficha local quando não existe — então a
@@ -321,12 +286,9 @@ const panelMap: Record<string, any> = {
     const currentSheet = sheet.value
     if (!currentSheet) return
     const enc = sharedEncounter.value
-    const c = combatant.value
     if (enc && encounterCombatant.value) {
-      // Grava localmente o encontro editado; quem transmite o encontro completo
-      // para a mesa continua sendo o mestre (single-writer).
+      // Grava localmente o encontro editado.
       void enc.Save?.()
-      if (c) void obrBridge.sendPlayerCombatantUpdate(enc.ID, c)
       return
     }
     currentSheet.Save()
@@ -344,11 +306,6 @@ const panelMap: Record<string, any> = {
     }
     // Não deixa alteração pendente do debounce morrer com a janela.
     persistCombatState()
-  })
-
-  // Quando o encontro chega (ex.: broadcast do mestre), conecta o jogador
-  watch(sharedEncounter, () => {
-    void connectToEncounter()
   })
 
 function selectPanel(p: string) {

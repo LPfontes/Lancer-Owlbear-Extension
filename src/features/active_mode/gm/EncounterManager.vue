@@ -551,18 +551,15 @@
   async function launch(encounter: EncounterInstance) {
     await EncounterStore().AssignActiveEncounter(encounter)
     try {
-      const { obrBridge } = await import('@/services/obrBridge')
-      await obrBridge.broadcastActiveEncounter(encounter)
-
       const { useTableActionStore } = await import('@/stores/tableActionStore')
       void useTableActionStore().postAction({
         senderName: 'COMP/CON',
         category: 'full_action',
-        title: `Combate Sincronizado — ${encounter.Name}`,
-        detail: `O encontro foi aberto e sincronizado com o Combat Tracker na Rodada ${encounter.Round}.`,
+        title: `Combate Iniciado — ${encounter.Name}`,
+        detail: `O encontro foi aberto no Combat Tracker na Rodada ${encounter.Round}.`,
       })
     } catch (e) {
-      console.warn('[EncounterManager] Erro ao sincronizar encontro:', e)
+      console.warn('[EncounterManager] Erro ao registrar a ação de combate:', e)
     }
     router.push(`gm-encounter-runner/${encounter.ID}`)
   }

@@ -17,7 +17,6 @@ export const COMPCON_NPCS_METADATA_KEY = 'com.compcon.activemode/npcs'
 export const COMPCON_PILOT_ROSTER_KEY = 'com.compcon.activemode/pilot_roster'
 export const COMPCON_NPC_ROSTER_KEY = 'com.compcon.activemode/npc_roster'
 export const COMPCON_TABLE_ACTIONS_KEY = 'com.compcon.activemode/table_actions'
-export const COMPCON_ACTIVE_ENCOUNTER_KEY = 'com.compcon.activemode/active_encounter'
 export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
 export const COMPCON_ICON_URL = '/icon.svg'
 export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
@@ -31,7 +30,6 @@ class OBRBridge {
   private tabId: string = TAB_ID
   private isSyncingFromRemote = false
   private isSavingToRemote = false
-  private lastBroadcastSignature: string | null = null
   private incomingChunks = new Map<string, { chunks: string[]; total: number; timestamp: number }>()
   private processedMsgIds = new Set<string>()
   private localTabChannel?: BroadcastChannel
@@ -303,10 +301,6 @@ class OBRBridge {
       if (pilotChanged || npcChanged) {
         await this.syncFromRoom()
       }
-
-      if (COMPCON_ACTIVE_ENCOUNTER_KEY in metadata && metadata[COMPCON_ACTIVE_ENCOUNTER_KEY]) {
-        await this.handleReceivedEncounter(metadata[COMPCON_ACTIVE_ENCOUNTER_KEY])
-      }
     })
 
     OBR.scene.onReadyChange(async (ready) => {
@@ -404,10 +398,6 @@ class OBRBridge {
         )
       } else if (msg.type === 'TABLE_ACTION') {
         window.dispatchEvent(new CustomEvent('compcon-table-action', { detail: msg.action }))
-      } else if (msg.type === 'ENCOUNTER_DATA') {
-        await this.handleReceivedEncounter(msg.data)
-      } else if (msg.type === 'PLAYER_COMBATANT_UPDATE') {
-        await this.handleReceivedPlayerCombatant(msg)
       } else if (msg.type === 'ENCOUNTER_STORAGE_UPDATED') {
         const { EncounterStore } = await import('@/stores')
         await EncounterStore().LoadEncounters()
@@ -851,197 +841,6 @@ class OBRBridge {
       pilotId,
       patch,
     })
-  }
-
-  /**
-   * Jogador envia apenas o próprio combatente (delta) para o mestre incorporar
-   * no encontro geral. Single-writer: só o mestre transmite o encontro completo.
-   */
-  public async sendPlayerCombatantUpdate(encounterId: string, combatant: any): Promise<void> {
-    try {
-      const { Encounter } = await import('@/classes/encounter/Encounter')
-      const data = Encounter.SerializeCombatant(combatant)
-      const sanitized = JSON.parse(JSON.stringify(data))
-      const compressed = await this.compressData(sanitized)
-      await this.sendBroadcastMessage({
-        type: 'PLAYER_COMBATANT_UPDATE',
-        encounterId,
-        combatantId: combatant?.id || combatant?.actor?.ID,
-        data: compressed,
-      })
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao enviar atualização de combatente do jogador:', e)
-    }
-  }
-
-  /**
-   * Transmite o encontro ativo para toda a mesa e salva nos metadados da cena
-   */
-  public async broadcastActiveEncounter(encounterObj: any): Promise<void> {
-    this.isSavingToRemote = true
-    try {
-      const raw = encounterObj ? toRaw(encounterObj) : null
-
-      if (!raw) {
-        // Encerramento / limpeza do encontro
-        await this.sendBroadcastMessage({
-          type: 'ENCOUNTER_DATA',
-          encounterId: null,
-          data: null,
-        })
-        if (OBR.isAvailable && this.isReady) {
-          try {
-            await OBR.scene.setMetadata({
-              [COMPCON_ACTIVE_ENCOUNTER_KEY]: undefined,
-            })
-          } catch (err) {
-            console.warn('[OBRBridge] Erro ao limpar encontro da cena:', err)
-          }
-        }
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('compcon-encounter-synced', { detail: { encounterId: null, instance: null } })
-          )
-        }
-        console.log('[OBRBridge] Encontro ativo encerrado e removido da cena.')
-        return
-      }
-
-      const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
-
-      let serialized: any = null
-      if (typeof raw.Serialize === 'function') {
-        serialized = raw.Serialize()
-      } else if (typeof EncounterInstance.Serialize === 'function') {
-        serialized = EncounterInstance.Serialize(raw as any)
-      } else {
-        serialized = raw
-      }
-
-      const compressed = await this.compressData(serialized)
-      // Registra a assinatura do que acabamos de transmitir para ignorar o eco
-      // do próprio broadcast (via metadados da cena) no recebimento.
-      this.lastBroadcastSignature = `${serialized?.id || ''}:${serialized?.save?.lastModified ?? 0}`
-
-      // Transmite via broadcast em tempo real para todos na sala
-      await this.sendBroadcastMessage({
-        type: 'ENCOUNTER_DATA',
-        encounterId: raw.ID || raw.id,
-        data: compressed,
-      })
-
-      // Se for GM e OBR Scene estiver disponível, persiste na cena para quem entrar depois
-      if (OBR.isAvailable && this.isReady) {
-        try {
-          await OBR.scene.setMetadata({
-            [COMPCON_ACTIVE_ENCOUNTER_KEY]: compressed,
-          })
-        } catch (err) {
-          console.warn('[OBRBridge] Erro ao gravar encontro na cena:', err)
-        }
-      }
-
-      console.log(`[OBRBridge] Encontro "${raw.Name || raw.id}" transmitido para a mesa com sucesso.`)
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao sincronizar encontro com a mesa:', e)
-    } finally {
-      this.isSavingToRemote = false
-    }
-  }
-
-  /**
-   * Trata um encontro recebido via broadcast ou metadados de cena
-   */
-  public async handleReceivedEncounter(compressedOrData: any): Promise<void> {
-    try {
-      if (!compressedOrData) {
-        const { EncounterStore } = await import('@/stores')
-        const store = EncounterStore()
-        store.CurrentActiveID = ''
-        window.dispatchEvent(
-          new CustomEvent('compcon-encounter-synced', { detail: { encounterId: null, instance: null } })
-        )
-        return
-      }
-
-      let data = compressedOrData
-      if (typeof compressedOrData === 'string') {
-        data = await this.decompressData(compressedOrData)
-      }
-      if (!data || typeof data !== 'object') {
-        const { EncounterStore } = await import('@/stores')
-        const store = EncounterStore()
-        store.CurrentActiveID = ''
-        window.dispatchEvent(
-          new CustomEvent('compcon-encounter-synced', { detail: { encounterId: null, instance: null } })
-        )
-        return
-      }
-
-      // Ignora o eco do nosso próprio broadcast (metadados da cena reescritos),
-      // que substituiria a instância local e descartaria referências em memória.
-      const sig = `${data?.id || ''}:${data?.save?.lastModified ?? 0}`
-      if (this.lastBroadcastSignature && sig === this.lastBroadcastSignature) {
-        this.lastBroadcastSignature = null
-        return
-      }
-
-      const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
-      const { EncounterStore } = await import('@/stores')
-
-      const instance = EncounterInstance.Deserialize(data)
-      const store = EncounterStore()
-      await store.AddEncounterInstance(instance)
-      await store.SetActiveEncounter(instance.ID)
-
-      window.dispatchEvent(
-        new CustomEvent('compcon-encounter-synced', { detail: { encounterId: instance.ID, instance } })
-      )
-      console.log(`[OBRBridge] Encontro sincronizado recebido: ${instance.Name} (Rodada ${instance.Round})`)
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao processar encontro recebido:', e)
-    }
-  }
-
-  /**
-   * Mestre incorpora o combatente enviado por um jogador (single-writer).
-   * Só o mestre processa; jogadores apenas leem o encontro completo.
-   */
-  private async handleReceivedPlayerCombatant(msg: any): Promise<void> {
-    try {
-      if (this.role !== 'GM') return
-
-      let data = msg.data
-      if (typeof data === 'string') {
-        data = await this.decompressData(data)
-      }
-      if (!data || typeof data !== 'object') return
-
-      const { Encounter } = await import('@/classes/encounter/Encounter')
-      const { EncounterStore } = await import('@/stores')
-
-      const store = EncounterStore()
-      const enc = store.getActiveEncounter(msg.encounterId)
-      if (!enc) return
-
-      const combatant = Encounter.DeserializeCombatant(data)
-      const idx = enc.Combatants.findIndex(
-        (c: any) => c.id === msg.combatantId || c.actor?.ID === msg.combatantId
-      )
-
-      if (idx === -1) {
-        combatant.index = enc.Combatants.length
-        enc.Combatants.push(combatant)
-      } else {
-        combatant.index = enc.Combatants[idx].index
-        enc.Combatants.splice(idx, 1, combatant)
-      }
-
-      await enc.Save?.()
-      await this.broadcastActiveEncounter(enc)
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao incorporar combatente do jogador:', e)
-    }
   }
 
   /**
@@ -1917,26 +1716,6 @@ class OBRBridge {
   // =========================================================================
 
   /**
-   * Recupera apenas o encontro ativo salvo na cena (para janelas standalone
-   * como o chat/tracker, que não têm o listener de metadados da cena).
-   */
-  public async syncActiveEncounterFromScene(): Promise<void> {
-    if (!this.isReady || !OBR.isAvailable) return
-    try {
-      // A cena pode ainda não estar pronta quando a janela monta; nesse caso,
-      // apenas retorna (o foco/ready posterior tentará de novo).
-      const sceneReady = await OBR.scene.isReady().catch(() => false)
-      if (!sceneReady) return
-      const sceneMeta = await OBR.scene.getMetadata()
-      if (COMPCON_ACTIVE_ENCOUNTER_KEY in sceneMeta && sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY]) {
-        await this.handleReceivedEncounter(sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY])
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao sincronizar encontro ativo da cena:', e)
-    }
-  }
-
-  /**
    * Baixa pilotos e NPCs salvos na sala e solicita sincronização via broadcast
    */
   public async syncFromRoom(): Promise<{ pilotsCount: number; npcsCount: number }> {
@@ -1948,16 +1727,6 @@ class OBRBridge {
 
     try {
       const metadata = await OBR.room.getMetadata()
-
-      // Carrega encontro ativo salvo na cena, se houver
-      try {
-        const sceneMeta = await OBR.scene.getMetadata()
-        if (COMPCON_ACTIVE_ENCOUNTER_KEY in sceneMeta && sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY]) {
-          await this.handleReceivedEncounter(sceneMeta[COMPCON_ACTIVE_ENCOUNTER_KEY])
-        }
-      } catch {
-        // cena pode não estar pronta
-      }
 
       // --- PILOTOS ---
       const roomPilots = await this.getRoomPilots()

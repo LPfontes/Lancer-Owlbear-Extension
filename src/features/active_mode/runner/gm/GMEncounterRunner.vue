@@ -223,7 +223,6 @@ import {
   import QuickReferencePanel from './InfoPanels/QuickReferencePanel.vue'
   import NpcReferencePanel from './InfoPanels/NpcReferencePanel.vue'
   import { EncounterStore } from '@/stores'
-  import { obrBridge } from '@/services/obrBridge'
   import NotesPanel from './InfoPanels/GmNotesPanel.vue'
   import GmInitiativePanel from './_components/GmInitiativePanel.vue'
   import GmToolPalette from './_components/GmToolPalette.vue'
@@ -338,14 +337,14 @@ watch([versionSignal, () => instance.value?.Round], () => {
     recacheUndoBaseline()
   })
 
-// Salva e transmite o encontro em tempo real (mestre autoritativo)
-let broadcastTimeout: ReturnType<typeof setTimeout> | null = null
+// Salva o encontro localmente. O encontro ativo vive só nesta janela: não há
+// mais envio para a mesa nem leitura da cena.
+let saveTimeout: ReturnType<typeof setTimeout> | null = null
 function persistEncounter() {
     if (!instance.value) return
-    if (broadcastTimeout) clearTimeout(broadcastTimeout)
-    broadcastTimeout = setTimeout(() => {
+    if (saveTimeout) clearTimeout(saveTimeout)
+    saveTimeout = setTimeout(() => {
       void instance.value?.Save()
-      void obrBridge.broadcastActiveEncounter(instance.value)
     }, 600)
   }
 
@@ -411,7 +410,7 @@ function handleUndoRedoKeydown(e: KeyboardEvent) {
   onMounted(() => window.addEventListener('keydown', handleUndoRedoKeydown))
   onBeforeUnmount(() => {
     window.removeEventListener('keydown', handleUndoRedoKeydown)
-    if (broadcastTimeout) clearTimeout(broadcastTimeout)
+    if (saveTimeout) clearTimeout(saveTimeout)
   })
 
   watch(

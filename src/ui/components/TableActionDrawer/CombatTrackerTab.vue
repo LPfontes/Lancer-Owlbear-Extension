@@ -57,21 +57,6 @@
 
         <!-- Menu de Opções Adicionais do Encontro -->
         <div class="d-flex align-center ga-0.5">
-          <v-tooltip text="Sincronizar combate com todos na mesa" location="top">
-            <template #activator="{ props: tipProps }">
-              <v-btn
-                v-bind="tipProps"
-                size="x-small"
-                variant="tonal"
-                color="accent"
-                icon="mdi-sync"
-                style="height: 26px; width: 26px;"
-                :loading="isSyncingTable"
-                @click="syncCurrentEncounterToTable"
-              />
-            </template>
-          </v-tooltip>
-
           <v-tooltip text="Restaurar ativações da rodada atual" location="top">
             <template #activator="{ props: tipProps }">
               <v-btn
@@ -819,7 +804,7 @@
         </div>
 
         <div class="text-caption text-grey-lighten-2 mb-3">
-          Selecione um encontro existente para abrir e sincronizar com a mesa.
+          Selecione um encontro existente para abrir no tracker.
         </div>
 
         <!-- Lista de Encontros Ativos em Andamento -->
@@ -847,7 +832,7 @@
                 class="font-weight-bold text-black rounded-0"
                 prepend-icon="mdi-play"
                 :loading="syncingEncounterId === (enc.ID || enc.id || enc._id)"
-                @click="resumeAndSyncEncounter(enc)"
+                @click="resumeEncounter(enc)"
               >
                 Retomar
               </v-btn>
@@ -880,7 +865,7 @@
                 class="font-weight-bold text-white rounded-0"
                 prepend-icon="mdi-sword-cross"
                 :loading="syncingEncounterId === (enc.ID || enc.id || enc._id)"
-                @click="launchAndSyncEncounter(enc)"
+                @click="launchEncounter(enc)"
               >
                 Iniciar
               </v-btn>
@@ -1057,7 +1042,6 @@ const bindConfirmDialog = ref(false)
 const pendingBindCombatant = ref<any>(null)
 const selectedFromCanvasCombatantId = ref<string | null>(null)
 const syncingEncounterId = ref<string | null>(null)
-const isSyncingTable = ref(false)
 const isLoadingEncounters = ref(false)
 const forceRefreshKey = ref(0)
 let highlightTimeout: any = null
@@ -1281,11 +1265,10 @@ function openNpcSheet(c: any) {
   )
 }
 
-// Grava o encontro localmente (active_encounters) e transmite para a mesa
+// Grava o encontro localmente (active_encounters)
 function persistEncounter() {
   if (!encounterInstance.value) return
   void encounterInstance.value.Save?.()
-  void obrBridge.broadcastActiveEncounter(encounterInstance.value)
 }
 
 // Controles de Turno
@@ -1435,7 +1418,6 @@ async function confirmCreateNewEncounter() {
 
     await encounterStore.AddEncounterInstance(instance)
     await encounterStore.SetActiveEncounter(instance.ID)
-    await obrBridge.broadcastActiveEncounter(instance)
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -1497,7 +1479,6 @@ async function addPilotToEncounter(pilotItem: any) {
 
     encounterInstance.value.Combatants.push(combatant)
     await encounterInstance.value.Save?.().catch(() => {})
-    await obrBridge.broadcastActiveEncounter(encounterInstance.value)
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -1542,7 +1523,6 @@ async function addNpcToEncounter(npcItem: any) {
 
     encounterInstance.value.Combatants.push(combatant)
     await encounterInstance.value.Save?.().catch(() => {})
-    await obrBridge.broadcastActiveEncounter(encounterInstance.value)
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -1578,7 +1558,6 @@ async function confirmRemoveCombatant() {
       c.index = i
     })
     await encounterInstance.value.Save?.().catch(() => {})
-    await obrBridge.broadcastActiveEncounter(encounterInstance.value)
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -1617,7 +1596,6 @@ async function confirmEndEncounter() {
   encounterStore.SaveActiveEncounterData?.()
 
   activeTurnId.value = null
-  await obrBridge.broadcastActiveEncounter(null)
 
   void tableActionStore.postAction({
     senderName: 'Combat Tracker',
@@ -1698,30 +1676,21 @@ async function refreshEncountersList() {
   }
 }
 
-// A janela do tracker (chat standalone) não recebe o listener de metadados da
-// cena, então busca o encontro ativo salvo na cena explicitamente.
-async function syncEncounterFromScene() {
-  if (encounterStore.CurrentActiveID) return
-  await obrBridge.syncActiveEncounterFromScene().catch(() => {})
-  forceRefreshKey.value++
-}
-
 async function openSelectEncounterModal() {
   selectEncounterDialog.value = true
   await refreshEncountersList()
 }
 
-async function resumeAndSyncEncounter(enc: any) {
+async function resumeEncounter(enc: any) {
   const encId = enc.ID || enc.id || enc._id
   syncingEncounterId.value = encId
   try {
     await encounterStore.AssignActiveEncounter(enc)
-    await obrBridge.broadcastActiveEncounter(enc)
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
       category: 'full_action',
-      title: `Combate Sincronizado — ${enc.Name || enc.name || enc._name || 'Encontro'}`,
-      detail: `O encontro foi aberto e sincronizado com a mesa na Rodada ${enc.Round || enc.round || 1}.`,
+      title: `Combate Iniciado — ${enc.Name || enc.name || enc._name || 'Encontro'}`,
+      detail: `O encontro foi aberto na Rodada ${enc.Round || enc.round || 1}.`,
     })
     selectEncounterDialog.value = false
     forceRefreshKey.value++
@@ -1730,7 +1699,7 @@ async function resumeAndSyncEncounter(enc: any) {
   }
 }
 
-async function launchAndSyncEncounter(enc: any) {
+async function launchEncounter(enc: any) {
   const encId = enc.ID || enc.id || enc._id
   syncingEncounterId.value = encId
   try {
@@ -1753,13 +1722,12 @@ async function launchAndSyncEncounter(enc: any) {
     instance.RecordEncounterStart()
     await encounterStore.AddEncounterInstance(instance)
     await encounterStore.SetActiveEncounter(instance.ID)
-    await obrBridge.broadcastActiveEncounter(instance)
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
       category: 'full_action',
       title: `Combate Iniciado — ${instance.Name}`,
-      detail: `O encontro foi iniciado e sincronizado para todos na mesa. Rodada 1.`,
+      detail: `O encontro foi iniciado. Rodada 1.`,
     })
     selectEncounterDialog.value = false
     forceRefreshKey.value++
@@ -1827,47 +1795,6 @@ loadJsonFile.value = null
   }
 }
 
-async function syncCurrentEncounterToTable() {
-  if (!encounterInstance.value) return
-  isSyncingTable.value = true
-  try {
-    await obrBridge.broadcastActiveEncounter(encounterInstance.value)
-    void tableActionStore.postAction({
-      senderName: 'Combat Tracker',
-      category: 'full_action',
-      title: `Combate Sincronizado — ${encounterInstance.value.Name}`,
-      detail: `Estado do combate atualizado para todos os jogadores na mesa.`,
-    })
-  } finally {
-    isSyncingTable.value = false
-  }
-}
-
-function onEncounterSynced(e?: any) {
-  if (e?.detail) {
-    const inst = e.detail.instance
-    if (!inst) {
-      encounterStore.CurrentActiveID = ''
-      activeTurnId.value = null
-      forceRefreshKey.value++
-      return
-    }
-    const targetId = inst.ID || inst.id || inst._id
-    const idx = (encounterStore.ActiveEncounters || []).findIndex(
-      (x: any) => (x.ID || x.id || x._id) === targetId
-    )
-    if (idx === -1) {
-      encounterStore.ActiveEncounters.push(inst)
-    } else {
-      encounterStore.ActiveEncounters.splice(idx, 1, inst)
-    }
-    if (targetId) {
-      encounterStore.CurrentActiveID = targetId
-    }
-  }
-  forceRefreshKey.value++
-}
-
 function onTokenSelected(e: any) {
   const { sheetId, mechId, combatantId, tokenName } = e.detail || {}
   if (!encounterInstance.value?.Combatants) return
@@ -1896,21 +1823,17 @@ function onTokenSelected(e: any) {
 
 onMounted(async () => {
   await refreshEncountersList()
-  await syncEncounterFromScene()
   if (typeof window !== 'undefined') {
-    window.addEventListener('compcon-encounter-synced', onEncounterSynced)
     window.addEventListener('compcon-token-selected', onTokenSelected)
     window.addEventListener('compcon-encounters-reloaded', refreshEncountersList)
     window.addEventListener('focus', () => {
       void refreshEncountersList()
-      void syncEncounterFromScene()
     })
   }
 })
 
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
-    window.removeEventListener('compcon-encounter-synced', onEncounterSynced)
     window.removeEventListener('compcon-token-selected', onTokenSelected)
     window.removeEventListener('compcon-encounters-reloaded', refreshEncountersList)
     window.removeEventListener('focus', refreshEncountersList)

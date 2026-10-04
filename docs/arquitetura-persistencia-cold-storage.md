@@ -22,7 +22,7 @@ Tudo em `src/services/obrBridge.ts`, gerenciado exclusivamente via SDK:
 | Índice de ids da cena | `OBR.scene.setMetadata` | chaves `.../pilots_index`, `.../npcs_index` |
 | Tempo real entre clientes | `OBR.broadcast` + `BroadcastChannel` local | canal `...broadcast` (payload gzip) |
 | Vínculo token↔ficha | item metadata `[COMPCON_METADATA_KEY]` | `bindTokenToSheet` — **só ids** |
-| Ações da mesa / encontro ativo | `OBR.room` / `OBR.scene` metadata | `table_actions`, `active_encounter` |
+| Ações da mesa (log/chat) | `OBR.room` metadata | `table_actions` |
 | **Ficha (conteúdo)** | **armazenamento local do cliente** (`pilot_sheets`/`pilots`/`npcs`) | `SetItem`/`GetItem` (IndexedDB via localforage) |
 
 > **Regra atual (importante):** a ficha **nunca** é gravada nos metadados do Owlbear. Sala e cena
@@ -38,6 +38,12 @@ Isso elimina três problemas estruturais do modelo anterior:
 `cleanupRoomMetadata()` continua existindo **somente como migração**: ele remove payloads de ficha
 (`com.compcon.activemode/p/*`, `/n/*`, `.../pilots`, `.../npcs`) deixados por instalações antigas,
 depois que `syncFromRoom()` já os importou para o armazenamento local.
+
+> **Encontro ativo (sincronização removida):** o encontro **não** é mais transmitido entre GM e
+> jogadores. Saíram do `obrBridge` o broadcast `ENCOUNTER_DATA`, o comando `PLAYER_COMBATANT_UPDATE`,
+> a chave de cena `com.compcon.activemode/active_encounter` e o `syncActiveEncounterFromScene`. O
+> encontro ativo vive só no armazenamento local do cliente (`active_encounters`,
+> `current_active_encounter_id`); payloads antigos ainda podem permanecer nos metadados da cena.
 
 Funções relevantes (reutilize-as, não reinvente):
 `savePilotToRoom`, `saveNpcToRoom`, `removePilotFromRoom`, `removeNpcFromRoom`,
@@ -162,6 +168,39 @@ de adicionar o cold storage. Ver §6.
 - **Apagar (Mongo):** `DELETE /sheets/{sheetId}`. **Não** remove da mesa (isso é
   `removePilotFromRoom`/`removeNpcFromRoom`). A UI deve deixar explícito que são operações
   independentes.
+
+### 3.4 Sincronização automática (padrão) — `src/services/sheetColdSync.ts`
+
+Além dos botões, o catálogo acompanha a vida da ficha **sem ação do usuário**. Três eventos
+disparam a fila:
+
+| Evento | Gatilho no código | Ação no catálogo |
+|---|---|---|
+| Ficha importada/criada (sharecode, JSON, clone, editor) | `PilotStore.AddPilot`, `NpcStore.AddNpc` | `PUT` (upsert) |
+| Ficha salva | `SaveController._save()` | `PUT` (upsert) |
+| Ficha excluída em definitivo | `DeletePilotPermanent`, `DeleteNpcPermanent` | `DELETE` |
+
+Decisões que mantêm isso compatível com a "regra de ouro" (§3.2) e com o rate limit do backend:
+
+- **Ficha canônica apenas.** O gatilho de "salva" chega para toda entidade salvável, então a fila
+  verifica identidade (`toRaw`) contra `PilotStore().Pilots` / `NpcStore().Npcs`. O ator dentro de
+  uma pilot sheet ou de um encontro é uma cópia desacoplada — mudar PV/calor/ação ali **não** gera
+  requisição. `pilot_sheets`, `active_encounters`, encontros e campanhas nunca são enviados.
+- **Coalescência.** Fila é um mapa por `sheetId` (a última ação vence) com debounce de 3 s, **teto de
+  espera de 10 s**, uma requisição em voo por vez e retry com backoff (3 tentativas). O teto é
+  necessário porque o `SaveController` grava duas vezes por `save()` (leading + trailing do throttle
+  de 1,5 s) e cada gravação reinicia o debounce — sem teto, uma ficha em edição contínua nunca
+  sincronizaria.
+- **Last-write-wins.** O `PUT` automático não envia `expectedRevision` (o servidor só responde 409
+  quando ela vem), então a versão local sempre vence. Os botões continuam com concorrência otimista.
+- **Silencioso.** Sem `OBR.notification` — um aviso por gravação seria ruído. Falhas vão para o
+  `logger` (WARN) e para o estado por ficha (`getSheetColdSyncStatus`).
+- **Fora da sala não há catálogo:** a fila é descartada e nada é enviado.
+- **Carregar não reenvia:** `importSheetFromCold` escreve por `SetItem` + push direto na store (nunca
+  por `AddPilot`/`AddNpc` nem pelo `SaveController`), então o ato de carregar não realimenta a fila.
+- **Serialização:** todas as operações de cold storage passam por um lock (uma por vez, na ordem de
+  chegada). Antes havia um `busy` que **descartava** a chamada concorrente — com a sincronização
+  automática isso perderia gravações.
 
 ---
 
@@ -643,7 +682,8 @@ pseudo-código em estilo `Request/Response` da §5.5.
 | `api/rooms/[roomId]/sheets.js` | `GET` lista o catálogo (sem `payload`) |
 | `api/rooms/[roomId]/sheets/[sheetId].js` | `GET`/`PUT`(upsert+revision)/`DELETE` |
 | `src/io/apis/roomStorage.ts` | Client HTTP fino (sem token) |
-| `src/services/roomColdStorage.ts` | Orquestração Enviar/Carregar/Apagar |
+| `src/services/roomColdStorage.ts` | Orquestração Enviar/Carregar/Apagar + portas automáticas (`pushSheetToCold`/`purgeSheetFromCold`) |
+| `src/services/sheetColdSync.ts` | Fila da sincronização automática (gatilhos, coalescência, retry) |
 | `.env.example` | Variáveis de ambiente do servidor |
 
 ### Como subir (passos)
