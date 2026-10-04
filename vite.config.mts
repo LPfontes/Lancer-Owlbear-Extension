@@ -73,9 +73,7 @@ export default defineConfig({
         server.middlewares.use(async (req, res, next) => {
           if (
             req.url &&
-            (req.url.startsWith('/api/share') ||
-              req.url.startsWith('/api/image') ||
-              req.url.startsWith('/api/rooms'))
+            (req.url.startsWith('/api/share') || req.url.startsWith('/api/image'))
           ) {
             const { handleProxyRequest } = await import('./server/proxy.mjs')
             await handleProxyRequest(req, res)

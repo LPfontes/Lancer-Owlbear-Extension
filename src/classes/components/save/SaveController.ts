@@ -1,7 +1,6 @@
 import { ISaveable } from './ISaveable'
 import { SetItem, RemoveItem } from '@/io/Storage'
 import { registerPersistenceFlusher } from '@/io/persistenceFlush'
-import { queueSheetColdSaveFromParent } from '@/services/sheetColdSync'
 import logger from '@/user/logger'
 import * as _ from 'lodash-es'
 import { assertController } from '../../utility/assertController'
@@ -91,12 +90,6 @@ class SaveController {
     }
 
     SetItem(this.Parent.StorageType, this.Parent.Serialize())
-
-    // Sincronização automática com o catálogo da sala (MongoDB) — "sempre que uma ficha
-    // for salva". O `sheetColdSync` é quem decide se este objeto é ficha de catálogo
-    // (piloto do Hangar / NPC do roster; cópias de combate do modo ativo saem) e
-    // coalesce a rajada de gravações num único PUT, sem notificar o usuário.
-    queueSheetColdSaveFromParent(this.Parent)
   }
 
   public saveSilent() {

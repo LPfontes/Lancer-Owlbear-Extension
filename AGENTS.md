@@ -18,43 +18,30 @@ npm run typecheck      # vue-tsc --noEmit (pesado; use antes de commits grandes)
 npm run test:run       # Vitest single-run (dois projetos: domain e component)
 ```
 
-## Arquitetura em 3 camadas (IMPORTANTE)
+## Arquitetura (IMPORTANTE)
 
 1. **Estado ativo (tempo real)** — `src/services/obrBridge.ts`. Tudo via SDK do Owlbear:
    `OBR.room.setMetadata/getMetadata/onMetadataChange`, `OBR.scene.*`, broadcast e item metadata
    de tokens. É a **fonte da verdade durante o jogo**.
-2. **Orquestração** — `src/services/roomColdStorage.ts` + `src/services/sheetColdSync.ts` +
-   `src/io/apis/roomStorage.ts`. Ações **explícitas** de Enviar/Carregar/Apagar **e** a
-   sincronização automática das fichas do Hangar/roster.
-3. **Cold storage (MongoDB Atlas)** — `api/rooms/**` (Vercel Functions) + `server/coldStorage.mjs`.
-   CRUD estreito sobre a coleção `room_sheets`, particionado por `room.id`.
+2. **Persistência local** — `src/io/Storage.ts` (IndexedDB via localforage, com fallback para
+   LocalStorage/memória). Fichas, encontros, logbooks e ações da mesa vivem aqui.
+3. **Backend (Vercel Functions)** — `api/share/[code].js` e `api/image.js`, sobre
+   `server/proxy.mjs` (CORS, anti-SSRF). **Não há banco de dados externo.**
 
-**Regra de ouro:** a camada 1 **nunca** fala com a camada 3 a cada clique/rolagem/atributo. **Não**
-adicione chamadas de Mongo/HTTP dentro de `onMetadataChange`, `onMetadataChange` da cena nem em
-watchers de atributo (HP, heat, etc.).
+> O antigo **cold storage em MongoDB Atlas** (`api/rooms/**`, `server/coldStorage.mjs`,
+> `src/services/roomColdStorage.ts`, `src/services/sheetColdSync.ts`, `src/io/apis/roomStorage.ts`)
+> foi **removido do projeto**, junto com a dependência `mongodb`. Não reintroduza persistência
+> externa sem decisão explícita.
 
-A sincronização automática das fichas é a **única** porta que não passa por um botão, e ela é
-deliberadamente estreita: o gatilho vem de eventos de ficha (importada/criada, salva, excluída em
-definitivo), nunca de estado de combate. Quem garante isso é o `sheetColdSync`, que:
-
-- só aceita a **ficha canônica** do `PilotStore().Pilots` / `NpcStore().Npcs` (o mesmo objeto, via
-  `toRaw`). As fichas do modo ativo são cópias desacopladas (`pilot_sheets`, `active_encounters`) e
-  mudam a cada PV/calor/ação — ficam de fora;
-- **coalesce** a rajada num único PUT por ficha, com uma requisição em voo por vez, debounce de 3 s e
-  teto de espera de 10 s (o `SaveController` grava duas vezes por `save()`), respeitando o rate
-  limit de 120 req/min por IP;
-- é **silencioso** (sem `OBR.notification`) e **last-write-wins** (não envia `expectedRevision`).
-
-Se for mexer aqui: nada de `save()` de instância de encontro, nada de watcher de atributo, e nunca
-chame `pushSheetToCold`/`purgeSheetFromCold` direto dos componentes — use a fila.
+**Regra de ouro:** a camada de estado ativo **nunca** fala com a rede a cada clique/rolagem/atributo.
+**Não** adicione chamadas HTTP dentro de `onMetadataChange`, `onMetadataChange` da cena nem em
+watchers de atributo (HP, heat, etc.). Se algum dia houver sincronização externa, ela tem que ser
+coalescida e disparada por evento de entidade (ficha salva, importada, excluída) — nunca por estado
+de combate, que muda a cada PV/calor/ação.
 
 ## Convenções críticas
 
 - **Alias `@`** → `src` (ver `vite.config.mts`). Use `@/...` nos imports do frontend.
-- **Sem autenticação no cold storage** ("modo ingênuo", decisão do projeto): a URI do Mongo só
-  existe como env var da Vercel (`MONGODB_URI`). **Nunca** coloque a connection string no bundle,
-  em resposta de API ou em erro. Erros 5xx do servidor devem retornar mensagem **genérica**
-  (`handleError` em `server/coldStorage.mjs`).
 - **Cloud AWS legado é inerte neste fork.** `src/io/apis/account.ts`, `src/classes/components/cloud/*`
   e `UserStore().Cognito` apontam para a conta AWS do projeto original, que **não é acessível**.
   Não construa nada em cima disso; se precisar, neutralize no nível de I/O (não remova
@@ -71,32 +58,19 @@ chame `pushSheetToCold`/`purgeSheetFromCold` direto dos componentes — use a fi
 - **Room metadata tem limite de ~16 kB.** Payloads de ficha vão para a **cena** (`OBR.scene`,
   limite 25 MB), comprimidos (gzip+base64) e fatiados em chunks de 12 kB
   (`encodeDataToChunks`/`decodeDataFromChunks` em `obrBridge.ts`). No room ficam só rosters leves.
-- **`/api/rooms/**` (cold storage) NÃO roda sob `npm run dev`.** O middleware do Vite só cobre
-  `/api/share` e `/api/image` (ver `vite.config.mts`). Para testar as funções de catálogo
-  localmente, use `vercel dev` (ou teste contra o deploy).
+- **O middleware do Vite cobre `/api/share` e `/api/image`** (ver `vite.config.mts`); as demais
+  rotas de `api/**` só existem no deploy da Vercel. Para exercitar as funções localmente, use
+  `vercel dev`.
 - **O "Gerenciador de Fichas da Mesa" é o dialog** `src/ui/components/Owlbear/TableSheetManagerDialog.vue`
   (montado em `App.vue`). A antiga view standalone (`features/gm/TableSheetsView.vue`, rota
   `/table-sheets`) foi **removida**; `openTableSheetsWindow()` agora apenas dispara o evento
   `compcon-open-table-sheets`, que abre o dialog.
-- **`mongodb` (driver) é server-only.** Importe apenas em `server/*.mjs` e `api/**`. Nunca importe
-  em código de `src/` (não roda no navegador).
 - **NPCs têm discriminador `npcType`** (`unit` | `doodad` | `eidolon`) — é ele que decide qual
-  `Deserialize` usar (ver `importSheetFromCold`).
-- **Concorrência otimista no catálogo:** o cliente envia `expectedRevision` (quando conhece) e o
-  servidor responde **409** em conflito. `ColdConflictError` carrega o documento `current`.
-
-## Mapa do cold storage (feature recente)
-
-| Arquivo | Papel |
-|---|---|
-| `server/coldStorage.mjs` | Mongo lazy, CORS, rate limit por IP, `handleError` genérico |
-| `api/rooms/[roomId]/sheets.js` | `GET` lista (projeção sem `payload`) |
-| `api/rooms/[roomId]/sheets/[sheetId].js` | `GET`/`PUT` (upsert + revision)/`DELETE` |
-| `src/io/apis/roomStorage.ts` | Client HTTP (`listRoomSheets`, `getRoomSheet`, `saveRoomSheet`, `deleteRoomSheet`) |
-| `src/services/roomColdStorage.ts` | Ações explícitas: `exportSheetToCold`, `importSheetFromCold`, `deleteSheetFromCold`; e as portas automáticas `pushSheetToCold`/`purgeSheetFromCold` (silenciosas, LWW) |
-| `src/services/sheetColdSync.ts` | Fila da sincronização automática: gatilhos de importar/salvar/excluir, coalescência, retry e estado por ficha |
-| `.env.example` | `MONGODB_URI`, `MONGODB_DB` |
-| `docs/arquitetura-persistencia-cold-storage.md` | arquitetura completa |
+  `Deserialize` usar (ver `src/classes/npc/` e `src/io/Importer.ts`).
+- **O encontro ativo não é sincronizado entre GM e jogadores.** Ele vive no armazenamento local de
+  cada janela (`active_encounters`, `current_active_encounter_id`); o que cruza a mesa são as fichas
+  (posse de token) e as ações/chat da mesa. Não reintroduza broadcast de encontro sem decisão
+  explícita.
 
 ## Testes
 
@@ -108,6 +82,6 @@ chame `pushSheetToCold`/`purgeSheetFromCold` direto dos componentes — use a fi
 
 1. `npm run typecheck` (ou ao menos `npm run build`) sem erros.
 2. Nenhuma string de UI hardcoded (use i18n).
-3. Nenhuma chamada de rede/Mongo em watchers de estado em tempo real.
-4. Nenhum segredo (URI do Mongo, senha, token) no bundle ou em resposta/erro.
+3. Nenhuma chamada de rede em watchers de estado em tempo real.
+4. Nenhum segredo (senha, token, connection string) no bundle ou em resposta/erro.
 5. Se mexeu na persistência local, respeitou a exigência de `id` no `SetItem`.

@@ -1,6 +1,5 @@
 import { Eidolon, EidolonData } from '@/classes/npc/eidolon/Eidolon'
 import { GetAll, SetItem, RemoveItem, saveAll } from '@/io/Storage'
-import { queueSheetColdUpsert, queueSheetColdDelete } from '@/services/sheetColdSync'
 import { defineStore } from 'pinia'
 import { toRaw } from 'vue'
 import { useFolderManagement } from '@/composables/useFolderManagement'
@@ -144,9 +143,6 @@ export const NpcStore = defineStore('npc', {
           this.Npcs.findIndex(x => x.ID === payload.ID),
           payload
         )
-        // Importação sobre um NPC existente (sharecode/JSON): o catálogo recebe a
-        // versão local.
-        queueSheetColdUpsert(payload, 'npc')
         return
       }
 
@@ -154,9 +150,6 @@ export const NpcStore = defineStore('npc', {
       NavStore().updateNpcEntry(payload)
 
       await this.SaveNpc(payload)
-
-      // NPC importado (sharecode/JSON) ou criado: entra no catálogo da sala.
-      queueSheetColdUpsert(payload, 'npc')
     },
     async SetNpc(index: number, payload: Unit | Doodad | Eidolon): Promise<void> {
       if (!this.Npcs[index]) return
@@ -177,10 +170,6 @@ export const NpcStore = defineStore('npc', {
       if (idx >= -1) this.Npcs.splice(idx, 1)
       NavStore().removeNpcEntry(id)
       await RemoveItem('npcs', id)
-
-      // NPC excluído em definitivo: sai também do catálogo da sala.
-      queueSheetColdDelete(id)
-
       void obrBridge.removeNpcFromRoom(id)
       await this.SaveNpcData()
       if (payload.CloudController.ShareCode) {

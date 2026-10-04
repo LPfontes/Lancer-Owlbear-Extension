@@ -2,13 +2,12 @@
 
 Extensão para o [Owlbear Rodeo](https://www.owlbear.rodeo/) que integra o **COMP/CON**
 (assistente digital do RPG **LANCER**) à mesa virtual: fichas de **Piloto** e **NPC** em tempo
-real, encontro/combate, vinculação de tokens, dados 3D (dddice), ações/chat da mesa e **catálogo
-(cold storage)** de fichas.
+real, encontro/combate, vinculação de tokens, dados 3D (dddice) e ações/chat da mesa.
 
 > ⚠️ **Fork.** Este repositório é um fork do projeto original. A infraestrutura de cloud AWS do
 > original (Cognito / API Gateway / DynamoDB / S3) **não é acessível neste fork** e deve ser
-> tratada como inativa. A persistência externa aqui é o **cold storage em MongoDB Atlas +
-> Vercel Functions** (veja [Cold storage](#cold-storage-mongodb-atlas--vercel)).
+> tratada como inativa. A persistência é **local** (IndexedDB via localforage), no navegador de
+> cada janela.
 
 ---
 
@@ -66,52 +65,24 @@ Os arquivos `.spec.ts` ficam ao lado do código que testam.
 |---|---|
 | `VITE_APP_INVOKE_URL` | Base do API Gateway AWS **legado** (inerte no fork) |
 | `VITE_APP_API_KEY` | API key AWS **legada** (inerte no fork) |
-| `VITE_COLD_STORAGE_URL` | (opcional) Base do backend de catálogo; default é `/api` relativo |
-
-### Servidor (Vercel Functions, só no painel da Vercel)
-
-| Variável | Uso |
-|---|---|
-| `MONGODB_URI` | Connection string do MongoDB Atlas (**segredo** — nunca vai para o bundle) |
-| `MONGODB_DB` | Nome do banco (default `owlbear`) |
-
-Modelo pronto em [`.env.example`](.env.example).
-
-## Cold storage (MongoDB Atlas + Vercel)
-
-O estado **em tempo real** da mesa vive 100% no Owlbear (via SDK: `room`/`scene` metadata,
-broadcast e item metadata de tokens). O MongoDB Atlas é usado como **repositório frio** de fichas,
-particionado por `room.id`.
-
-- **Sem autenticação** (modo ingênuo): só a Vercel tem acesso ao banco; as funções expõem apenas
-  um CRUD estreito sobre a coleção `room_sheets`.
-- **Ações explícitas** no "Gerenciador de Fichas da Mesa": **Enviar** (ficha → Mongo), **Carregar**
-  (Mongo → mesa) e **Apagar** (só no Mongo).
-
-Arquitetura completa, schema e código: [`docs/arquitetura-persistencia-cold-storage.md`](docs/arquitetura-persistencia-cold-storage.md).
 
 ## Deploy na Vercel
 
-1. No painel da Vercel, configure as env vars `MONGODB_URI` e `MONGODB_DB`.
-2. No MongoDB Atlas, crie o banco `owlbear` + coleção `room_sheets` e os índices da seção §4 do doc.
-3. `git push` — a Vercel detecta as funções em `api/` automaticamente.
+1. `git push` — a Vercel detecta as funções em `api/` automaticamente.
+2. Não há banco de dados nem segredos de servidor para configurar.
 
 > O projeto já usa `api/` (ex.: `api/share/[code].js`) e um `public/_redirects`.
 
 ## Estrutura do projeto
 
 ```
-api/                      Funções serverless da Vercel (cold storage, share)
-  rooms/[roomId]/sheets.js          GET lista catálogo (sem payload)
-  rooms/[roomId]/sheets/[sheetId].js GET/PUT/DELETE
+api/                      Funções serverless da Vercel
   share/[code].js                   proxy de ShareCode COMP/CON
+  image.js                          proxy de imagens remotas
 server/                   Código servidor compartilhado (.mjs)
   proxy.mjs               proxy /api/share e /api/image (CORS, anti-SSRF)
-  coldStorage.mjs         conexão Mongo + helpers do cold storage
 src/
   services/obrBridge.ts   PONTE COM O OWLBear (estado em tempo real)
-  services/roomColdStorage.ts  orquestração Enviar/Carregar/Apagar
-  io/apis/roomStorage.ts  client HTTP do catálogo
   io/apis/account.ts      cloud AWS legado (inerte no fork)
   io/Storage.ts           persistência local (IndexedDB via localforage)
   classes/                domínio: Pilot, Npc, Mech, Encounter, Campaign...
@@ -131,4 +102,5 @@ Strings de UI vão para `src/i18n/locales/**` via `vue-i18n` (pt-BR). Scripts au
 ## Créditos
 
 Projeto original: **Massif Press & LANCER Community** — "COMP/CON Official Active Mode".
-Este repositório é um fork com foco em persistência própria (MongoDB Atlas + Vercel).
+Este repositório é um fork com persistência local (IndexedDB) e backend próprio na Vercel apenas
+para proxy de ShareCode e imagens.

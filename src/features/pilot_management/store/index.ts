@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { SetItem, RemoveItem, GetAll } from '@/io/Storage'
-import { queueSheetColdUpsert, queueSheetColdDelete } from '@/services/sheetColdSync'
 import { Pilot } from '@/classes/pilot/Pilot'
 import { PilotLogbook } from '@/classes/pilot/PilotLogbook'
 import { PilotGroup } from './PilotGroup'
@@ -92,9 +91,6 @@ export const PilotStore = defineStore('pilot', {
           this.Pilots.findIndex(x => x.ID === pilot.ID),
           pilot
         )
-        // Importação sobre uma ficha existente (sharecode/JSON): o catálogo da sala
-        // recebe a versão local.
-        queueSheetColdUpsert(pilot, 'pilot')
         return
       }
 
@@ -110,9 +106,6 @@ export const PilotStore = defineStore('pilot', {
 
       await PilotGroupStore().TransferPilot(pilot, groupID)
       await this.SavePilotData()
-
-      // Ficha importada (sharecode/JSON) ou criada: entra no catálogo da sala.
-      queueSheetColdUpsert(pilot, 'pilot')
     },
     async SetPilot(index: number, pilot: Pilot): Promise<void> {
       if (!this.Pilots[index]) return
@@ -145,9 +138,6 @@ export const PilotStore = defineStore('pilot', {
 
       await RemoveItem('pilots', id)
       void obrBridge.removePilotFromRoom(id)
-
-      // Ficha excluída em definitivo: sai também do catálogo da sala.
-      queueSheetColdDelete(id)
 
       if (pilot.CloudController.ShareCode) {
         await CloudController.MarkCloudDeleted(pilot.CloudController.Metadata)

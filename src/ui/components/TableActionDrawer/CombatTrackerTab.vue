@@ -420,7 +420,7 @@
         Nenhum Combate Ativo
       </div>
       <div class="text-caption text-grey-lighten-2 mb-4" style="max-width: 320px; margin: 0 auto;">
-        Inicie um encontro para sincronizar rodadas, turnos e ordem de iniciativa com todos na mesa do Owlbear Rodeo.
+        Inicie um encontro para acompanhar rodadas, turnos e ordem de iniciativa. Os combatentes são adicionados manualmente.
       </div>
       <div v-if="effectiveIsGM" class="d-flex flex-column align-center ga-2" style="max-width: 260px; margin: 0 auto;">
         <v-btn
@@ -481,7 +481,7 @@
         </div>
 
         <div class="text-caption text-grey-lighten-2 mb-3">
-          Configure o encontro da sessão. Ele será sincronizado imediatamente na mesa para todos os jogadores.
+          Configure o encontro da sessão. Os combatentes entram na iniciativa manualmente, pelo botão "Adicionar".
         </div>
 
         <v-text-field
@@ -494,20 +494,6 @@
           class="mb-2 rounded-0"
           autofocus
         />
-
-        <v-switch
-          v-model="newEncounterIncludePilots"
-          label="Adicionar pilotos da mesa automaticamente"
-          color="accent"
-          density="compact"
-          hide-details
-          class="mb-3"
-        />
-
-        <div v-if="newEncounterIncludePilots && availablePilotsCount > 0" class="text-caption text-accent mb-3">
-          <v-icon icon="mdi-account-check" size="14" class="mr-1" />
-          {{ availablePilotsCount }} piloto(s) serão incluídos na iniciativa como Aliados.
-        </div>
 
         <div class="d-flex align-center justify-end ga-2 pt-2 border-t border-grey-darken-3">
           <v-btn variant="text" size="small" color="grey-lighten-1" class="rounded-0" @click="newEncounterDialog = false">
@@ -714,7 +700,7 @@
         <div class="text-body-2 text-grey-lighten-1 my-3">
           Deseja remover <b>{{ combatantToRemove?.actor?.Name }}</b> deste combate?
           <div class="text-caption text-grey mt-1">
-            O combatente será retirado da iniciativa e a alteração será sincronizada na mesa.
+            O combatente será retirado da iniciativa.
           </div>
         </div>
         <div class="d-flex align-center justify-end ga-2">
@@ -1056,7 +1042,6 @@ const loadJsonError = ref('')
 // Novo Encontro
 const newEncounterDialog = ref(false)
 const newEncounterName = ref('Combate da Sessão')
-const newEncounterIncludePilots = ref(true)
 const isCreatingEncounter = ref(false)
 
 // Adicionar Combatente
@@ -1157,8 +1142,6 @@ const tablePilotsList = computed(() => {
   const allPilots = (pilotStore.Pilots || []).filter((p: any) => !p?.SaveController?.IsDeleted)
   return allPilots
 })
-
-const availablePilotsCount = computed(() => tablePilotsList.value.length)
 
 const filteredPilotsList = computed(() => {
   const q = pilotSearchQuery.value?.trim().toLowerCase()
@@ -1385,7 +1368,6 @@ function toggleCombatantVisibility(c: any) {
 // INICIAR NOVO ENCONTRO
 function openNewEncounterModal() {
   newEncounterName.value = 'Combate da Sessão'
-  newEncounterIncludePilots.value = true
   newEncounterDialog.value = true
 }
 
@@ -1398,17 +1380,9 @@ async function confirmCreateNewEncounter() {
     const baseEncounter = new Encounter()
     baseEncounter.Name = newEncounterName.value.trim() || 'Combate da Sessão'
 
-    let pilotsToAdd: any[] = []
-    if (newEncounterIncludePilots.value) {
-      pilotsToAdd = (pilotStore.Pilots || []).filter((p: any) => !p?.SaveController?.IsDeleted && p.Mechs?.length > 0)
-    }
-
-    const instance = new EncounterInstance(
-      undefined,
-      baseEncounter,
-      pilotsToAdd,
-      []
-    )
+    // O encontro nasce VAZIO: nenhum piloto entra sozinho na iniciativa. Quem entra,
+    // entra pelo diálogo "Adicionar" (ou pelos menus do runner).
+    const instance = new EncounterInstance(undefined, baseEncounter, [], [])
 
     instance.Combatants.forEach((c: any) => {
       c.actor?.CombatController?.ResetForEncounter()
@@ -1705,16 +1679,12 @@ async function launchEncounter(enc: any) {
   try {
     const { Encounter } = await import('@/classes/encounter/Encounter')
     const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
-    const pilots = (pilotStore.Pilots || []).filter((p: any) => !p?.SaveController?.IsDeleted) as any[]
 
     const encObj = (enc instanceof Encounter) ? enc : Encounter.Deserialize(enc)
 
-    const instance = new EncounterInstance(
-      undefined,
-      encObj,
-      pilots,
-      []
-    )
+    // Sem inclusão automática: o encontro preparado traz os próprios combatentes e
+    // os pilotos da mesa entram na iniciativa só quando o mestre adicionar.
+    const instance = new EncounterInstance(undefined, encObj, [], [])
     instance.Combatants.forEach((c: any) => {
       c.actor?.CombatController?.ResetForEncounter()
       c.actor?.CombatController?.StartEncounter()
@@ -1766,8 +1736,9 @@ async function loadEncounterFromJson() {
       const result = await loadEncounterFromFile(loadJsonFile.value)
       instance = result.instance
     } else {
+      // Sem `pilots`: o encontro carregado traz os próprios combatentes e nenhum
+      // piloto da mesa é incluído automaticamente na iniciativa.
       const result = await loadEncounterFromJsonOrSharecode(loadJsonInput.value.trim(), {
-        pilots: (pilotStore.Pilots || []).filter((p: any) => !p?.SaveController?.IsDeleted) as any[],
         placeholders: [],
         navigate: false,
       })
@@ -1786,7 +1757,7 @@ loadJsonFile.value = null
       senderName: 'Combat Tracker',
       category: 'full_action',
       title: `Combate Carregado — ${instance.Name}`,
-      detail: `Encontro carregado de JSON/Sharecode e sincronizado para a mesa. Rodada ${instance.Round}.`,
+      detail: `Encontro carregado de JSON/Sharecode. Rodada ${instance.Round}.`,
     })
   } catch (err) {
     loadJsonError.value = err instanceof Error ? err.message : 'Erro ao carregar encontro.'

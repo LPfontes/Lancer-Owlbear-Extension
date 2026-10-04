@@ -111,14 +111,14 @@
         </v-tab>
       </v-tabs>
 
-      <!-- Gerenciador de Fichas da Mesa (MongoDB) -->
+      <!-- Gerenciador de Fichas da Mesa -->
       <v-btn
         icon="mdi-database-outline"
         variant="text"
         size="small"
         color="accent"
         class="mr-2 flex-shrink-0"
-        title="Gerenciador de Fichas (MongoDB)"
+        title="Gerenciador de Fichas da Mesa"
         @click="openSheetManagerDialog"
       />
     </div>
