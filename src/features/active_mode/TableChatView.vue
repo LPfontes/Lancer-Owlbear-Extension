@@ -366,6 +366,12 @@ watch(currentTab, (tab) => {
 .chat-feed-container {
   overflow-y: auto;
   scroll-behavior: smooth;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.table-chat-window > .flex-grow-1 {
+  min-height: 0;
 }
 
 .chat-feed-container::-webkit-scrollbar {

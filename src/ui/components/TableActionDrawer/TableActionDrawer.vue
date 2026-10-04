@@ -221,6 +221,11 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  .feed-scroll-container {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
   .feed-scroll-container::-webkit-scrollbar {
     width: 4px;
   }
