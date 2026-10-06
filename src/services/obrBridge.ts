@@ -11,7 +11,6 @@ import { statusMarkerService } from './statusMarkerService'
 import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrackerService'
 import { tokenMovementCapture } from './tokenMovementCapture'
 import { tokenTrackerLog } from './tokenTrackerDebug'
-import type { MovementSpendReply, MovementSpendRequest } from '@/types/token-movement'
 import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
 import { isActiveModePrewarm } from './prewarmContext'
@@ -458,15 +457,6 @@ class OBRBridge {
         window.dispatchEvent(new CustomEvent('compcon-tracker-clear'))
       } else if (msg.type === 'TRACKER_SYNC_REQUEST') {
         window.dispatchEvent(new CustomEvent('compcon-tracker-sync-request'))
-      } else if (msg.type === 'MOVEMENT_SPEND') {
-        // Um iframe arrastou o token e este aqui pode ter o controlador vivo: só a
-        // janela da ficha aplica (e só se o vínculo for de uma ficha dela).
-        const reply = await tokenMovementCapture.applyRemoteSpend(msg as MovementSpendRequest)
-        if (reply && msg.replyTo !== false) {
-          await this.sendBroadcastMessage({ type: 'MOVEMENT_SPENT', ...reply })
-        }
-      } else if (msg.type === 'MOVEMENT_SPENT') {
-        await tokenMovementCapture.onSpendReply(msg as MovementSpendReply)
       } else if (msg.type === 'MOVEMENT_ROUND_RESET') {
         // Fim de rodada (ou de turno) em outra janela: reinicia as cópias DESTA janela
         // (idempotente) e não reenvia, senão as janelas ficariam se avisando para sempre.

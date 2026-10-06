@@ -6,6 +6,7 @@ import {
   LANCER_TOKEN_TRACKER_SLOTS,
   TOKEN_TRACKER_ITEM_SLOT_KEY,
   TOKEN_TRACKER_LOCAL_PREFS_ID,
+  TOKEN_TRACKER_MOVEMENT_KEY,
   TOKEN_TRACKER_SUMMARY_KEY,
   type TokenTrackerConfig,
   type TokenTrackerLocalPrefs,
@@ -47,6 +48,10 @@ import {
   writerRank,
 } from '@/services/tokenTrackerSummary'
 import { layoutTokenTrackers, type MovementVisualState } from '@/services/tokenTrackerLayout'
+import {
+  movementValueFromRecord,
+  sanitizeMovementRecord,
+} from '@/services/tokenMovementRecord'
 import {
   dumpRawStats,
   installTokenTrackerDebugConsole,
@@ -676,6 +681,16 @@ class TokenTrackerService {
     // combate — não podem sobrescrevê-lo no desenho.
     const summaryWins = !!summary && writerRank(summary.w) > state.rank
     const merged = mergeTrackerValues(summaryWins ? null : localValues, fromToken)
+
+    // O MOVIMENTO não é derivado da ficha: ele é gravado no próprio token pelo arrasto
+    // (§13 — revisão da captura). Quando existe, é ele que manda no slot `speed`, em
+    // qualquer janela — inclusive numa que não tenha a ficha e sem esperar o resumo.
+    const movementRecord = sanitizeMovementRecord(token.metadata?.[TOKEN_TRACKER_MOVEMENT_KEY])
+    if (movementRecord) {
+      merged.values.speed = movementValueFromRecord(movementRecord)
+      merged.origins.speed = 'token'
+      merged.hasValues = true
+    }
 
     const tracked = isTokenTracked({
       tokenId,

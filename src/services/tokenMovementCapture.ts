@@ -17,11 +17,17 @@ import {
 } from '@/services/tokenTrackerDebug'
 import { tokenTrackerService, type MovementTarget } from '@/services/tokenTrackerService'
 import { isSheetWindowContext } from '@/services/mainWindow'
-import type {
-  MovementDecision,
-  MovementSpendReply,
-  MovementSpendRequest,
-} from '@/types/token-movement'
+import {
+  collectMovementRecords,
+  fullMovementRecord,
+  movementRecordChanged,
+  movementRecordFromStats,
+  sanitizeMovementRecord,
+  spendFromMovementRecord,
+} from '@/services/tokenMovementRecord'
+import { TOKEN_TRACKER_MOVEMENT_KEY } from '@/types/token-tracker'
+import type { TokenTrackerMovementRecord } from '@/types/token-tracker'
+import type { MovementDecision } from '@/types/token-movement'
 
 /**
  * Captura do arrasto do token e gasto de movimento (plano §13.3/§13.4).
@@ -128,8 +134,8 @@ class TokenMovementCaptureService {
   private overflows = new Map<string, PendingOverflow>()
   private lastSpentG = new Map<string, SpentGesture>()
   private relaySend: RelaySend | null = null
-  /** Pedidos enviados a outro iframe, esperando a resposta do dono da ficha. */
-  private relayPending = new Map<string, { tokenId: string; spaces: number; sentAt: number }>()
+  /** Último registro de movimento visto por token (para reconciliar só o que mudou). */
+  private lastRecords = new Map<string, TokenTrackerMovementRecord>()
   /** Tokens já avisados por não terem vínculo (avisa uma vez, não a cada arrasto). */
   private warnedUnbound = new Set<string>()
   /** Tokens já avisados por mudarem sem retrato anterior (uma vez cada). */
@@ -218,10 +224,61 @@ class TokenMovementCaptureService {
   // Captura
   /////////////////////////////////////////////////////////////////////
 
+  /**
+   * Alinha o `SPEED` desta janela ao movimento GRAVADO no token.
+   *
+   * Só a janela da ficha tem o controlador vivo; nas outras o `SPEED` é cópia
+   * deserializada e escrever nela não chega a lugar nenhum. Aqui rodamos a cada
+   * mudança de metadata (o `items` do `onChange` já traz o registro), então o custo é
+   * uma comparação por token — nenhuma ida extra ao SDK.
+   */
+  private reconcileRecords(items: unknown[], next: Map<string, CanvasPoint>): void {
+    if (!isSheetWindowContext()) return
+
+    const records = collectMovementRecords(items, TOKEN_TRACKER_MOVEMENT_KEY)
+    for (const [tokenId, record] of records) {
+      const previous = this.lastRecords.get(tokenId)
+      this.lastRecords.set(tokenId, record)
+      if (!movementRecordChanged(previous, record)) continue
+      if (!next.has(tokenId)) continue
+      void this.alignSpeedWithRecord(tokenId, record)
+    }
+  }
+
+  private async alignSpeedWithRecord(
+    tokenId: string,
+    record: TokenTrackerMovementRecord
+  ): Promise<void> {
+    const target = await tokenTrackerService.getMovementTarget(tokenId)
+    if (!target) return
+
+    const atual = toTrackerInt(target.statController?.getCurrent?.('speed'))
+    if (atual === record.current) return
+
+    try {
+      // `silent: true`: alinhar não é uma ação de combate, não vira linha no log.
+      target.statController?.setCurrentStat?.('speed', record.current, { silent: true })
+      tokenTrackerLog(
+        'movimento',
+        `token ${tokenId}: alinhei o SPEED da ficha ao movimento do token`,
+        { antes: atual, agora: record.current, registroDe: record.w ?? '(sem autor)' }
+      )
+      await tokenTrackerService.refreshToken(tokenId)
+    } catch (err) {
+      tokenTrackerWarn('movimento', `falha ao alinhar o SPEED de ${tokenId} ao token`, err)
+    }
+  }
+
   private async onItems(items: unknown[]): Promise<void> {
     if (!this.started) return
 
     const next = collectTokenPositions(items)
+
+    // Reconciliação do motor com o registro do token: quem tem o controlador vivo é a
+    // janela da ficha, e o registro é a fonte do número. Sem isto, o arrasto feito
+    // noutra janela deixaria o HUD da ficha mostrando o movimento antigo.
+    this.reconcileRecords(items, next)
+
     for (const id of removedTokenIds(this.lastSeen, next)) {
       this.lastSeen.delete(id)
       this.forgetGesture(id)
@@ -391,11 +448,26 @@ class TokenMovementCaptureService {
     // "Livre" é um tiro só: consumido aqui, valha o desfecho.
     const wasFree = this.freeArmed.delete(gesture.tokenId)
 
+    // O movimento vem do TOKEN: é o número que todas as janelas enxergam, e é ele que
+    // impede duas janelas de debitarem o mesmo arrasto. O motor só entra depois, para
+    // deixar a ficha coerente.
+    const gravado = await this.readMovementRecord(gesture.tokenId)
+    const base =
+      gravado ??
+      movementRecordFromStats(
+        {
+          remaining: target.remaining,
+          maxSpeed: target.maxSpeed,
+          boostBonus: target.boostBonus,
+        },
+        this.writerId()
+      )
+
     const decision = decideMovement({
       spaces,
-      remaining: target.remaining,
-      boostBonus: target.boostBonus,
-      maxSpeed: target.maxSpeed,
+      remaining: base.current,
+      boostBonus: base.boost,
+      maxSpeed: base.max,
       canBoost: target.canBoost,
       kind,
       immobilized: target.immobilized,
@@ -407,13 +479,13 @@ class TokenMovementCaptureService {
         ? 'esta janela mexeu no token'
         : `outra janela mexeu (lastModifiedUserId=${String(gesture.movedBy)} ≠ ${this.playerId() || '?'})`,
       livreArmadoConsumido: wasFree,
-      restante: target.remaining,
-      capDoTurno: target.maxSpeed + target.boostBonus,
-      boostBonus: target.boostBonus,
+      movimentoNoToken: `${base.current}/${base.max + base.boost}`,
+      origemDoRegistro: gravado ? 'registro do token' : 'ficha (primeiro gesto do turno)',
+      boostBonus: base.boost,
       podeDarBoost: target.canBoost,
       imobilizado: target.immobilized,
-      decisao: decision.action,
       janelaDaFicha: isSheetWindowContext(),
+      decisao: decision.action,
       ...(decision.action === 'spend'
         ? { gasto: decision.spend, leg: decision.mode }
         : decision.action === 'offer-boost'
@@ -421,180 +493,119 @@ class TokenMovementCaptureService {
           : { motivo: decision.reason }),
     })
 
-    // O débito tem de cair no controlador VIVO. Se esta janela não é a da ficha, o
-    // que ela resolveu é uma cópia deserializada: debitar aqui seria perdido (a ficha
-    // viva sobrescreve ao salvar) ou cobrado em dobro. Então o GESTO vai por
-    // broadcast e o dono decide com os números dele.
-    if (!isSheetWindowContext() && this.canRelay()) {
-      await this.relayGesture(gesture, target, spaces, kind)
+    if (decision.action === 'spend') {
+      await this.commitSpend(gesture, target, base, decision)
       return
     }
 
-    await this.applyDecision(gesture, target, decision)
-  }
-
-  /**
-   * Manda o gesto para a janela que tem a ficha viva.
-   *
-   * Vai o gesto (espaços + classificação), **não** a decisão: quem tem os números
-   * frescos é o dono do controlador.
-   */
-  private async relayGesture(
-    gesture: Gesture,
-    target: MovementTarget,
-    spaces: number,
-    kind: MovementSpendRequest['kind']
-  ): Promise<void> {
-    const request: MovementSpendRequest = {
-      requestId: newRequestId(),
-      tokenId: gesture.tokenId,
-      sheetId: target.binding.sheetId,
-      mechId: target.binding.mechId,
-      spaces,
-      kind,
+    if (decision.action === 'offer-boost') {
+      // Nada é debitado enquanto o jogador não escolher: é o que preserva a
+      // possibilidade do Boost (§13.5). O cartão é a M2.
+      this.overflows.set(gesture.tokenId, {
+        tokenId: gesture.tokenId,
+        spaces: decision.spend,
+        overBy: decision.overBy,
+        remaining: base.current,
+        canBoost: target.canBoost,
+        target,
+        startCorner: { ...gesture.startCorner },
+      })
+      tokenTrackerWarn(
+        'movimento',
+        `token ${gesture.tokenId}: movimento ACIMA do cap (${decision.spend} > ${base.current} no token) e nada foi debitado — falta o cartão de Boost/Desfazer (M2)`,
+        { passouDoCapEm: decision.overBy, podeDarBoost: target.canBoost }
+      )
+      return
     }
 
-    this.relayPending.set(request.requestId, {
-      tokenId: gesture.tokenId,
-      spaces,
-      sentAt: Date.now(),
-    })
-    // Guarda o gesto para o caso de o dono recusar por estouro (o cartão da M2
-    // precisa de saber para onde voltar).
+    // Rejeições: `free` é o combinado (não debita), `involuntary` é empurrão do GM,
+    // `immobilized` e `over-cap-no-boost` ficam sem débito. Nesses dois últimos o
+    // token já andou; o cartão da M2 oferece Desfazer (§13.5/§13.6).
+    if (decision.reason === 'immobilized' || decision.reason === 'over-cap-no-boost') {
+      tokenTrackerWarn(
+        'movimento',
+        `token ${gesture.tokenId}: gesto recusado (${decision.reason}) e o token JÁ andou — o Desfazer é a M2`,
+        { restanteNoToken: base.current }
+      )
+    }
     this.overflows.set(gesture.tokenId, {
       tokenId: gesture.tokenId,
-      spaces,
+      spaces: 0,
       overBy: 0,
-      remaining: target.remaining,
-      canBoost: target.canBoost,
+      remaining: base.current,
+      canBoost: false,
       target,
       startCorner: { ...gesture.startCorner },
     })
+  }
 
-    tokenTrackerLog(
-      'movimento',
-      `token ${gesture.tokenId}: ${spaces} espaço(s) enviados para a janela da ficha (esta janela não tem o controlador vivo)`,
-      { vinculo: `${target.binding.sheetId}${target.binding.mechId ? ` / ${target.binding.mechId}` : ''}`, requestId: request.requestId }
-    )
+  /**
+   * Debita de verdade: escreve o registro NO TOKEN e, quando esta janela tem o
+   * controlador vivo (a da ficha), gasta também no motor para o HUD da ficha bater.
+   *
+   * A ordem importa: o token primeiro. Se o motor falhar depois, o número que a mesa
+   * vê continua correto — e a janela da ficha reconcilia no próximo evento.
+   */
+  private async commitSpend(
+    gesture: Gesture,
+    target: MovementTarget,
+    base: TokenTrackerMovementRecord,
+    decision: Extract<MovementDecision, { action: 'spend' }>
+  ): Promise<void> {
+    const { record } = spendFromMovementRecord(base, decision.spend, this.writerId())
 
     try {
-      await this.relaySend?.({ type: 'MOVEMENT_SPEND', ...request })
-    } catch (err) {
-      tokenTrackerWarn('movimento', 'falha ao enviar o gesto para a janela da ficha', err)
-    }
-  }
-
-  /**
-   * Resposta do dono da ficha: o débito (ou a recusa) aconteceu **lá**.
-   *
-   * Aqui só se registra o resultado e se redesenha — o número exibido passa a vir do
-   * resumo gravado no token, que o dono atualiza.
-   */
-  public async onSpendReply(reply: MovementSpendReply): Promise<void> {
-    const pending = this.relayPending.get(reply.requestId)
-    if (!pending) return
-    this.relayPending.delete(reply.requestId)
-
-    tokenTrackerLog('movimento', `token ${reply.tokenId}: resposta da janela da ficha`, {
-      debitado: reply.applied ? reply.spent : 0,
-      acao: reply.action,
-      motivo: reply.reason ?? '(nenhum)',
-      restanteDepois: reply.remainingAfter,
-      espacosDoGesto: pending.spaces,
-    })
-
-    if (!reply.applied) {
-      tokenTrackerWarn(
-        'movimento',
-        `token ${reply.tokenId}: a janela da ficha NÃO debitou (${reply.action}${reply.reason ? `: ${reply.reason}` : ''}) — o cartão da M2 é quem resolve isso`,
-        { restanteNaFicha: reply.remainingAfter }
-      )
-    }
-    await tokenTrackerService.refreshToken(reply.tokenId)
-  }
-
-  /**
-   * Aplica um gesto recebido de OUTRO iframe. Só a janela da ficha executa, e só se o
-   * vínculo for de uma ficha DESTA janela.
-   */
-  public async applyRemoteSpend(request: MovementSpendRequest): Promise<MovementSpendReply | null> {
-    if (!isSheetWindowContext()) return null
-
-    const own = tokenTrackerService.getOwnSheetIds()
-    const isMine = own.includes(request.sheetId) || (!!request.mechId && own.includes(request.mechId))
-    if (!isMine) {
-      tokenTrackerTrace('movimento', `pedido de ${request.tokenId} não é desta janela`, {
-        pedido: `${request.sheetId}${request.mechId ? ` / ${request.mechId}` : ''}`,
-        fichasDestaJanela: own,
+      await OBR.scene.items.updateItems([gesture.tokenId], items => {
+        for (const item of items) {
+          item.metadata[TOKEN_TRACKER_MOVEMENT_KEY] = record as unknown as never
+        }
       })
-      return null
+    } catch (err) {
+      tokenTrackerWarn('movimento', `falha ao gravar o movimento no token ${gesture.tokenId}`, err)
     }
 
-    // Resolve AQUI: o controlador desta janela é o vivo, então a decisão usa os
-    // números frescos (restante, BoostBonus, imobilizado, legalidade do Boost).
-    const target = await tokenTrackerService.getMovementTarget(request.tokenId)
-    if (!target) {
-      tokenTrackerWarn(
-        'movimento',
-        `pedido de ${request.tokenId} chegou à janela da ficha, mas o alvo não resolveu aqui`
-      )
-      return {
-        requestId: request.requestId,
-        tokenId: request.tokenId,
-        applied: false,
-        spent: 0,
-        action: 'reject',
-        reason: 'over-cap-no-boost',
-        remainingAfter: 0,
+    // Só a janela da ficha tem o controlador vivo; nas outras o `SPEED` é uma cópia
+    // deserializada, e escrever nela não chega a lugar nenhum.
+    if (isSheetWindowContext()) {
+      try {
+        // `SpendMovement` também registra `Record('move', …)` no log de combate.
+        target.combatController.SpendMovement(decision.spend, decision.mode)
+      } catch (err) {
+        tokenTrackerWarn('movimento', 'falha ao debitar no motor da ficha', err)
       }
     }
 
-    const decision = decideMovement({
-      spaces: request.spaces,
-      remaining: target.remaining,
-      boostBonus: target.boostBonus,
-      maxSpeed: target.maxSpeed,
-      canBoost: target.canBoost,
-      kind: request.kind,
-      immobilized: target.immobilized,
+    this.lastSpentG.set(gesture.tokenId, {
+      tokenId: gesture.tokenId,
+      spent: decision.spend,
+      mode: decision.mode,
+      previousRemaining: base.current,
+      startCorner: { ...gesture.startCorner },
+      statController: target.statController,
     })
+    this.lastRecords.set(gesture.tokenId, record)
 
-    const reply: MovementSpendReply = {
-      requestId: request.requestId,
-      tokenId: request.tokenId,
-      applied: false,
-      spent: 0,
-      action: decision.action,
-      remainingAfter: target.remaining,
+    tokenTrackerLog(
+      'movimento',
+      `token ${gesture.tokenId}: debitados ${decision.spend} (${record.current} restantes no token)`,
+      { leg: decision.mode, como: isSheetWindowContext() ? 'token + motor' : 'só o token' }
+    )
+
+    await tokenTrackerService.refreshToken(gesture.tokenId)
+  }
+
+  /** Registro de movimento gravado neste token, se houver. */
+  private async readMovementRecord(tokenId: string): Promise<TokenTrackerMovementRecord | null> {
+    try {
+      const item = (await OBR.scene.items.getItems([tokenId]))[0]
+      return sanitizeMovementRecord(item?.metadata?.[TOKEN_TRACKER_MOVEMENT_KEY])
+    } catch {
+      return null
     }
+  }
 
-    if (decision.action === 'spend') {
-      target.combatController.SpendMovement(decision.spend, decision.mode)
-      reply.applied = true
-      reply.spent = decision.spend
-      reply.remainingAfter = toTrackerInt(target.statController?.getCurrent?.('speed'))
-      this.lastSpentG.set(request.tokenId, {
-        tokenId: request.tokenId,
-        spent: decision.spend,
-        mode: decision.mode,
-        previousRemaining: target.remaining,
-        startCorner: await this.cornerOf(request.tokenId),
-        statController: target.statController,
-      })
-    } else if (decision.action === 'reject') {
-      reply.reason = decision.reason
-    }
-
-    tokenTrackerLog('movimento', `debitei um gesto vindo de outra janela (${request.tokenId})`, {
-      espacos: request.spaces,
-      leg: decision.action === 'spend' ? decision.mode : '(não debitado)',
-      restanteAntes: target.remaining,
-      restanteDepois: reply.remainingAfter,
-      acao: decision.action,
-    })
-
-    await tokenTrackerService.refreshToken(request.tokenId)
-    return reply
+  private writerId(): string {
+    return `${isSheetWindowContext() ? 'ficha' : 'mapa'}:${(this.playerId() || 'local').slice(0, 8)}`
   }
 
   /**
@@ -620,7 +631,6 @@ class TokenMovementCaptureService {
     this.gestures.clear()
     this.overflows.clear()
     this.lastSpentG.clear()
-    this.relayPending.clear()
 
     let tokenIds: string[] = []
     try {
@@ -656,6 +666,21 @@ class TokenMovementCaptureService {
         target.combatController.ClearBoost?.()
         const max = toTrackerInt(target.combatController?.StatController?.getMax?.('speed'))
         target.statController?.setCurrentStat?.('speed', max, { silent: true })
+
+        // E o TOKEN também: é ele que as outras janelas desenham, e é dele que a
+        // janela da ficha vai reconciliar o `SPEED` quando abrir.
+        const gravado = await this.readMovementRecord(tokenId)
+        const cheio = fullMovementRecord(
+          gravado ?? movementRecordFromStats({ remaining: max, maxSpeed: max, boostBonus: 0 }),
+          this.writerId()
+        )
+        await OBR.scene.items.updateItems([tokenId], items => {
+          for (const item of items) {
+            item.metadata[TOKEN_TRACKER_MOVEMENT_KEY] = cheio as unknown as never
+          }
+        })
+        this.lastRecords.set(tokenId, cheio)
+
         reiniciados += 1
         await tokenTrackerService.refreshToken(tokenId)
       } catch (err) {
@@ -678,18 +703,6 @@ class TokenMovementCaptureService {
     }
   }
 
-  private async cornerOf(tokenId: string): Promise<CanvasPoint> {
-    const bounds = await OBR.scene.items.getItemBounds([tokenId]).catch(() => null)
-    const item = (
-      await OBR.scene.items.getItems([tokenId]).catch(() => [] as { position?: CanvasPoint }[])
-    )[0]
-    if (item?.position) return { x: item.position.x, y: item.position.y }
-    return bounds?.min ?? { x: 0, y: 0 }
-  }
-
-  private canRelay(): boolean {
-    return typeof this.relaySend === 'function'
-  }
 
   /**
    * Espaços andados neste gesto.
@@ -754,80 +767,6 @@ class TokenMovementCaptureService {
     // identificadores. Na dúvida (sem id), não debita.
     if (!playerId) return false
     return gesture.movedBy === playerId
-  }
-
-  private async applyDecision(
-    gesture: Gesture,
-    target: MovementTarget,
-    decision: MovementDecision
-  ): Promise<void> {
-    if (decision.action === 'spend') {
-      // O motor já registra `Record('move', …)` dentro de `SpendMovement` — não
-      // registrar de novo.
-      target.combatController.SpendMovement(decision.spend, decision.mode)
-      // Lê de volta do MESMO objeto que foi debitado: é o que prova que o débito caiu
-      // onde o painel desenha (e não numa das outras cópias do mecha).
-      const after = {
-        current: toTrackerInt(target.statController?.getCurrent?.('speed')),
-        max: toTrackerInt(target.combatController?.BoostedSpeed),
-      }
-      tokenTrackerLog('movimento', `token ${gesture.tokenId}: debitados ${decision.spend}`, {
-        leg: decision.mode,
-        restanteAntes: target.remaining,
-        restanteDepois: after.current,
-        capDoTurnoAgora: after.max,
-      })
-      this.lastSpentG.set(gesture.tokenId, {
-        tokenId: gesture.tokenId,
-        spent: decision.spend,
-        mode: decision.mode,
-        previousRemaining: target.remaining,
-        startCorner: { ...gesture.startCorner },
-        statController: target.statController,
-      })
-      await tokenTrackerService.refreshToken(gesture.tokenId)
-      return
-    }
-
-    if (decision.action === 'offer-boost') {
-      // Nada é debitado enquanto o jogador não escolher: é o que preserva a
-      // possibilidade do Boost (§13.5). O cartão é a M2.
-      this.overflows.set(gesture.tokenId, {
-        tokenId: gesture.tokenId,
-        spaces: decision.spend,
-        overBy: decision.overBy,
-        remaining: target.remaining,
-        canBoost: target.canBoost,
-        target,
-        startCorner: { ...gesture.startCorner },
-      })
-      tokenTrackerWarn(
-        'movimento',
-        `token ${gesture.tokenId}: movimento ACIMA do cap (${decision.spend} > ${target.remaining}) e nada foi debitado — falta o cartão de Boost/Desfazer (M2)`,
-        { passouDoCapEm: decision.overBy, podeDarBoost: target.canBoost }
-      )
-      return
-    }
-
-    // Rejeições: `free` é o combinado (não debita), `involuntary` é empurrão do GM,
-    // `immobilized` e `over-cap-no-boost` ficam sem débito. Nesses dois últimos o
-    // token já andou; o cartão da M2 oferece Desfazer (§13.5/§13.6).
-    if (decision.reason === 'immobilized' || decision.reason === 'over-cap-no-boost') {
-      tokenTrackerWarn(
-        'movimento',
-        `token ${gesture.tokenId}: gesto recusado (${decision.reason}) e o token JÁ andou — o Desfazer é a M2`,
-        { restante: target.remaining }
-      )
-    }
-    this.overflows.set(gesture.tokenId, {
-      tokenId: gesture.tokenId,
-      spaces: 0,
-      overBy: 0,
-      remaining: target.remaining,
-      canBoost: false,
-      target,
-      startCorner: { ...gesture.startCorner },
-    })
   }
 
   /**

@@ -163,12 +163,15 @@ do piloto — o piloto não tem calor/estrutura/estresse de mecha.
 
 ## 0.1 Movimento dinâmico (§13) — o que testar na sala
 
-> **A ficha viva fica num iframe separado.** O modo ativo roda na janela persistente
-> (`windowType=floating`) e o arrasto acontece na janela do mapa. O `StatController` vivo só
-> existe no iframe da ficha, então **é ele que decide e debita**: a janela do mapa manda o
-> *gesto* por broadcast (`MOVEMENT_SPEND`) e recebe de volta o que foi feito
-> (`MOVEMENT_SPENT`). Quem decide precisa do `remaining`/`BoostBonus` de verdade — uma cópia
-> deserializada mentiria, e debitar nela seria perdido quando a ficha salvasse por cima.
+> **O movimento mora NO TOKEN** (`metadata["com.compcon.activemode/movement"]`), não na
+> ficha. Motivo: o número muda pelo arrasto no mapa, e o arrasto pode acontecer numa janela que
+> não tem o controlador vivo (a ficha vive no iframe `windowType=floating`). Antes disso, **duas
+> janelas debitavam o mesmo arrasto** — todas veem o `items.onChange` e `lastModifiedUserId` é do
+> USUÁRIO, não da janela.
+>
+> Agora: quem arrastou **escreve o registro** (um escritor só), todas as janelas desenham o mesmo
+> número, e a janela da ficha **alinha** o `SPEED` dela ao registro (`silent`, sem virar linha no
+> log de combate). O relay de gasto por broadcast foi removido; sobrou o do fim de rodada/turno.
 
 Nos logs, isso aparece em duas janelas diferentes: na do mapa sai
 `N espaço(s) enviados para a janela da ficha`; na da ficha sai
