@@ -2290,7 +2290,9 @@
     },
     "endRound": {
       "endRound": "Encerrar Rodada",
-      "confirmEndRound": "Confirmar Fim da Rodada"
+      "confirmEndRound": "Confirmar Fim da Rodada",
+      "endTurn": "Encerrar Turno",
+      "confirmEndTurn": "Confirmar Fim do Turno"
     },
     "actionChips": {
       "protocol": "Protocolo",

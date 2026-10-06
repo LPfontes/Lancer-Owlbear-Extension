@@ -167,9 +167,9 @@
           block
           prepend-icon="mdi-check-all"
           :disabled="hasBurn && !burnHandled"
-          @click="endRound(isActive)"
+          @click="endTurn(isActive)"
         >
-          {{ $t('active.endRound.endRound') }}
+          {{ $t('active.endRound.endTurn') }}
         </cc-button>
         <div
           v-if="hasBurn && !burnHandled"
@@ -198,6 +198,7 @@
   import BurnCheckModal from '../../gm/EncounterPanels/_components/BurnCheckModal.vue'
   import { StatKey } from '@/classes/components/combat/stats/Stats'
   import DOMPurify from 'dompurify'
+  import { tokenMovementCapture } from '@/services/tokenMovementCapture'
 
   defineOptions({ name: 'PcEndRoundPanel' })
 
@@ -250,8 +251,19 @@
             s.expires.RoundEndNumber === props.sheet.Round + 1))
     )
   }
-  async function endRound(isActive) {
+  async function endTurn(isActive) {
     isActive.value = false
-    await props.sheet.EndRound()
+    // Encerra o TURNO da própria ficha — sem encontro (o pilot-runner não tem um). O
+    // `EndTurnFlow` cuida de burn, checagens, ativação e usos de turno; o movimento
+    // volta ao máximo no `Reset(ActivePeriod.Turn)` que ele mesmo roda.
+    await props.sheet.EndTurn()
+    // E o pedido sai para as outras janelas só para os tokens DESTA ficha: os badges
+    // do mapa precisam voltar ao cheio mesmo sem o movimento ter sido gasto aqui.
+    await tokenMovementCapture.resetRoundMovements({
+      filter: {
+        sheetId: props.sheet.Pilot?.ID,
+        mechId: props.sheet.Pilot?.ActiveMech?.ID,
+      },
+    })
   }
 </script>

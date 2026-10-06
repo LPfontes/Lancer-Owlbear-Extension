@@ -164,6 +164,25 @@ class PilotSheet implements ISaveable, ICloudSyncable {
     }
   }
 
+  /**
+   * Encerra o TURNO desta ficha — **sem encontro**.
+   *
+   * Diferente do `EndRound` acima (que recebe `this` como contexto de mesa), aqui
+   * `EndTurn()` vai sem argumento de propósito: o pilot-runner não tem instância de
+   * encontro, então não há iniciativa, ordem de lado nem reações de mesa para mexer.
+   * O que interessa do turno continua valendo, porque vem do próprio
+   * `EndTurnFlow`: burn, checagens pendentes, gasto de ativação, usos de turno e —
+   * via `Reset(ActivePeriod.Turn)` — o **movimento de volta ao máximo**.
+   */
+  public async EndTurn(): Promise<void> {
+    this.Combatant?.actor?.CombatController?.EndTurn()
+    this.Pilot?.ActiveMech?.CombatController?.EndTurn()
+
+    if (this.Autosave) {
+      this.Save()
+    }
+  }
+
   public getTargetsSorted(): CombatantData[] {
     return [this.Combatant]
   }

@@ -47,6 +47,17 @@ import type {
 /** Tempo parado que fecha o gesto (plano §13.3). */
 export const MOVEMENT_SETTLE_MS = 250
 
+/**
+ * Teto de duração de um gesto.
+ *
+ * O settle é adiado a cada mudança real de posição. Num arrasto contínuo o SDK pode
+ * emitir eventos com intervalo MAIOR que o settle (aí cada passo vira um gesto — o
+ * total continua certo, mas o log vira uma parede) ou MENOR (aí o settle nunca
+ * chega e nada é debitado até o arrasto parar, ou nunca). Este teto garante que um
+ * gesto sempre liquide, mesmo em arrasto longo.
+ */
+export const MOVEMENT_MAX_GESTURE_MS = 2000
+
 /** Envio/ack do relay. Registrados pelo bridge (evita import circular). */
 type RelaySend = (payload: Record<string, unknown>) => void | Promise<void>
 
@@ -68,6 +79,8 @@ interface Gesture {
   startCenterPromise: Promise<CanvasPoint>
   /** Quem mexeu no token por último (a comparação do §13.3). */
   movedBy: unknown
+  /** Quando este gesto abriu (para o teto de duração). */
+  startedAt: number
 }
 
 /** Estouro de cap aguardando a escolha do jogador (o cartão da M2 lê isto). */
@@ -266,10 +279,12 @@ class TokenMovementCaptureService {
               .then(bounds => bounds?.center ?? startCorner)
               .catch(() => startCorner),
             movedBy: movedBy.get(tokenId),
+            startedAt: Date.now(),
           })
-          // Uma linha por gesto, no nível padrão: é ela que separa "o arrasto não
-          // abriu gesto nenhum" de "abriu e não assentou".
-          tokenTrackerLog(
+          // Um gesto pode abrir VÁRIAS vezes num arrasto lento (o SDK manda um evento
+          // por passo e o settle fecha entre eles): isto é traço, não decisão. A linha
+          // que importa é a do settle, que traz espaços e decisão.
+          tokenTrackerTrace(
             'movimento',
             `gesto aberto em "${this.nameOf(items, tokenId)}" (${tokenId})`,
             {
@@ -310,12 +325,20 @@ class TokenMovementCaptureService {
   private restartSettle(tokenId: string): void {
     const existing = this.settleTimers.get(tokenId)
     if (existing) clearTimeout(existing)
+
+    // O settle normal, encurtado pelo que ainda cabe no teto do gesto — assim um
+    // arrasto contínuo liquida em blocos de no máximo `MOVEMENT_MAX_GESTURE_MS`.
+    const gesture = this.gestures.get(tokenId)
+    const decorrido = gesture ? Date.now() - gesture.startedAt : 0
+    const restante = Math.max(0, MOVEMENT_MAX_GESTURE_MS - decorrido)
+    const delay = Math.min(MOVEMENT_SETTLE_MS, restante)
+
     this.settleTimers.set(
       tokenId,
       setTimeout(() => {
         this.settleTimers.delete(tokenId)
         void this.settle(tokenId)
-      }, MOVEMENT_SETTLE_MS)
+      }, delay)
     )
   }
 
@@ -572,6 +595,87 @@ class TokenMovementCaptureService {
 
     await tokenTrackerService.refreshToken(request.tokenId)
     return reply
+  }
+
+  /**
+   * Reinicia o movimento de TODOS os tokens vinculados da cena (§13.8) e avisa as
+   * outras janelas.
+   *
+   * O motor **não** faz isso no fim da rodada: `EndRoundFlow` mexe em ativações, usos
+   * e status, e quem devolve o movimento é `CombatController.Reset()`
+   * (`ClearBoost()` + `SPEED = getMax(SPEED)`). Então o fim de rodada precisa pedir.
+   *
+   * Diferente do GASTO, aqui **cada janela reinicia a própria cópia** de propósito:
+   * `SPEED = max` e `ClearBoost()` são idempotentes (não somam nada), então escrever
+   * em todas as cópias deixa os badges coerentes em vez de divergentes.
+   */
+  public async resetRoundMovements(
+    options: { broadcast?: boolean; filter?: { sheetId?: string; mechId?: string } } = {}
+  ): Promise<void> {
+    const broadcast = options.broadcast !== false
+    // Nada de gesto sobrevive ao fim da rodada: um arrasto a meio caminho não pode
+    // liquidar depois e debitar movimento já reiniciado.
+    for (const timer of this.settleTimers.values()) clearTimeout(timer)
+    this.settleTimers.clear()
+    this.gestures.clear()
+    this.overflows.clear()
+    this.lastSpentG.clear()
+    this.relayPending.clear()
+
+    let tokenIds: string[] = []
+    try {
+      const items = await OBR.scene.items.getItems()
+      tokenIds = [...collectBoundTokenIds(items, COMPCON_METADATA_KEY)]
+    } catch (err) {
+      tokenTrackerWarn('movimento', 'falha ao listar os tokens para reiniciar o movimento', err)
+    }
+
+    const filtro = options.filter
+    let reiniciados = 0
+    let semAlvo = 0
+    let foraDoFiltro = 0
+    for (const tokenId of tokenIds) {
+      const target = await tokenTrackerService.getMovementTarget(tokenId)
+      if (!target) {
+        semAlvo += 1
+        continue
+      }
+      // "Encerrar turno" no pilot-runner reinicia só a ficha DELE; a rodada do GM
+      // reinicia todos.
+      if (filtro) {
+        const ids = [target.binding.sheetId, target.binding.mechId].filter(Boolean)
+        const casa = [filtro.sheetId, filtro.mechId].filter(Boolean).some(id => ids.includes(id!))
+        if (!casa) {
+          foraDoFiltro += 1
+          continue
+        }
+      }
+      try {
+        // Espelha o `Reset()` do motor para o movimento: larga o Boost e devolve o
+        // movimento padrão do turno.
+        target.combatController.ClearBoost?.()
+        const max = toTrackerInt(target.combatController?.StatController?.getMax?.('speed'))
+        target.statController?.setCurrentStat?.('speed', max, { silent: true })
+        reiniciados += 1
+        await tokenTrackerService.refreshToken(tokenId)
+      } catch (err) {
+        tokenTrackerWarn('movimento', `falha ao reiniciar o movimento de ${tokenId}`, err)
+      }
+    }
+
+    tokenTrackerLog(
+      'movimento',
+      `movimento reiniciado em ${reiniciados} token(s)${filtro ? ' (só desta ficha)' : ' (rodada)'}`,
+      { tokensNaCena: tokenIds.length, semAlvo, foraDoFiltro, aviseiAsOutrasJanelas: broadcast }
+    )
+
+    if (broadcast) {
+      try {
+        await this.relaySend?.({ type: 'MOVEMENT_ROUND_RESET', filter: filtro })
+      } catch (err) {
+        tokenTrackerWarn('movimento', 'falha ao avisar as outras janelas do fim de rodada', err)
+      }
+    }
   }
 
   private async cornerOf(tokenId: string): Promise<CanvasPoint> {

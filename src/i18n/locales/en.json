@@ -1429,7 +1429,9 @@
     },
     "endRound": {
       "endRound": "End Round",
-      "confirmEndRound": "Confirm End Round"
+      "confirmEndRound": "Confirm End Round",
+      "endTurn": "End Turn",
+      "confirmEndTurn": "Confirm End Turn"
     },
     "actionChips": {
       "protocol": "Protocol",

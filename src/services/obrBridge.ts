@@ -467,6 +467,13 @@ class OBRBridge {
         }
       } else if (msg.type === 'MOVEMENT_SPENT') {
         await tokenMovementCapture.onSpendReply(msg as MovementSpendReply)
+      } else if (msg.type === 'MOVEMENT_ROUND_RESET') {
+        // Fim de rodada (ou de turno) em outra janela: reinicia as cópias DESTA janela
+        // (idempotente) e não reenvia, senão as janelas ficariam se avisando para sempre.
+        await tokenMovementCapture.resetRoundMovements({
+          broadcast: false,
+          filter: (msg as { filter?: { sheetId?: string; mechId?: string } }).filter,
+        })
       } else if (msg.type === 'ENCOUNTER_STORAGE_UPDATED') {
         const { EncounterStore } = await import('@/stores')
         await EncounterStore().LoadEncounters()
