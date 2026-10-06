@@ -232,10 +232,12 @@ class TokenMovementCaptureService {
    * mudança de metadata (o `items` do `onChange` já traz o registro), então o custo é
    * uma comparação por token — nenhuma ida extra ao SDK.
    */
-  private reconcileRecords(items: unknown[], next: Map<string, CanvasPoint>): void {
+  private reconcileRecords(
+    records: Map<string, TokenTrackerMovementRecord>,
+    next: Map<string, CanvasPoint>
+  ): void {
     if (!isSheetWindowContext()) return
 
-    const records = collectMovementRecords(items, TOKEN_TRACKER_MOVEMENT_KEY)
     for (const [tokenId, record] of records) {
       const previous = this.lastRecords.get(tokenId)
       this.lastRecords.set(tokenId, record)
@@ -273,11 +275,14 @@ class TokenMovementCaptureService {
     if (!this.started) return
 
     const next = collectTokenPositions(items)
+    // Os registros de movimento de todos os tokens vêm no MESMO `items` do onChange —
+    // então tanto a reconciliação quanto o log de posição saem de graça.
+    const records = collectMovementRecords(items, TOKEN_TRACKER_MOVEMENT_KEY)
 
     // Reconciliação do motor com o registro do token: quem tem o controlador vivo é a
     // janela da ficha, e o registro é a fonte do número. Sem isto, o arrasto feito
     // noutra janela deixaria o HUD da ficha mostrando o movimento antigo.
-    this.reconcileRecords(items, next)
+    this.reconcileRecords(records, next)
 
     for (const id of removedTokenIds(this.lastSeen, next)) {
       this.lastSeen.delete(id)
@@ -291,6 +296,25 @@ class TokenMovementCaptureService {
       const bound = collectBoundTokenIds(items, COMPCON_METADATA_KEY)
       const movedBy = this.movedByFromItems(items, changed)
       for (const tokenId of changed) {
+        // LOG DE POSIÇÃO: o sinal cru de que o token se mexeu, com tudo que decide o
+        // que acontece depois. É a linha que responde "eu movi e não registrou" —
+        // basta ver qual campo está faltando (vínculo, movimento ativado, retrato).
+        const de = this.lastSeen.get(tokenId)
+        const para = next.get(tokenId)
+        tokenTrackerLog('posicao', `"${this.nameOf(items, tokenId)}" mudou de lugar`, {
+          tokenId,
+          de,
+          para,
+          distânciaEmUnidades:
+            de && para ? Number(euclideanDistance(de, para).toFixed(1)) : undefined,
+          temVinculo: bound.has(tokenId),
+          movimentoAtivado: records.has(tokenId),
+          quemMexeu: String(movedBy.get(tokenId)),
+          estaJanela: this.playerId(),
+          gesto: this.gestures.has(tokenId) ? 'continuando' : 'novo',
+          janelaDaFicha: isSheetWindowContext(),
+        })
+
         if (!bound.has(tokenId)) {
           // Uma vez por token (e no nível padrão): "movi o token e nada aconteceu" é
           // quase sempre isto, e o silêncio era o pior sintoma possível.
