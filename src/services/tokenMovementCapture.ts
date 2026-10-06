@@ -74,15 +74,9 @@ function newRequestId(): string {
 
 interface Gesture {
   tokenId: string
-  /** Canto (`position` cru) no início do gesto — é para cá que o Desfazer volta. */
+  /** Canto (`position` cru) no início do gesto — é para cá que o Desfazer volta e é
+   * daqui que a distância é medida (o deslocamento em canto é igual ao do centro). */
   startCorner: CanvasPoint
-  /**
-   * Centro no início do gesto, buscado **uma vez** por gesto (`getItemBounds`).
-   *
-   * Guardado como promessa para não correr com o settle: o `getDistance` mede centro
-   * a centro, e misturar canto com centro mediria o deslocamento **mais meio token**.
-   */
-  startCenterPromise: Promise<CanvasPoint>
   /** Quem mexeu no token por último (a comparação do §13.3). */
   movedBy: unknown
   /** Quando este gesto abriu (para o teto de duração). */
@@ -378,12 +372,6 @@ class TokenMovementCaptureService {
           this.gestures.set(tokenId, {
             tokenId,
             startCorner,
-            // Uma ida ao SDK por gesto (não por divergência): o diff de posição entre
-            // `onChange`s continua barato.
-            startCenterPromise: OBR.scene.items
-              .getItemBounds([tokenId])
-              .then(bounds => bounds?.center ?? startCorner)
-              .catch(() => startCorner),
             movedBy: movedBy.get(tokenId),
             startedAt: Date.now(),
           })
@@ -902,19 +890,23 @@ class TokenMovementCaptureService {
    * espaço). Em `EUCLIDEAN` vem fracionário e `normalizeSpaces` arredonda para cima —
    * arredondar para baixo daria movimento de graça.
    *
-   * Sem o centro do fim não há medição honesta: devolve 0 (não cobra). O princípio do
-   * §13.3 é preferir sobrar movimento a cobrar errado.
+   * A medida é CANTO a CANTO, com dados que eu já tenho (o retrato do início do gesto e
+   * o último `onChange`). Antes eu buscava o CENTRO com `getItemBounds` no início do
+   * gesto, e essa chamada é assíncrona: como o gesto começa enquanto o token já está
+   * andando, ela resolvia com uma posição JÁ ADIANTADA — o início ficava mais perto do
+   * fim e a distância saía menor que o movimento real (era o "só registra depois de
+   * muitos movimentos juntos", cobrando menos do que se andou).
+   *
+   * Canto e centro dão o mesmo deslocamento — o token não muda de tamanho no meio de um
+   * arrasto — e o canto não custa ida ao SDK nem corre atrás do movimento.
    */
   private async spacesOf(gesture: Gesture): Promise<number> {
-    const [startCenter, bounds] = await Promise.all([
-      gesture.startCenterPromise,
-      OBR.scene.items.getItemBounds([gesture.tokenId]).catch(() => null),
-    ])
-    const endCenter = bounds?.center
+    const startCenter = gesture.startCorner
+    const endCenter = this.lastSeen.get(gesture.tokenId)
     if (!endCenter) {
       tokenTrackerWarn(
         'movimento',
-        `token ${gesture.tokenId}: sem bounds no fim do gesto — não dá para medir, nada debitado`
+        `token ${gesture.tokenId}: sem posição no fim do gesto — não dá para medir, nada debitado`
       )
       return 0
     }
