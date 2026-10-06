@@ -13,14 +13,14 @@
     <v-container
       v-if="windowManager.isMinimized.value"
       fluid
-      class="d-flex align-center py-0 px-2 justify-space-between fill-height"
+      class="d-flex align-center py-0 px-1 justify-space-between fill-height"
       style="user-select: none;"
     >
-      <div class="d-flex align-center ga-2">
+      <div class="d-flex align-center ga-1">
         <v-avatar size="24" color="primary" class="rounded-0">
           <v-icon icon="cc:lancer" size="16" color="white" />
         </v-avatar>
-        <span class="text-caption font-weight-bold text-accent text-uppercase text-truncate" style="letter-spacing: 1px; max-width: 160px;">
+        <span class="minimized-brand-text text-caption font-weight-bold text-accent text-uppercase text-truncate" style="letter-spacing: 1px; max-width: 160px;">
           {{ activePilotSheet ? (activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name) : (activeEncounter ? activeEncounter.Encounter.Name : 'COMP/CON') }}
         </span>
         <v-chip
@@ -28,7 +28,7 @@
           size="x-small"
           color="accent"
           variant="tonal"
-          class="font-weight-bold text-truncate"
+          class="minimized-brand-text font-weight-bold text-truncate"
           style="max-width: 120px;"
         >
           {{ activePilotSheet.Combatant.actor.ActiveMech.Name }}
@@ -40,7 +40,7 @@
           size="x-small"
           color="accent"
           variant="flat"
-          class="font-weight-bold text-black ml-1"
+          class="minimized-brand-text font-weight-bold text-black ml-1"
         >
           <v-icon icon="mdi-dice-multiple" size="14" class="mr-1" />
           Rolando...

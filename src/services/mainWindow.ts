@@ -1,5 +1,18 @@
 import OBR from '@owlbear-rodeo/sdk'
 import { flushPendingSaves } from '@/io/persistenceFlush'
+import {
+  BAR_HEIGHT,
+  BAR_LEFT,
+  BAR_TOP,
+  BAR_WIDTH,
+  OBR_POPOVER_ID,
+  OBR_SAFE_MARGIN,
+  OBR_TOP_DEFAULT,
+  WINDOW_HEIGHT_DEFAULT,
+  WINDOW_HEIGHT_MAX,
+  WINDOW_HEIGHT_MIN,
+  WINDOW_WIDTH,
+} from './obrLayout'
 
 /**
  * Janela principal persistente da ficha (iframe do Owlbear Rodeo).
@@ -13,10 +26,13 @@ import { flushPendingSaves } from '@/io/persistenceFlush'
  *  - "fechar" apenas OCULTA o app via CSS (`sheet-window-hidden`) e mantém o iframe montado,
  *    transparente e sem capturar cliques (`pointer-events: none`);
  *  - reabrir uma ficha reutiliza o iframe existente e só navega a rota (sem reload).
+ *
+ * Geometria (margens, largura, altura e a barra compacta) vem de `./obrLayout`.
  */
-export const OBR_MAIN_WINDOW_POPOVER_ID = 'com.compcon.activemode.floating'
+export const OBR_MAIN_WINDOW_POPOVER_ID = OBR_POPOVER_ID
 
 const SESSION_HIDDEN_KEY = 'cc_sheet_window_hidden'
+const SESSION_MINIMIZED_KEY = 'cc_sheet_window_minimized'
 const SESSION_AUTO_OPEN_KEY = 'cc_sheet_window_autopen'
 const SESSION_RESTORE_INTENT_KEY = 'cc_sheet_restore_intent'
 const SESSION_WINDOW_NAME_KEY = 'cc_sheet_window_name'
@@ -24,9 +40,6 @@ const SHEET_WINDOW_HEIGHT_KEY = 'cc_window_height'
 const SHEET_WINDOW_POS_KEY = 'cc_window_state'
 
 export const SHEET_WINDOW_HIDDEN_CLASS = 'sheet-window-hidden'
-export const SHEET_WINDOW_MAX_HEIGHT = 840
-export const SHEET_WINDOW_MIN_HEIGHT = 450
-export const SHEET_WINDOW_WIDTH = 520
 
 /**
  * A janela da ficha registra um batimento no `sessionStorage` (compartilhado
@@ -38,10 +51,21 @@ const SESSION_HEARTBEAT_KEY = 'cc_sheet_window_heartbeat'
 const HEARTBEAT_INTERVAL_MS = 5000
 const HEARTBEAT_STALE_MS = 20000
 
-/** Margens de segurança para não sobrepor a UI nativa do Owlbear Rodeo. */
-export const OBR_SAFE_LEFT = 84
-export const OBR_SAFE_RIGHT = 84
-export const OBR_SAFE_TOP = 16
+/**
+ * A janela persistente está no modo barra compacta?
+ *
+ * Vive no `sessionStorage` (mesmo escopo da intenção de ocultação) porque a janela
+ * pode ser recriada: o Owlbear destrói o iframe por conta própria (recriação por
+ * batimento de vida) ou o usuário recarrega a aba. Sem o flag, o iframe novo
+ * voltaria ao tamanho cheio, na lateral direita, e a barra sumiria.
+ */
+export function isSheetWindowMinimized(): boolean {
+  return safeSessionGet(SESSION_MINIMIZED_KEY) === 'true'
+}
+
+export function setSheetWindowMinimized(minimized: boolean): void {
+  safeSessionSet(SESSION_MINIMIZED_KEY, minimized ? 'true' : 'false')
+}
 
 // ---------------------------------------------------------------------------
 // Acesso seguro ao storage (iframe de terceiros pode ter storage bloqueado)
@@ -122,10 +146,10 @@ export function isSheetWindowHidden(): boolean {
 
 function readSavedHeight(): number {
   const parsed = parseInt(safeLocalGet(SHEET_WINDOW_HEIGHT_KEY) || '', 10)
-  if (!isNaN(parsed) && parsed >= SHEET_WINDOW_MIN_HEIGHT) {
-    return Math.min(SHEET_WINDOW_MAX_HEIGHT, parsed)
+  if (!isNaN(parsed) && parsed >= WINDOW_HEIGHT_MIN) {
+    return Math.min(WINDOW_HEIGHT_MAX, parsed)
   }
-  return 720
+  return WINDOW_HEIGHT_DEFAULT
 }
 
 function readSavedPosition(): { left: number; top: number } | null {
@@ -134,7 +158,11 @@ function readSavedPosition(): { left: number; top: number } | null {
     if (raw) {
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed.left === 'number' && typeof parsed.top === 'number') {
-        return { left: Math.max(84, parsed.left), top: Math.max(16, parsed.top) }
+        // Mesmos pisos de `windowManager.loadState`: os dois leem a MESMA chave.
+        return {
+          left: Math.max(OBR_SAFE_MARGIN.LEFT, parsed.left),
+          top: Math.max(OBR_SAFE_MARGIN.TOP_RIGHT, parsed.top),
+        }
       }
     }
   } catch {
@@ -167,15 +195,31 @@ async function viewportSize(): Promise<{ screenW: number; screenH: number }> {
   return { screenW, screenH }
 }
 
-async function computeGeometry(): Promise<{ left: number; top: number; height: number }> {
+async function computeGeometry(): Promise<{ left: number; top: number; width: number; height: number }> {
   const { screenW, screenH } = await viewportSize()
-  const height = Math.min(readSavedHeight(), Math.max(SHEET_WINDOW_MIN_HEIGHT, screenH - 16 - 96))
   const saved = readSavedPosition()
-  if (saved) return { ...saved, height }
+
+  // Barra compacta: nasce no left seguro, não na lateral direita. Vale quando a
+  // janela é (re)criada já minimizada (iframe destruído pelo Owlbear, recarga da
+  // aba enquanto a ficha estava na barra).
+  if (isSheetWindowMinimized()) {
+    return {
+      left: BAR_LEFT,
+      top: Math.max(BAR_TOP, saved?.top ?? OBR_TOP_DEFAULT),
+      width: BAR_WIDTH,
+      height: BAR_HEIGHT,
+    }
+  }
+
+  // A janela precisa caber entre o topo e a dock inferior.
+  const fits = screenH - OBR_SAFE_MARGIN.TOP_RIGHT - OBR_SAFE_MARGIN.BOTTOM
+  const height = Math.min(readSavedHeight(), Math.max(WINDOW_HEIGHT_MIN, fits))
+  if (saved) return { ...saved, width: WINDOW_WIDTH, height }
   // Sem posição salva: encosta na lateral direita, respeitando as barras do OBR.
   return {
-    left: Math.max(OBR_SAFE_LEFT, screenW - SHEET_WINDOW_WIDTH - OBR_SAFE_RIGHT),
-    top: OBR_SAFE_TOP,
+    left: Math.max(OBR_SAFE_MARGIN.LEFT, screenW - WINDOW_WIDTH - OBR_SAFE_MARGIN.RIGHT),
+    top: OBR_TOP_DEFAULT,
+    width: WINDOW_WIDTH,
     height,
   }
 }
@@ -258,8 +302,9 @@ async function collapsePopoverSize(): Promise<void> {
 async function applyPersistedSize(): Promise<void> {
   if (!isSheetWindowContext()) return
   if (!(await ensureObrReady())) return
-  const { height } = await computeGeometry()
-  const width = SHEET_WINDOW_WIDTH
+  // Sempre pela `computeGeometry`: é ela que sabe que uma janela minimizada tem
+  // 100×48 no left especial, e não a largura cheia na lateral direita.
+  const { width, height } = await computeGeometry()
   try {
     await OBR.popover.setHeight(OBR_MAIN_WINDOW_POPOVER_ID, height)
     await OBR.popover.setWidth(OBR_MAIN_WINDOW_POPOVER_ID, width)
@@ -410,7 +455,7 @@ export async function openMainWindow(options: OpenMainWindowOptions = {}): Promi
   }
 
   // Primeira abertura: cria o único iframe da janela da ficha.
-  const { left, top, height } = await computeGeometry()
+  const { left, top, width, height } = await computeGeometry()
   const url = targetRoute
     ? `/?windowType=floating#${targetRoute}`
     : DEFAULT_WINDOW_URL
@@ -419,7 +464,7 @@ export async function openMainWindow(options: OpenMainWindowOptions = {}): Promi
     await OBR.popover.open({
       id: OBR_MAIN_WINDOW_POPOVER_ID,
       url,
-      width: SHEET_WINDOW_WIDTH,
+      width,
       height,
       disableClickAway: true,
       hidePaper: true,

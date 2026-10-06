@@ -304,11 +304,23 @@ body.sheet-window-hidden {
   pointer-events: none !important;
 }
 
+/* Espelha `BAR_WIDTH`/`BAR_HEIGHT` de `services/obrLayout.ts` (a barra é
+ * redimensionada pelo windowManager; aqui é só o conteúdo não estourar). */
 .app-minimized {
   min-height: 48px !important;
   height: 48px !important;
+  width: 100px !important;
   overflow: hidden !important;
   background: transparent !important;
+}
+
+/*
+ * Na barra compacta (100px) só cabem o logo e os botões de ação: o título da
+ * ficha, o nome do mech e o chip de rolagem são ocultados para que nada seja
+ * cortado pela largura reduzida.
+ */
+.app-minimized .minimized-brand-text {
+  display: none !important;
 }
 
 .app-minimized .v-application__wrap {

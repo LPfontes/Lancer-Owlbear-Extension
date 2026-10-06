@@ -530,6 +530,11 @@ class OBRBridge {
       } else if (msg.type === 'TRACKER_SYNC_REQUEST') {
         window.dispatchEvent(new CustomEvent('compcon-tracker-sync-request'))
       } else if (msg.type === 'MOVEMENT_ROUND_RESET') {
+        // O iframe oculto de pré-aquecimento também escuta broadcasts, e ele não tem
+        // nada que reiniciar (nem cena pronta na hora em que a mensagem chega). O
+        // trabalho é da janela da ficha.
+        const { isActiveModePrewarm } = await import('./prewarmContext')
+        if (isActiveModePrewarm()) return
         // Fim de rodada (ou de turno) em outra janela: reinicia as cópias DESTA janela
         // (idempotente) e não reenvia, senão as janelas ficariam se avisando para sempre.
         await tokenMovementCapture.resetRoundMovements({

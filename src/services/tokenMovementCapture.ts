@@ -802,6 +802,17 @@ class TokenMovementCaptureService {
   public async resetRoundMovements(
     options: { broadcast?: boolean; filter?: { sheetId?: string; mechId?: string } } = {}
   ): Promise<void> {
+    // Esta função é chamada por BROADCAST, então pode chegar numa janela que ainda está
+    // subindo (o SDK responde "Unable to send message: not ready"). Não é falha: é cedo.
+    if (!OBR.isAvailable) return
+    if (!(await OBR.scene.isReady().catch(() => false))) {
+      tokenTrackerTrace(
+        'movimento',
+        'fim de rodada recebido antes da cena ficar pronta nesta janela — ignorado'
+      )
+      return
+    }
+
     const broadcast = options.broadcast !== false
     // Nada de gesto sobrevive ao fim da rodada: um arrasto a meio caminho não pode
     // liquidar depois e debitar movimento já reiniciado.
