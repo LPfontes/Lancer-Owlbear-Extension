@@ -12,6 +12,10 @@
 export const TRACKER_ICON_FILES = {
   /** `mdi-arrow-right-bold-hexagon-outline` (o mesmo ícone de Movimento do app). */
   speed: 'speed',
+  /** Círculo com play: ATIVAR o registro de movimento deste token (menu de contexto). */
+  movement: 'movement',
+  /** Círculo com stop: PARAR o registro de movimento deste token. */
+  'movement-stop': 'movement-stop',
 } as const
 
 export type TokenTrackerIconName = keyof typeof TRACKER_ICON_FILES

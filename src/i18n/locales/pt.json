@@ -2047,6 +2047,8 @@
       "maxSquares": "Máximo de quadrados",
       "panelGap": "Distância do token",
       "panelGapHint": "Negativo aproxima o painel do token (pode encostar); positivo afasta.",
+      "movementArm": "Ativar movimento",
+      "movementDisarm": "Parar movimento",
       "slotsLabel": "Trackers exibidos",
       "visibilityLabel": "Jogadores podem ver trackers de",
       "visibilityHint": "O Mestre vê todos os tokens, sempre. Oculta um combatente pelo olho na lista.",

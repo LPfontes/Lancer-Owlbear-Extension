@@ -1,4 +1,4 @@
-import OBR, { buildImage, type Item } from '@owlbear-rodeo/sdk'
+import OBR, { buildImage, type Item, type KeyFilter } from '@owlbear-rodeo/sdk'
 import type { MechCombatState, CombatRollBroadcast, TokenSheetBinding } from '@/types/compcon-obr'
 import { COMPCON_METADATA_KEY } from '@/types/compcon-obr'
 import type { TableActionItem } from '@/types/table-actions'
@@ -10,6 +10,9 @@ import { dddiceService } from './dddiceService'
 import { statusMarkerService } from './statusMarkerService'
 import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrackerService'
 import { tokenMovementCapture } from './tokenMovementCapture'
+import { getTrackerIconUrl } from './tokenTrackerIcons'
+import { i18n } from '@/i18n'
+import { TOKEN_TRACKER_MOVEMENT_KEY } from '@/types/token-tracker'
 import { tokenTrackerLog } from './tokenTrackerDebug'
 import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
@@ -211,8 +214,77 @@ class OBRBridge {
     return this.role
   }
 
+  /** Liga/desliga o registro de movimento dos tokens selecionados (§13). */
+  public async setMovementArmed(tokenIds: string[], armed: boolean): Promise<void> {
+    for (const tokenId of tokenIds) {
+      if (armed) {
+        const ok = await tokenMovementCapture.armMovement(tokenId)
+        if (!ok) {
+          await OBR.notification
+            .show(
+              'Não deu para ativar o movimento deste token: vincule a ficha primeiro (o movimento sai do SPEED dela).'
+            )
+            .catch(() => {})
+        } else {
+          await OBR.notification.show('Movimento ativado neste token.').catch(() => {})
+        }
+      } else {
+        await tokenMovementCapture.disarmMovement(tokenId)
+        await OBR.notification.show('Movimento parado neste token.').catch(() => {})
+      }
+    }
+  }
+
   private setupContextMenu() {
     try {
+      // Movimento do token: ATIVAR/PARAR o registro do arrasto (§13).
+      //
+      // Registrar virou estado explícito — arrastar só debita quando o jogador ativou.
+      // Os dois ícones convivem: o `filter` por metadata decide qual aparece, então o
+      // menu mostra "ativar" no token desligado e "parar" no token ligado, sem que a
+      // extensão precise recriar o menu a cada mudança.
+      const armado: KeyFilter = {
+        key: ['metadata', TOKEN_TRACKER_MOVEMENT_KEY, 'v'],
+        value: 1,
+        operator: '==',
+      }
+      const desarmado: KeyFilter = {
+        key: ['metadata', TOKEN_TRACKER_MOVEMENT_KEY, 'v'],
+        value: 1,
+        operator: '!=',
+      }
+      void OBR.contextMenu
+        .create({
+          id: 'compcon-movement-arm',
+          icons: [
+            {
+              icon: getTrackerIconUrl('movement'),
+              label: i18n.global.t('active.tokenTrackers.movementArm'),
+              filter: { roles: ['GM', 'PLAYER'], min: 1, max: 1, some: [desarmado] },
+            },
+          ],
+          onClick: context => {
+            void this.setMovementArmed(context.items.map((item: Item) => item.id), true)
+          },
+        })
+        .catch(e => console.warn('[OBRBridge] Aviso ao criar o item de menu de movimento:', e))
+
+      void OBR.contextMenu
+        .create({
+          id: 'compcon-movement-disarm',
+          icons: [
+            {
+              icon: getTrackerIconUrl('movement-stop'),
+              label: i18n.global.t('active.tokenTrackers.movementDisarm'),
+              filter: { roles: ['GM', 'PLAYER'], min: 1, max: 1, some: [armado] },
+            },
+          ],
+          onClick: context => {
+            void this.setMovementArmed(context.items.map((item: Item) => item.id), false)
+          },
+        })
+        .catch(e => console.warn('[ORBridge] Aviso ao criar o item de menu de parada:', e))
+
       // Menu de contexto para vincular token à ficha
       void OBR.contextMenu.create({
         id: 'compcon-bind-token',

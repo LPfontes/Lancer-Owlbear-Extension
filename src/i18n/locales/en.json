@@ -1189,6 +1189,8 @@
       "maxSquares": "Max squares",
       "panelGap": "Distance from token",
       "panelGapHint": "Negative moves the panel closer to the token (it may overlap); positive moves it away.",
+      "movementArm": "Enable movement",
+      "movementDisarm": "Stop movement",
       "slotsLabel": "Trackers shown",
       "visibilityLabel": "Players can see trackers of",
       "visibilityHint": "The GM always sees every token. Hide a combatant with the eye in the list.",

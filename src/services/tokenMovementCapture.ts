@@ -16,7 +16,7 @@ import {
   tokenTrackerWarn,
 } from '@/services/tokenTrackerDebug'
 import { tokenTrackerService, type MovementTarget } from '@/services/tokenTrackerService'
-import { isSheetWindowContext } from '@/services/mainWindow'
+import { isSheetWindowContext, isMainWindowOpen } from '@/services/mainWindow'
 import {
   collectMovementRecords,
   fullMovementRecord,
@@ -448,20 +448,43 @@ class TokenMovementCaptureService {
     // "Livre" é um tiro só: consumido aqui, valha o desfecho.
     const wasFree = this.freeArmed.delete(gesture.tokenId)
 
+    // Um arrasto é visto por TODAS as janelas do cliente (o `onChange` dispara em
+    // cada uma e `lastModifiedUserId` é do usuário, não da janela). Se todas
+    // escrevessem o registro, o mesmo arrasto seria debitado duas vezes — daí o
+    // escritor ser eleito: a janela da ficha quando ela existe, senão esta.
+    if (!(await this.isMovementWriter())) {
+      tokenTrackerTrace(
+        'movimento',
+        `token ${gesture.tokenId}: gesto observado aqui, mas quem escreve é a janela da ficha`
+      )
+      return
+    }
+
     // O movimento vem do TOKEN: é o número que todas as janelas enxergam, e é ele que
     // impede duas janelas de debitarem o mesmo arrasto. O motor só entra depois, para
     // deixar a ficha coerente.
+    //
+    // Sem registro, o movimento deste token **não está ativado** (menu de contexto →
+    // ícone de play) e o arrasto não registra nada. Registrar virou estado explícito.
     const gravado = await this.readMovementRecord(gesture.tokenId)
-    const base =
-      gravado ??
-      movementRecordFromStats(
-        {
-          remaining: target.remaining,
-          maxSpeed: target.maxSpeed,
-          boostBonus: target.boostBonus,
-        },
-        this.writerId()
+    if (!gravado) {
+      tokenTrackerTrace(
+        'movimento',
+        `token ${gesture.tokenId}: arrasto ignorado — o movimento não está ATIVADO neste token (menu de contexto → ativar movimento)`
       )
+      return
+    }
+
+    const base = gravado
+    // Sem restante e sem máximo não há o que debitar nem o que desenhar.
+    if (base.current <= 0 && base.max <= 0) {
+      tokenTrackerWarn(
+        'movimento',
+        `token ${gesture.tokenId}: movimento zerado (restante 0 e máximo 0) — o gesto NÃO é registrado. Confira a ficha (SPEED) ou reinicie o turno`,
+        { fonte: 'registro do token', resteanteNaFicha: target.remaining }
+      )
+      return
+    }
 
     const decision = decideMovement({
       spaces,
@@ -555,11 +578,7 @@ class TokenMovementCaptureService {
     const { record } = spendFromMovementRecord(base, decision.spend, this.writerId())
 
     try {
-      await OBR.scene.items.updateItems([gesture.tokenId], items => {
-        for (const item of items) {
-          item.metadata[TOKEN_TRACKER_MOVEMENT_KEY] = record as unknown as never
-        }
-      })
+      await this.writeMovementRecord(gesture.tokenId, record)
     } catch (err) {
       tokenTrackerWarn('movimento', `falha ao gravar o movimento no token ${gesture.tokenId}`, err)
     }
@@ -604,9 +623,125 @@ class TokenMovementCaptureService {
     }
   }
 
+  /**
+   * ATIVA o registro de movimento deste token (menu de contexto → ícone de play).
+   *
+   * A partir daqui os arrastos do token são medidos e debitados no próprio token. Antes
+   * disso, arrastar não registra nada — é o que tira a ambiguidade de "às vezes não
+   * registra": registrar passa a ser um estado explícito, com um dono claro (quem
+   * ativou) e sem adivinhação.
+   *
+   * O registro nasce do estado vivo do motor (restante, padrão e Boost) e é ele que o
+   * badge passa a desenhar.
+   */
+  public async armMovement(tokenId: string): Promise<boolean> {
+    const target = await tokenTrackerService.getMovementTarget(tokenId)
+    if (!target) {
+      tokenTrackerWarn(
+        'movimento',
+        `não ativei o movimento do token ${tokenId}: sem vínculo de ficha resolvido nesta janela`
+      )
+      return false
+    }
+
+    const record = movementRecordFromStats(
+      {
+        remaining: target.remaining,
+        maxSpeed: target.maxSpeed,
+        boostBonus: target.boostBonus,
+      },
+      this.writerId()
+    )
+
+    if (record.current <= 0 && record.max <= 0) {
+      tokenTrackerWarn(
+        'movimento',
+        `não ativei o movimento do token ${tokenId}: a ficha está com SPEED 0 (restante 0 e máximo 0)`,
+        { vinculo: target.binding.sheetId }
+      )
+      return false
+    }
+
+    await this.writeMovementRecord(tokenId, record)
+    this.lastRecords.set(tokenId, record)
+    tokenTrackerLog(
+      'movimento',
+      `movimento ATIVADO no token ${tokenId}: ${record.current}/${record.max + record.boost}`,
+      { vinculo: target.binding.sheetId, por: this.writerId() }
+    )
+    await tokenTrackerService.refreshToken(tokenId)
+    return true
+  }
+
+  /** PARA o registro: apaga o registro do token (o badge volta a ler a ficha). */
+  public async disarmMovement(tokenId: string): Promise<void> {
+    try {
+      await OBR.scene.items.updateItems([tokenId], items => {
+        for (const item of items) delete item.metadata[TOKEN_TRACKER_MOVEMENT_KEY]
+      })
+    } catch (err) {
+      tokenTrackerWarn('movimento', `falha ao parar o movimento do token ${tokenId}`, err)
+    }
+    this.lastRecords.delete(tokenId)
+    this.overflows.delete(tokenId)
+    this.lastSpentG.delete(tokenId)
+    this.forgetGesture(tokenId)
+    tokenTrackerLog('movimento', `movimento PARADO no token ${tokenId}`)
+    await tokenTrackerService.refreshToken(tokenId)
+  }
+
+  /** O token está com o registro de movimento ativo? */
+  public async isMovementArmed(tokenId: string): Promise<boolean> {
+    return (await this.readMovementRecord(tokenId)) !== null
+  }
+
+  private async writeMovementRecord(
+    tokenId: string,
+    record: TokenTrackerMovementRecord
+  ): Promise<void> {
+    await OBR.scene.items
+      .updateItems([tokenId], items => {
+        for (const item of items) {
+          item.metadata[TOKEN_TRACKER_MOVEMENT_KEY] = record as unknown as never
+        }
+      })
+      .catch(err => {
+        tokenTrackerWarn('movimento', `falha ao gravar o movimento no token ${tokenId}`, err)
+      })
+  }
+
   private writerId(): string {
     return `${isSheetWindowContext() ? 'ficha' : 'mapa'}:${(this.playerId() || 'local').slice(0, 8)}`
   }
+
+  /**
+   * Esta janela é quem grava o movimento?
+   *
+   * A janela da ficha sempre é (é ela que tem o controlador vivo). Quando ela **não**
+   * existe, uma das janelas do mapa assume — assim o registro continua acontecendo
+   * sem a ficha aberta. Com a ficha aberta, as janelas do mapa apenas observam: se
+   * todas gravassem, o mesmo arrasto seria debitado em duplicidade.
+   *
+   * A resposta é cacheada por um instante: isto roda a cada gesto, e
+   * `isMainWindowOpen()` fala com o Owlbear.
+   */
+  private async isMovementWriter(): Promise<boolean> {
+    if (isSheetWindowContext()) return true
+    const now = Date.now()
+    if (now - this.writerCheckAt < 2000) return this.writerCheckCache
+    this.writerCheckAt = now
+    try {
+      this.writerCheckCache = !(await isMainWindowOpen())
+    } catch {
+      // Na dúvida, assume a escrita: perder movimento por não registrar é pior do que
+      // registrar duas vezes (o número é visível e o Desfazer da M2 corrige).
+      this.writerCheckCache = true
+    }
+    return this.writerCheckCache
+  }
+
+  private writerCheckAt = 0
+  private writerCheckCache = true
 
   /**
    * Reinicia o movimento de TODOS os tokens vinculados da cena (§13.8) e avisa as
