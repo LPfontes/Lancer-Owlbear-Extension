@@ -56,6 +56,15 @@ describe('collectTokenPositions', () => {
 describe('changedTokenIds', () => {
   const before = collectTokenPositions([token('t1', 0, 0), token('t2', 100, 100)])
 
+  it('UM único evento por arrasto já basta quando o retrato foi semeado', () => {
+    // O SDK pode entregar um só `onChange` (no soltar). Com o retrato semeado no
+    // start, esse evento único é a divergência que abre e fecha o gesto — sem a
+    // semeadura, o primeiro arrasto de cada sessão era engolido.
+    const seeded = collectTokenPositions([token('t1', 0, 0), token('t2', 100, 100)])
+    const afterDrop = collectTokenPositions([token('t1', 0, 0), token('t2', 250, 100)])
+    expect(changedTokenIds(seeded, afterDrop)).toEqual(['t2'])
+  })
+
   it('detecta só quem mudou de posição', () => {
     const after = collectTokenPositions([token('t1', 0, 0), token('t2', 150, 100)])
     expect(changedTokenIds(before, after)).toEqual(['t2'])

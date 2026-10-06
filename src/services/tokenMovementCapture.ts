@@ -117,6 +117,10 @@ class TokenMovementCaptureService {
   private relaySend: RelaySend | null = null
   /** Pedidos enviados a outro iframe, esperando a resposta do dono da ficha. */
   private relayPending = new Map<string, { tokenId: string; spaces: number; sentAt: number }>()
+  /** Tokens já avisados por não terem vínculo (avisa uma vez, não a cada arrasto). */
+  private warnedUnbound = new Set<string>()
+  /** Tokens já avisados por mudarem sem retrato anterior (uma vez cada). */
+  private warnedNoSnapshot = new Set<string>()
 
   /**
    * Liga o envio por broadcast. O bridge registra isto no boot (a captura não importa
@@ -133,6 +137,24 @@ class TokenMovementCaptureService {
       void this.onItems(items)
     })
     tokenTrackerLog('movimento', 'captura de arrasto ligada (settle de 250 ms)')
+    // Semeia o retrato JÁ: sem isto o primeiro arrasto era engolido. O diff só conta
+    // token que tem posição anterior, e a anterior só nascia de um `onChange` — se o
+    // SDK entrega um único evento por arrasto (no soltar), o primeiro arrasto de cada
+    // sessão não tinha com o que comparar e nada acontecia.
+    void this.seedSnapshot()
+  }
+
+  /** Fotografa a posição atual de todos os tokens (uma vez, no start). */
+  private async seedSnapshot(): Promise<void> {
+    try {
+      const items = await OBR.scene.items.getItems()
+      this.lastSeen = collectTokenPositions(items)
+      tokenTrackerLog('movimento', `retrato inicial: ${this.lastSeen.size} token(s)`, {
+        comVinculo: collectBoundTokenIds(items, COMPCON_METADATA_KEY).size,
+      })
+    } catch (err) {
+      tokenTrackerWarn('movimento', 'falha ao tirar o retrato inicial dos tokens', err)
+    }
   }
 
   public stop(): void {
@@ -145,6 +167,8 @@ class TokenMovementCaptureService {
     this.freeArmed.clear()
     this.overflows.clear()
     this.lastSpentG.clear()
+    this.warnedUnbound.clear()
+    this.warnedNoSnapshot.clear()
     this.started = false
   }
 
@@ -198,15 +222,33 @@ class TokenMovementCaptureService {
       const movedBy = this.movedByFromItems(items, changed)
       for (const tokenId of changed) {
         if (!bound.has(tokenId)) {
-          tokenTrackerTrace(
-            'movimento',
-            `token ${tokenId}: arrastado, mas não tem vínculo de ficha (metadata["${COMPCON_METADATA_KEY}"]) — ignorado`
-          )
+          // Uma vez por token (e no nível padrão): "movi o token e nada aconteceu" é
+          // quase sempre isto, e o silêncio era o pior sintoma possível.
+          if (!this.warnedUnbound.has(tokenId)) {
+            this.warnedUnbound.add(tokenId)
+            tokenTrackerWarn(
+              'movimento',
+              `token ${tokenId}: arrastado, mas NÃO tem vínculo de ficha em metadata["${COMPCON_METADATA_KEY}"] — nada a debitar. Vincule o token (menu de contexto → Vincular Ficha COMP/CON)`,
+              { nome: this.nameOf(items, tokenId) }
+            )
+          }
           continue
         }
+        // Sem posição anterior não há gesto: acontece com token criado no meio da
+        // sessão (e antes era o caso do PRIMEIRO arrasto, que sumia em silêncio).
         const start = this.lastSeen.get(tokenId)
         const end = next.get(tokenId)
-        if (!start || !end) continue
+        if (!start || !end) {
+          if (!this.warnedNoSnapshot.has(tokenId)) {
+            this.warnedNoSnapshot.add(tokenId)
+            tokenTrackerWarn(
+              'movimento',
+              `token ${tokenId}: mudou de posição mas não havia retrato anterior — este movimento NÃO foi medido`,
+              { nome: this.nameOf(items, tokenId) }
+            )
+          }
+          continue
+        }
 
         const gesture = this.gestures.get(tokenId)
         if (gesture) {
@@ -225,6 +267,19 @@ class TokenMovementCaptureService {
               .catch(() => startCorner),
             movedBy: movedBy.get(tokenId),
           })
+          // Uma linha por gesto, no nível padrão: é ela que separa "o arrasto não
+          // abriu gesto nenhum" de "abriu e não assentou".
+          tokenTrackerLog(
+            'movimento',
+            `gesto aberto em "${this.nameOf(items, tokenId)}" (${tokenId})`,
+            {
+              de: start,
+              para: end,
+              quemMexeu: String(movedBy.get(tokenId)),
+              estaJanela: this.playerId(),
+              temVinculo: true,
+            }
+          )
         }
         this.restartSettle(tokenId)
       }
@@ -242,6 +297,14 @@ class TokenMovementCaptureService {
       map.set(item.id, item.lastModifiedUserId)
     }
     return map
+  }
+
+  private nameOf(items: unknown[], tokenId: string): string {
+    for (const raw of items) {
+      const item = raw as { id?: unknown; name?: unknown }
+      if (item?.id === tokenId && typeof item.name === 'string') return item.name
+    }
+    return '(sem nome)'
   }
 
   private restartSettle(tokenId: string): void {
