@@ -16,7 +16,7 @@ import {
   tokenTrackerWarn,
 } from '@/services/tokenTrackerDebug'
 import { tokenTrackerService, type MovementTarget } from '@/services/tokenTrackerService'
-import { isSheetWindowContext, isMainWindowOpen } from '@/services/mainWindow'
+import { isSheetWindowContext } from '@/services/mainWindow'
 import {
   collectMovementRecords,
   fullMovementRecord,
@@ -96,7 +96,8 @@ export interface PendingOverflow {
   overBy: number
   remaining: number
   canBoost: boolean
-  target: MovementTarget
+  /** Ausente quando esta janela não resolve a ficha (só o registro do token). */
+  target?: MovementTarget
   /** Para onde voltar se o jogador desistir. */
   startCorner: CanvasPoint
 }
@@ -151,6 +152,21 @@ class TokenMovementCaptureService {
 
   public start(): void {
     if (this.started) return
+    // A captura roda SÓ na janela da ficha (`windowType=floating`).
+    //
+    // As outras janelas veem o mesmo `items.onChange`, então manter a captura nelas
+    // significava: o mesmo arrasto aberto em dois lugares, duas idas ao SDK por gesto,
+    // duas linhas de log por passo e uma eleição de escritor para desempatar. Com a
+    // captura só aqui, o escritor é único por construção — e é esta janela que tem o
+    // controlador vivo, o único lugar onde o débito chega ao motor de regras.
+    if (!isSheetWindowContext()) {
+      tokenTrackerTrace(
+        'movimento',
+        'captura de movimento não roda aqui: só na janela da ficha (windowType=floating)'
+      )
+      return
+    }
+
     this.started = true
     this.unsubscribe = OBR.scene.items.onChange(items => {
       void this.onItems(items)
@@ -299,21 +315,30 @@ class TokenMovementCaptureService {
         // LOG DE POSIÇÃO: o sinal cru de que o token se mexeu, com tudo que decide o
         // que acontece depois. É a linha que responde "eu movi e não registrou" —
         // basta ver qual campo está faltando (vínculo, movimento ativado, retrato).
+        //
+        // Só a janela ESCRITORA fala no nível padrão: as duas veem o mesmo arrasto, e
+        // o console do Chrome agrega os iframes — sem isto, cada passo saía duas vezes.
         const de = this.lastSeen.get(tokenId)
         const para = next.get(tokenId)
-        tokenTrackerLog('posicao', `"${this.nameOf(items, tokenId)}" mudou de lugar`, {
-          tokenId,
-          de,
-          para,
-          distânciaEmUnidades:
-            de && para ? Number(euclideanDistance(de, para).toFixed(1)) : undefined,
-          temVinculo: bound.has(tokenId),
-          movimentoAtivado: records.has(tokenId),
-          quemMexeu: String(movedBy.get(tokenId)),
-          estaJanela: this.playerId(),
-          gesto: this.gestures.has(tokenId) ? 'continuando' : 'novo',
-          janelaDaFicha: isSheetWindowContext(),
-        })
+        const escreveAqui = this.writerHint()
+        ;(escreveAqui ? tokenTrackerLog : tokenTrackerTrace)(
+          'posicao',
+          `"${this.nameOf(items, tokenId)}" mudou de lugar`,
+          {
+            tokenId,
+            de,
+            para,
+            distânciaEmUnidades:
+              de && para ? Number(euclideanDistance(de, para).toFixed(1)) : undefined,
+            temVinculo: bound.has(tokenId),
+            movimentoAtivado: records.has(tokenId),
+            quemMexeu: String(movedBy.get(tokenId)),
+            estaJanela: this.playerId(),
+            gesto: this.gestures.has(tokenId) ? 'continuando' : 'novo',
+            janelaDaFicha: isSheetWindowContext(),
+            escritor: escreveAqui ? 'esta janela' : 'a janela da ficha',
+          }
+        )
 
         if (!bound.has(tokenId)) {
           // Uma vez por token (e no nível padrão): "movi o token e nada aconteceu" é
@@ -444,12 +469,21 @@ class TokenMovementCaptureService {
   }
 
   private async settleGesture(gesture: Gesture): Promise<void> {
-    const target = await tokenTrackerService.getMovementTarget(gesture.tokenId)
-    if (!target) {
-      // O serviço já explicou o motivo (vínculo ausente, ficha não resolvida nesta
-      // janela, ou dono sem `CombatController`) numa linha própria — aqui fica só o
-      // fato consumado.
-      tokenTrackerWarn('movimento', `token ${gesture.tokenId}: gesto sem alvo — nada debitado`)
+    // ELEIÇÃO PRIMEIRO. Esta é a única checagem que é barata (cache de 2 s) e é ela que
+    // decide se o resto do trabalho acontece aqui: sem isto, a janela que só observa
+    // pagava `getItemBounds` + `getItems` do registro antes de descobrir que não era
+    // ela quem debita.
+    //
+    // Repare no que NÃO precisa de ficha: nem a eleição, nem os espaços, nem o registro
+    // do token. A ficha entra só nas travas do motor e no `StatController`.
+    if (!(await this.isMovementWriter())) {
+      // `trace`: isto é o NORMAL quando a ficha está aberta (a janela do mapa só
+      // observa). No nível padrão sairia uma linha por gesto sem nada de novo — o
+      // campo `escritor` do log de posição já diz quem debita.
+      tokenTrackerTrace(
+        'movimento',
+        `token ${gesture.tokenId}: gesto observado nesta janela, mas quem debita é a janela da ficha`
+      )
       return
     }
 
@@ -460,6 +494,19 @@ class TokenMovementCaptureService {
       tokenTrackerTrace(
         'movimento',
         `token ${gesture.tokenId}: gesto de 0 espaços (arrastou e voltou) — nada debitado`
+      )
+      return
+    }
+
+    // O registro do token vem ANTES da ficha: os números do gasto vivem nele, e a
+    // janela que arrasta pode não ter ficha nenhuma resolvida.
+    const gravado = await this.readMovementRecord(gesture.tokenId)
+    if (!gravado) {
+      // Nível padrão: "movi e não registrou" quase sempre é isto depois da ativação
+      // explícita — e uma linha por gesto não incomoda.
+      tokenTrackerWarn(
+        'movimento',
+        `token ${gesture.tokenId}: gesto de ${spaces} espaço(s) ignorado — o movimento NÃO está ativado neste token (menu de contexto → Ativar movimento)`
       )
       return
     }
@@ -477,27 +524,20 @@ class TokenMovementCaptureService {
     // escrevessem o registro, o mesmo arrasto seria debitado duas vezes — daí o
     // escritor ser eleito: a janela da ficha quando ela existe, senão esta.
     if (!(await this.isMovementWriter())) {
+      // `trace`: isto é o NORMAL quando a ficha está aberta (a janela do mapa só
+      // observa). No nível padrão sairia uma linha por gesto sem nada de novo — o
+      // campo `escritor` do log de posição já diz quem debita.
       tokenTrackerTrace(
         'movimento',
-        `token ${gesture.tokenId}: gesto observado aqui, mas quem escreve é a janela da ficha`
+        `token ${gesture.tokenId}: gesto observado nesta janela, mas quem debita é a janela da ficha`
       )
       return
     }
 
-    // O movimento vem do TOKEN: é o número que todas as janelas enxergam, e é ele que
-    // impede duas janelas de debitarem o mesmo arrasto. O motor só entra depois, para
-    // deixar a ficha coerente.
-    //
-    // Sem registro, o movimento deste token **não está ativado** (menu de contexto →
-    // ícone de play) e o arrasto não registra nada. Registrar virou estado explícito.
-    const gravado = await this.readMovementRecord(gesture.tokenId)
-    if (!gravado) {
-      tokenTrackerTrace(
-        'movimento',
-        `token ${gesture.tokenId}: arrasto ignorado — o movimento não está ATIVADO neste token (menu de contexto → ativar movimento)`
-      )
-      return
-    }
+    // A ficha entra só para as travas do MOTOR e para escrever no `StatController` —
+    // os números do gasto já vieram do registro do token. Sem ficha resolvida nesta
+    // janela o gesto AINDA é registrado (é o caso da janela do mapa sem a ficha).
+    const target = await tokenTrackerService.getMovementTarget(gesture.tokenId)
 
     const base = gravado
     // Sem restante e sem máximo não há o que debitar nem o que desenhar.
@@ -505,7 +545,7 @@ class TokenMovementCaptureService {
       tokenTrackerWarn(
         'movimento',
         `token ${gesture.tokenId}: movimento zerado (restante 0 e máximo 0) — o gesto NÃO é registrado. Confira a ficha (SPEED) ou reinicie o turno`,
-        { fonte: 'registro do token', resteanteNaFicha: target.remaining }
+        { fonte: 'registro do token', resteanteNaFicha: target?.remaining }
       )
       return
     }
@@ -515,9 +555,12 @@ class TokenMovementCaptureService {
       remaining: base.current,
       boostBonus: base.boost,
       maxSpeed: base.max,
-      canBoost: target.canBoost,
+      // Sem ficha nesta janela não dá para confirmar legalidade de Boost nem status:
+      // assume o conservador (não oferece Boost) — o excedente fica pendente e o cartão
+      // da M2 resolve com a ficha na mão.
+      canBoost: target?.canBoost ?? false,
       kind,
-      immobilized: target.immobilized,
+      immobilized: target?.immobilized ?? false,
     })
 
     tokenTrackerLog('movimento', `token ${gesture.tokenId}: gesto de ${spaces} espaço(s)`, {
@@ -527,10 +570,11 @@ class TokenMovementCaptureService {
         : `outra janela mexeu (lastModifiedUserId=${String(gesture.movedBy)} ≠ ${this.playerId() || '?'})`,
       livreArmadoConsumido: wasFree,
       movimentoNoToken: `${base.current}/${base.max + base.boost}`,
-      origemDoRegistro: gravado ? 'registro do token' : 'ficha (primeiro gesto do turno)',
+      origemDoRegistro: 'registro do token',
       boostBonus: base.boost,
-      podeDarBoost: target.canBoost,
-      imobilizado: target.immobilized,
+      temFichaNestaJanela: !!target,
+      podeDarBoost: target?.canBoost ?? '(ficha não resolvida aqui)',
+      imobilizado: target?.immobilized ?? '(ficha não resolvida aqui)',
       janelaDaFicha: isSheetWindowContext(),
       decisao: decision.action,
       ...(decision.action === 'spend'
@@ -553,14 +597,14 @@ class TokenMovementCaptureService {
         spaces: decision.spend,
         overBy: decision.overBy,
         remaining: base.current,
-        canBoost: target.canBoost,
-        target,
+        canBoost: target?.canBoost ?? false,
+        target: target ?? undefined,
         startCorner: { ...gesture.startCorner },
       })
       tokenTrackerWarn(
         'movimento',
         `token ${gesture.tokenId}: movimento ACIMA do cap (${decision.spend} > ${base.current} no token) e nada foi debitado — falta o cartão de Boost/Desfazer (M2)`,
-        { passouDoCapEm: decision.overBy, podeDarBoost: target.canBoost }
+        { passouDoCapEm: decision.overBy, podeDarBoost: target?.canBoost ?? false }
       )
       return
     }
@@ -581,7 +625,7 @@ class TokenMovementCaptureService {
       overBy: 0,
       remaining: base.current,
       canBoost: false,
-      target,
+      target: target ?? undefined,
       startCorner: { ...gesture.startCorner },
     })
   }
@@ -595,7 +639,7 @@ class TokenMovementCaptureService {
    */
   private async commitSpend(
     gesture: Gesture,
-    target: MovementTarget,
+    target: MovementTarget | null,
     base: TokenTrackerMovementRecord,
     decision: Extract<MovementDecision, { action: 'spend' }>
   ): Promise<void> {
@@ -608,8 +652,9 @@ class TokenMovementCaptureService {
     }
 
     // Só a janela da ficha tem o controlador vivo; nas outras o `SPEED` é uma cópia
-    // deserializada, e escrever nela não chega a lugar nenhum.
-    if (isSheetWindowContext()) {
+    // deserializada, e escrever nela não chega a lugar nenhum. Sem `target` não há
+    // motor para tocar — o registro do token já é o que a mesa desenha.
+    if (isSheetWindowContext() && target) {
       try {
         // `SpendMovement` também registra `Record('move', …)` no log de combate.
         target.combatController.SpendMovement(decision.spend, decision.mode)
@@ -624,7 +669,7 @@ class TokenMovementCaptureService {
       mode: decision.mode,
       previousRemaining: base.current,
       startCorner: { ...gesture.startCorner },
-      statController: target.statController,
+      statController: target?.statController ?? null,
     })
     this.lastRecords.set(gesture.tokenId, record)
 
@@ -741,31 +786,18 @@ class TokenMovementCaptureService {
   /**
    * Esta janela é quem grava o movimento?
    *
-   * A janela da ficha sempre é (é ela que tem o controlador vivo). Quando ela **não**
-   * existe, uma das janelas do mapa assume — assim o registro continua acontecendo
-   * sem a ficha aberta. Com a ficha aberta, as janelas do mapa apenas observam: se
-   * todas gravassem, o mesmo arrasto seria debitado em duplicidade.
-   *
-   * A resposta é cacheada por um instante: isto roda a cada gesto, e
-   * `isMainWindowOpen()` fala com o Owlbear.
+   * Só a janela da ficha captura (ver `start()`), então aqui a resposta é sempre sim
+   * quando a captura está de pé — o método existe para deixar a intenção explícita no
+   * fluxo do settle.
    */
   private async isMovementWriter(): Promise<boolean> {
-    if (isSheetWindowContext()) return true
-    const now = Date.now()
-    if (now - this.writerCheckAt < 2000) return this.writerCheckCache
-    this.writerCheckAt = now
-    try {
-      this.writerCheckCache = !(await isMainWindowOpen())
-    } catch {
-      // Na dúvida, assume a escrita: perder movimento por não registrar é pior do que
-      // registrar duas vezes (o número é visível e o Desfazer da M2 corrige).
-      this.writerCheckCache = true
-    }
-    return this.writerCheckCache
+    return isSheetWindowContext()
   }
 
-  private writerCheckAt = 0
-  private writerCheckCache = true
+  /** Dica síncrona para o log de posição: quem está falando é quem escreve. */
+  private writerHint(): boolean {
+    return isSheetWindowContext()
+  }
 
   /**
    * Reinicia o movimento de TODOS os tokens vinculados da cena (§13.8) e avisa as
