@@ -3,53 +3,113 @@
 > Verificação em sala real do serviço de token trackers (PV, Blindagem, Calor,
 > Movimento, Estrutura, Estresse). Plano: `plano_token_trackers_lancer.md`.
 >
-> O que já está automatizado: **147 specs** dos trackers, `npm run typecheck` e
+> O que já está automatizado: **2013 specs** (suíte inteira), `npm run typecheck` e
 > `npm run build`. O que só uma sala de verdade responde: como os itens locais se
 > comportam no canvas, a corrida entre janelas no resumo do token e a política de
 > visibilidade vista de dois clientes diferentes.
 
-## 0. Diagnóstico: logs (comece por aqui)
+## 0. Diagnóstico: logs com dois níveis
 
-Os logs **já vêm ligados** por padrão — basta abrir o console da janela da extensão. Para
-silenciar (persiste):
+Os logs **vêm ligados** em `summary`. No console da **JANELA DA EXTENSÃO** (não no console do
+topo: a extensão roda num iframe):
 
 ```js
-// no console da JANELA DA EXTENSÃO (não no console do topo: a extensão roda num iframe)
-__ccTokenTracker.disable()   // religa com __ccTokenTracker.enable()
+__ccTokenTracker.level()      // 'summary' (padrão) | 'verbose' | 'off'
+__ccTokenTracker.verbose()    // tudo: cada refresh, cada add/update/delete de item
+__ccTokenTracker.summary()    // volta ao padrão
+__ccTokenTracker.off()        // silencia (persiste no localStorage)
+__ccTokenTracker.dump()       // tabela por token vinculado
+__ccTokenTracker.storage()    // retrato do armazenamento DESTA janela
 ```
 
-Também dá para desligar por `localStorage.setItem('cc_token_tracker_debug', '0')` + reload.
+### Duas janelas, duas origens (o erro mais caro)
 
-A qualquer momento, **`__ccTokenTracker.dump()`** imprime uma linha por token vinculado:
+O app roda em iframes separados — a ficha viva na janela persistente (`windowType=floating`), o
+mapa em outra. Eles só compartilham dados se tiverem a **mesma origem**: `http://localhost`,
+`https://localhost`, `http://127.0.0.1` e `http://localhost:5174` são origens **diferentes**, com
+IndexedDB **diferente**. Além disso, num iframe sob `http://` o Chromium pode negar IndexedDB — e aí
+`Storage.ts` cai para memória e cada janela fica com o seu banco.
+
+O sintoma é sempre o mesmo: a janela do mapa mostra `0 pilotos, 0 fichas, 0 npcs` para sempre, e
+`[OBRBridge] 0 piloto(s) sincronizado(s)`, mesmo com a ficha aberta ao lado. Rode o retrato nas
+**duas** janelas e compare:
+
+```js
+await __ccTokenTracker.storage()
+```
+
+| Campo | Esperado | Se estiver diferente |
+|-------|----------|----------------------|
+| `origem` | **idêntica** nas duas janelas | origens diferentes = bancos diferentes; recarregue a extensão na mesma URL |
+| `driver` / `duravel` | `duravel: true` | `duravel: false` = IndexedDB negado no iframe; sirva por HTTPS (`DEV_HTTPS=true`, já no `.env`) |
+| `noArmazenamento.pilot_sheets` | ≥ 1 na janela da ficha | 0 na janela da ficha = a ficha nunca foi salva |
+| `janelaDaFicha` | `true` em exatamente uma | serve para confirmar qual iframe é qual |
+| `porDriver` + `veredito` | sem divergência | ver abaixo |
+
+### "A ficha sumiu": dados no outro driver
+
+`Initialize()` decide o driver por **capacidade** (`window.indexedDB` existe?), não por um teste real.
+Se a primeira operação falhar com permissão negada, `Storage.ts` troca tudo para **LocalStorage** —
+e aí os dados gravados quando o IndexedDB funcionava ficam **invisíveis**, porque cada driver tem o
+seu namespace. O sintoma no console é a sequência:
+
+```
+[Storage] driver=INDEXEDDB (durável).                                  ← decisão otimista do boot
+COMP/CONWARN Storage: IndexedDB indisponível; operando em LocalStorage  ← a troca de verdade
+```
+
+Nesse estado, **todas** as coleções aparecem vazias (`0 pilotos, 0 fichas, 0 npcs`) — mesmo as que
+nada têm a ver com os trackers. O `storage()` agora conta nos DOIS drivers e diz o veredito:
+
+```js
+await __ccTokenTracker.storage()
+// porDriver: { pilot_sheets: { indexeddb: 1, localstorage: 0 }, … }
+// veredito: "ATENÇÃO: pilot_sheets existem no OUTRO driver (não no LOCALSTORAGE, que é o ativo)…"
+```
+
+Se o veredito acusar divergência, o dado **não foi perdido**: ele está no outro driver. As saídas
+são copiar as coleções para o driver ativo, ou fazer o IndexedDB voltar a funcionar (recarregar
+todas as janelas e conferir se a troca acontece de novo).
+
+O `[stores]` do serviço avisa uma vez quando, depois de uma recarga, esta janela continua sem
+nenhuma ficha — e já imprime este retrato junto.
+
+| Nível | O que sai | Serve para |
+|-------|-----------|------------|
+| `summary` | decisões: fonte escolhida, token sem valor, resumo gravado, **todo gesto de movimento** (espaços, classificação, decisão, débito) | jogar com o console aberto |
+| `verbose` | `summary` + cada rodada de `[refreshAll]`/`[refresh]`/`[items]`/`[layout]`/`[resumo]`/`[ponte]` | "por que não aparece / por que não atualiza" |
+| `off` | nada (nem `console.warn` de falha) | silêncio total |
+
+Escopos: `start`, `bridge`, `ponte`, `stores`, `resolve`, `refreshAll`, `refresh`, `items`,
+`layout`, `resumo`, `movimento`, `dump`.
+
+### O que o dump responde
 
 | coluna | o que responde |
 |--------|----------------|
 | `vinculo` | qual ficha o token aponta (`sheetType`/`sheetId`/`mechId`/`combatantId`) |
-| `fonteDosValores` | de onde saiu o leitor: encontro ativo, `PilotStore`, `NpcStore`… ou o motivo de não ter saído |
-| `chavesLidas` | leitura **crua** de `StatController` (`pv.current (hp)`, `heat.max (heatcap)`…) |
-| `resumoNoToken` | o que está gravado em `com.compcon.activemode/trackers` |
+| `fonteDosValores` | de onde saiu o leitor **e os candidatos perdedores** com a pontuação de cada um |
+| `chavesLidas` | leitura **crua** do `StatController` (`pv.current (hp)`, `heat.max (heatcap)`, `speed.cap (BoostedSpeed)`…) |
+| `resumoNoToken` | o que está gravado em `com.compcon.activemode/trackers`, **e quem gravou** |
 | `valoresFinais` | o que o serviço vai desenhar |
+| `estadoDoMovimento` | `normal` / `boosted` / `overflow` (a cor do badge) |
 | `resultado` | `ok` ou o motivo de não desenhar (`no-data`, `side-blocked`, `hidden-from-players`, `not-tracked`, `disabled`) |
 | `itensNoMapa` | quantos itens do painel existem anexados ao token |
 
 ### Como ler "está vazio"
 
-| Sintoma no dump | Causa provável |
-|-----------------|----------------|
+| Sintoma | Causa provável |
+|---------|----------------|
 | o dump não lista **nenhum** token | nenhum item tem `metadata["com.compcon.activemode"]` — o token não foi vinculado |
-| `[TokenTracker][stores] … nenhuma ficha na memória desta janela` | é O aviso que importa: veja o `retrato do armazenamento` que vem junto (`driver`/`durável`/contagens). Com `driver: MEMORY` ou `durável: false`, o IndexedDB foi negado no iframe (tipicamente `http://localhost`) e cada janela tem um banco próprio — sirva por HTTPS (`DEV_HTTPS=true`) |
-| `noStorage.pilot_sheets` > 0 mas `naMemoria.fichasAtivas` = 0 | a ficha do modo ativo existe no banco mas não foi carregada nesta janela (o serviço consulta `pilot_sheets` direto, então ainda deve resolver) |
-| `fonteDosValores` diz "ficha X não está no PilotStore(0 pilotos), no PilotSheetStore(0 fichas) nem no NpcStore(0 npcs)" | a ficha realmente não está neste banco |
-| `chavesLidas` com tudo `undefined` | `StatController` não inicializado para o encontro, ou a ficha é de outro tipo |
-| `valoresFinais (sem valores)` e `resumoNoToken nenhum` | ninguém conseguiu resolver a ficha ainda — olhe `[TokenTracker][resumo]` para saber se **esta** janela é a escritora |
+| `valoresFinais (sem valores)` + `resumoNoToken nenhum` | ninguém resolveu a ficha ainda; procure `[stores]` no console — o aviso `> 0 token(s) vinculado(s), mas nenhuma ficha nesta janela` costuma vir junto, e aí o problema é o armazenamento do iframe (use HTTPS: `DEV_HTTPS=true`) |
+| `chavesLidas` com tudo `(undefined)` | `StatController` não inicializado para o encontro, ou a ficha é de outro tipo |
 | `resultado: no-data` | os valores não existem aqui; é o caso que o resumo do token deveria cobrir |
-| `resultado: side-blocked` | política da sala (é esperado para inimigo com "Inimigos" desligado) |
+| `resultado: side-blocked` | política da sala (esperado para inimigo com "Inimigos" desligado) |
 | `resultado: hidden-from-players` | combatente oculto (encontro ou lista da sala) |
 | `resultado: disabled` | "Desenhar trackers nos tokens" está desligado |
-| `resultado: ok` mas `itensNoMapa: 0` | os itens não foram criados: procure `[TokenTracker][items]` no console |
-| `porSlot.stress` = 0 | a linha do Estresse foi **descartada na montagem**: sem máximo conhecido (`max 0`), slot desligado ou teto de quadrados |
-| `porSlot.stress` = 4 mas não se vê nada | os itens existem: compare `faixaY.structure` com `faixaY.stress` no mesmo log — faixas iguais significariam sobreposição (há spec garantindo que não); faixas distintas apontam para zoom/token cobrindo a última linha |
-| `porSlot.heat` = 2 e o calor não muda | confira a chave: calor é **`heatcap`** nas duas pontas (ver tabela abaixo) |
+| `resultado: ok` mas `itensNoMapa: 0` | nada foi criado: veja `[items]` em `verbose` |
+| um slot sem linha (ex.: Estresse) | o `[layout]` (em `verbose`) diz o motivo: `disabled` (chip), `no-value` (a fonte não tem o stat), `no-max` (quadrados sem máximo), `hidden-when-zero` (Blindagem 0), `no-room` |
+| calor não muda e `heat max` tem valor | calor é **`heatcap`** nas duas pontas (ver tabela abaixo); `heat` é chave legada |
 
 ### Onde cada tracker é desenhado
 
@@ -94,12 +154,77 @@ Motivos possíveis em `pulados[].reason`: `disabled` (chip desligado no painel),
 | PV | `hp` | `hp` | |
 | Blindagem | `overshield` | `overshield` | normalmente só-corrente (max 0) |
 | **Calor** | **`heatcap`** | **`heatcap`** | **`heat` é legado**: quem escreve calor é `DamageFlow`/`ApplyHeat`/overcharge, todos em `heatcap`; o HUD da ficha também mostra `CurrentStats['heatcap'] / MaxStats['heatcap']` |
-| Movimento | `speed` | `speed` | |
+| Movimento | `speed` | **`BoostedSpeed`** (cap do turno) | o badge mostra o **restante**; o cap cai para `getMax('speed')` em leitor sem `getBoostedSpeed` |
 | Estrutura | `structure` | `structure` | |
 | Estresse | `stress` | `stress` | |
 
 Para um token de **piloto**, o serviço usa o `StatController` do **mecha** (`actor.ActiveMech`), não
 do piloto — o piloto não tem calor/estrutura/estresse de mecha.
+
+## 0.1 Movimento dinâmico (§13) — o que testar na sala
+
+> **A ficha viva fica num iframe separado.** O modo ativo roda na janela persistente
+> (`windowType=floating`) e o arrasto acontece na janela do mapa. O `StatController` vivo só
+> existe no iframe da ficha, então **é ele que decide e debita**: a janela do mapa manda o
+> *gesto* por broadcast (`MOVEMENT_SPEND`) e recebe de volta o que foi feito
+> (`MOVEMENT_SPENT`). Quem decide precisa do `remaining`/`BoostBonus` de verdade — uma cópia
+> deserializada mentiria, e debitar nela seria perdido quando a ficha salvasse por cima.
+
+Nos logs, isso aparece em duas janelas diferentes: na do mapa sai
+`N espaço(s) enviados para a janela da ficha`; na da ficha sai
+`debitei um gesto vindo de outra janela`; e na do mapa volta
+`resposta da janela da ficha { debitado: N, restanteDepois: M }`.
+
+| Sintoma | O que significa |
+|---------|-----------------|
+| `enviados para a janela da ficha` e **nada** de resposta | não há iframe da ficha aberto (ou nenhum com essa ficha). Abra a ficha no modo ativo |
+| resposta com `acao: 'offer-boost'` | o gesto passou do cap: nada foi debitado de propósito (cartão da M2) |
+| resposta com `motivo: 'immobilized'` / `'over-cap-no-boost'` | recusado pelo motor — o token já andou e o Desfazer é a M2 |
+| na janela da ficha: `pedido … não é desta janela` | outra ficha está aberta ali: aquele iframe não é o dono |
+
+Arrastar o token **custa movimento**: o gesto é medido centro a centro e debitado
+`MOVEMENT_SETTLE_MS` (250 ms) depois que o token para. Cada gesto sai uma linha `[movimento]` já
+no nível `summary`:
+
+```
+[TokenTracker][movimento] token abc: gesto de 2 espaço(s) {
+  classificacao: 'voluntary', atribuicao: 'esta janela mexeu no token',
+  restante: 5, capDoTurno: 5, boostBonus: 0, podeDarBoost: true, imobilizado: false,
+  decisao: 'spend', gasto: 2, leg: 'move'
+}
+[TokenTracker][movimento] token abc: debitados 2 { restanteAntes: 5, restanteDepois: 3, ... }
+```
+
+Leitura direta quando **não** debita: `decisao: 'reject'` com `motivo`
+(`involuntary` = outra janela mexeu, `free` = movimento livre armado, `immobilized`,
+`over-cap-no-boost`) ou `decisao: 'offer-boost'` com `passouDoCapEm` — nesse último o badge fica
+vermelho e o cartão de Boost/Desfazer é a M2, por isso **nada** é debitado.
+
+Se em vez do gesto vier `gesto sem alvo — nada debitado`, a linha **seguinte** diz qual das três
+causas foi:
+
+| Linha do serviço | Causa |
+|------------------|-------|
+| (`verbose`) `arrastado, mas não tem vínculo de ficha` | o token não está vinculado — arrastar cenário não custa movimento |
+| `ficha resolvida mas o dono não tem CombatController` + `dono: <tipo> id=…` | a ficha resolveu, mas o dono não é um ator de combate (ou vem `dono: nenhum`, com `temStatController: false`) |
+| `sem vínculo em metadata[...]` (verbose) | o vínculo sumiu entre o gesto e o settle |
+| `não existe mais na cena` | o token foi apagado durante o gesto |
+
+Em `verbose`, a resolução bem-sucedida também sai (`alvo de movimento de "…"` com `dono`,
+`restante`, `capDoTurno`, `boostBonus`) — é a linha que confirma **qual cópia** do mecha está sendo
+debitada.
+
+| Ação | Esperado |
+|------|----------|
+| arrastar 2 células com 5 de movimento | badge mostra `3/5` |
+| arrastar e **voltar** ao mesmo lugar | nada é debitado (distância 0) |
+| arrastar 6 células com 5 e Boost legal | **nada é debitado** e o badge fica **vermelho** (estouro pendente, cartão da M2) |
+| empurrar o token de outro jogador (outra janela) | nada é debitado |
+| token com `immobilized` | nada é debitado |
+| dar Boost na ficha | badge fica **âmbar** e o cap sobe (`10/10` num mecha speed 5) |
+
+Sem o centro do token (`getItemBounds` falhando) a captura **não cobra**: o princípio é preferir
+sobrar movimento a cobrar errado. O valor do badge é sempre o restante do turno.
 
 ### O tipo de ficha manda na fonte (regra explícita)
 
@@ -149,6 +274,50 @@ retrato do armazenamento), `[ponte]` (mudança de estado → redesenho), `[refre
 (evento de estado recebido), `[config]`, `[dump]`.
 
 ## Preparação
+
+> **Antes de tudo: o iframe do Owlbear é armazenamento de TERCEIROS.** A extensão roda dentro de
+> `owlbear.rodeo`, então IndexedDB/localStorage são storage de terceiros para o navegador. Em
+> `http://localhost` (e às vezes em `https://localhost` com certificado não confiável) o Chromium
+> **nega** o IndexedDB — a app cai para LocalStorage e os dados que estavam no IndexedDB ficam
+> invisíveis. Faça nesta ordem:
+
+1. **Confie na CA do dev server** (o `vite` imprime o comando, e o certificado já existe em
+   `.certs/`). Isso tira o aviso e faz o iframe virar contexto seguro de verdade:
+
+   ```bash
+   certutil -user -addstore Root .certs\localhost.crt
+   ```
+
+   Depois **feche o navegador** e recarregue todas as janelas do Owlbear.
+
+2. **Permita storage de terceiros para o Owlbear** no perfil de teste:
+   `chrome://settings/cookies` → *Sites que podem sempre usar cookies* → adicione
+   `https://owlbear.rodeo`.
+
+3. Ou use um **perfil dedicado** com as flags explícitas (não mexe no seu perfil principal, e é o
+   caminho mais repetível):
+
+   ```powershell
+   & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+     --user-data-dir="$env:TEMP\obr-dev-perfil" `
+     --disable-features=ThirdPartyStoragePartitioning,BlockThirdPartyCookies,ThirdPartyCookiePhaseout `
+     "https://www.owlbear.rodeo"
+   ```
+
+4. **Confirme o que o navegador decidiu**, dentro da janela da extensão:
+
+   ```js
+   await __ccTokenTracker.storage()   // driver + porDriver + veredito
+   ```
+
+   O boot loga `[Storage] driver=INDEXEDDB (verificado com gravação de teste)` quando o IndexedDB
+   está realmente gravável; se vier a linha `COMP/CONWARN Storage: IndexedDB indisponível`, a app
+   trocou para LocalStorage e o `veredito` do `storage()` diz se há dados no outro driver.
+
+5. Um teste rápido de primeira-parte (sem OBR) para separar "o navegador bloqueia o iframe" de "o
+   navegador bloqueia tudo": abra `https://localhost:5173/?windowType=floating#/active-mode` numa
+   **aba normal**. Ali o IndexedDB funciona (não é iframe), então dá para confirmar que a camada de
+   armazenamento está sã — mas sem SDK do Owlbear (nada de token, broadcast ou tracker no mapa).
 
 - `npm run dev` (dev server em `https://localhost:5173`; com `DEV_HTTPS=true` no
   `.env` o IndexedDB funciona igual ao deploy).

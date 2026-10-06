@@ -77,6 +77,26 @@ export const CORNER_BACKGROUND_OPACITY = 0.6
 /** Respiro do badge em relação ao canto do token. */
 export const CORNER_PADDING = 2
 export const VALUE_COLOR = '#FFFFFF'
+/** Destaque de estado: Boost concedido no turno (§6.1/§13). */
+export const BOOST_COLOR = '#ffb300'
+/** Estado de erro: calor acima do cap ou movimento acima do cap sem Boost. */
+export const ERROR_COLOR = '#e53935'
+
+/**
+ * Estado visual do Movimento (§6.1): a cor do badge deixa de ser fixa.
+ *
+ * - `normal`: movimento padrão do turno;
+ * - `boosted`: houve Boost (`BoostBonus > 0`) — o cap é maior, e isso é bom, não erro;
+ * - `overflow`: o gesto passou do cap e aguarda Boost/Desfazer (§13.5).
+ */
+export type MovementVisualState = 'normal' | 'boosted' | 'overflow'
+
+/** Cor do badge para o estado do movimento. */
+export function movementBadgeColor(state: MovementVisualState, slotColor: string): string {
+  if (state === 'overflow') return ERROR_COLOR
+  if (state === 'boosted') return BOOST_COLOR
+  return slotColor
+}
 
 /////////////////////////////////////////////////////////////////////
 // Comandos de desenho
@@ -162,6 +182,10 @@ export interface TokenTrackerLayoutInput {
   verticalOffset?: number
   /** Escala global do painel. */
   scale?: number
+  /**
+   * Estado do Movimento (§6.1): muda a cor do badge do canto. Sem isso, `normal`.
+   */
+  movementState?: MovementVisualState
 }
 
 export interface TokenTrackerLayoutResult {
@@ -279,7 +303,8 @@ function buildCornerBadge(
   value: TokenTrackerValue,
   config: TokenTrackerConfig,
   origin: { x: number; y: number },
-  tokenWidth: number
+  tokenWidth: number,
+  movementState: MovementVisualState
 ): DrawCommand[] {
   if (!isSlotVisible(slot, value, config)) return []
 
@@ -298,7 +323,9 @@ function buildCornerBadge(
     width: badgeWidth,
     height: badgeHeight,
     radius: badgeHeight / 2,
-    fill: PANEL_BACKGROUND,
+    // A cor vem do ESTADO (§6.1), não do slot: Boost concedido é destaque, estouro
+    // pendente é erro.
+    fill: movementBadgeColor(movementState, slot.color),
     opacity: CORNER_BACKGROUND_OPACITY,
     fillPortion: 1,
   })
@@ -424,6 +451,7 @@ export function layoutTokenTrackers(input: TokenTrackerLayoutInput): TokenTracke
   const commands: DrawCommand[] = []
 
   // Badge do canto superior esquerdo (Movimento), com o ícone ao lado do número.
+  const movementState: MovementVisualState = input.movementState ?? 'normal'
   for (const slot of cornerSlots) {
     commands.push(
       ...buildCornerBadge(
@@ -431,7 +459,8 @@ export function layoutTokenTrackers(input: TokenTrackerLayoutInput): TokenTracke
         input.values[slot.id] as TokenTrackerValue,
         input.config,
         { x: minX + CORNER_PADDING, y: minY + CORNER_PADDING },
-        tokenWidth
+        tokenWidth,
+        movementState
       )
     )
   }

@@ -27,6 +27,7 @@ import {
   sideFromCards,
   statReaderForActor,
   statReaderOf,
+  toTrackerInt,
   type TokenTrackerBinding,
   type TokenTrackerRenderReason,
   type TokenTrackerStatReader,
@@ -45,7 +46,18 @@ import {
   valuesToSummary,
   writerRank,
 } from '@/services/tokenTrackerSummary'
-import { layoutTokenTrackers } from '@/services/tokenTrackerLayout'
+import { layoutTokenTrackers, type MovementVisualState } from '@/services/tokenTrackerLayout'
+import {
+  dumpRawStats,
+  installTokenTrackerDebugConsole,
+  reportStorage,
+  setTokenTrackerDumpProvider,
+  summarizeBinding,
+  summarizeValues,
+  tokenTrackerLog,
+  tokenTrackerTrace,
+  tokenTrackerWarn,
+} from '@/services/tokenTrackerDebug'
 import { buildTokenTrackerItems, isTokenTrackerItem } from '@/services/tokenTrackerRender'
 import {
   isTokenTracked,
@@ -79,9 +91,38 @@ export const TOKEN_TRACKER_REFRESH_DEBOUNCE_MS = 200
 /** Intervalo mínimo entre duas rodadas de gravação de resumo. */
 export const TOKEN_TRACKER_SUMMARY_DEBOUNCE_MS = 400
 
+/**
+ * Intervalo mínimo entre duas tentativas de recarregar as lojas locais.
+ *
+ * Sem isso, um token vinculado a uma ficha que realmente não está nesta janela
+ * levaria uma releitura do armazenamento a cada gesto/refresh.
+ */
+export const STORES_RETRY_COOLDOWN_MS = 3000
+
 export interface TokenTrackerSource {
   /** Encontro ativo desta janela (só o GM tem). */
   instance: any | null
+}
+
+/**
+ * O que a captura de movimento precisa para debitar no motor (§13.3/§13.4).
+ *
+ * `owner` é o dono do `CombatController` (mecha ou ator): é nele que
+ * `SpendMovement`/`Boost`/`HasStatus` são chamados.
+ */
+export interface MovementTarget {
+  tokenId: string
+  owner: unknown
+  combatController: any
+  statController: any
+  /** Movimento restante agora (`getCurrent(SPEED)`). */
+  remaining: number
+  /** Movimento padrão da ficha (`getMax(SPEED)`, sem Boost). */
+  maxSpeed: number
+  boostBonus: number
+  canBoost: boolean
+  immobilized: boolean
+  binding: TokenTrackerBinding
 }
 
 /** Estado de um token do ponto de vista do painel/lista (§7.4). */
@@ -117,6 +158,11 @@ interface ActorState {
    * o resumo quanto se o resumo do token é mais confiável que os valores locais.
    */
   rank: number
+  /**
+   * Dono do `CombatController` de onde saíram os valores (mecha ou ator). É nele que
+   * a captura de movimento debita (§13.4).
+   */
+  owner: unknown
 }
 
 class TokenTrackerService {
@@ -158,8 +204,21 @@ class TokenTrackerService {
     if (this.started) return
     this.started = true
 
+    installTokenTrackerDebugConsole()
+    setTokenTrackerDumpProvider(() => this.dumpDiagnostics())
+
     this.prefs = await loadLocalPrefs()
     await this.reloadConfig()
+
+    tokenTrackerLog('start', 'serviço iniciado', {
+      papel: this.role,
+      trackersLigados: this.config.enabled,
+      slotsDesligados: Object.entries(this.config.slots)
+        .filter(([, on]) => on === false)
+        .map(([slot]) => slot),
+      distanciaDoToken: this.config.panelGap,
+      politicaParaJogadores: this.config.playerVisibility,
+    })
 
     const onItems = OBR.scene.items.onChange(items => {
       this.onSceneItemsChanged(items)
@@ -192,8 +251,52 @@ class TokenTrackerService {
     }
   }
 
-  /** Desliga o serviço (testes/desmontagem). */
-  public stop(): void {
+  /**
+   * Tabela de diagnóstico por token vinculado: o que o serviço vê, de onde tirou os
+   * números e por que o painel (não) está desenhado.
+   */
+  public async dumpDiagnostics(): Promise<unknown[]> {
+    if (!(await OBR.scene.isReady().catch(() => false))) {
+      tokenTrackerWarn('dump', 'a cena não está pronta; nada para inspecionar')
+      return []
+    }
+
+    const tokens = await this.getBoundTokens()
+    const rows: unknown[] = []
+
+    for (const token of tokens) {
+      const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
+      if (!binding) continue
+      const state = await this.resolveActorState(binding)
+      const localValues = readTrackerValuesFromStats(state.reader)
+      const summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
+      const merged = mergeTrackerValues(localValues, summary ? summaryToValues(summary) : null)
+      const description = await this.describeToken(token)
+      const attachments = await OBR.scene.local
+        .getItemAttachments([token.id])
+        .catch(() => [] as Item[])
+
+      rows.push({
+        token: token.name || token.id,
+        vinculo: summarizeBinding(binding),
+        lado: state.side,
+        fonteDosValores: state.readerSource,
+        forcaDaFonte: state.rank,
+        chavesLidas: dumpRawStats(state.reader),
+        valoresLocais: summarizeValues(localValues),
+        resumoNoToken: summary ? `${summarizeValues(summaryToValues(summary))} (${summary.w})` : 'nenhum',
+        valoresFinais: summarizeValues(merged.values),
+        naListaDestaJanela: description?.tracked,
+        resultado: description?.reason,
+        estadoDoMovimento: this.movementStateFor(token.id, state.owner),
+        itensNoMapa: attachments.filter(isTokenTrackerItem).length,
+      })
+    }
+
+    return rows
+  }
+
+  /** Desliga o serviço (testes/desmontagem). */  public stop(): void {
     for (const unsubscribe of this.unsubscribes) {
       try {
         unsubscribe()
@@ -279,7 +382,7 @@ class TokenTrackerService {
         this.bumpVersion()
       })
       .catch(err => {
-        console.warn(`[TokenTracker] Falha ao atualizar o token ${tokenId}:`, err)
+        tokenTrackerWarn('refresh', `falha ao atualizar o token ${tokenId}`, err)
       })
       .finally(() => {
         if (this.queues.get(tokenId) === next) this.queues.delete(tokenId)
@@ -296,6 +399,10 @@ class TokenTrackerService {
     await this.ensureLocalStoresLoaded()
 
     const tokens = await this.getBoundTokens()
+    tokenTrackerTrace('refreshAll', `${tokens.length} token(s) vinculado(s) na cena`, {
+      tokens: tokens.map(token => token.name || token.id),
+      papel: this.role,
+    })
 
     await this.prunePrefs(tokens.map(token => token.id))
 
@@ -309,28 +416,86 @@ class TokenTrackerService {
    * Garante que os rosters locais estejam carregados.
    *
    * Sem isso, uma janela que nunca abriu o Hangar/roster de NPCs fica com
-   * `Pilots`/`Npcs` vazios, a ficha não é encontrada e o painel aparece vazio —
-   * que é justamente a queixa mais provável de "sincronização com a ficha".
+   * `Pilots`/`Npcs` vazios, a ficha não é encontrada e o painel aparece vazio.
+   *
+   * `LoadPilots()` também carrega as fichas do modo ativo
+   * (`PilotStore().LoadPilots()` chama `PilotSheetStore().LoadPilotSheets()`), então
+   * esta é a única porta que precisa ser aberta.
+   *
+   * **`force` existe porque a primeira tentativa pode chegar cedo demais:** se o boot
+   * roda antes de o armazenamento/driver responder, `Pilots` fica 0 e — sem retry —
+   * aquela janela fica sem ficha para o resto da sessão (era o "dono: nenhum" no
+   * gesto de movimento). O cooldown evita tempestade quando o vazio é real.
    */
-  private async ensureLocalStoresLoaded(): Promise<void> {
-    if (this.storesLoadAttempted) return
+  private async ensureLocalStoresLoaded(force = false): Promise<void> {
+    const now = Date.now()
+    if (force) {
+      if (now - this.storesLoadAt < STORES_RETRY_COOLDOWN_MS) return
+    } else if (this.storesLoadAttempted) {
+      return
+    }
+
     this.storesLoadAttempted = true
+    this.storesLoadAt = now
     try {
       const pilotStore = this.pilotStore()
       const npcStore = this.npcStore()
-
-      if (pilotStore && (pilotStore.Pilots?.length ?? 0) === 0 && typeof pilotStore.LoadPilots === 'function') {
-        await pilotStore.LoadPilots()
+      const antes = {
+        pilotos: pilotStore?.Pilots?.length ?? 0,
+        fichas: this.pilotSheets().length,
+        npcs: npcStore?.Npcs?.length ?? 0,
       }
-      if (npcStore && (npcStore.Npcs?.length ?? 0) === 0 && typeof npcStore.LoadNpcs === 'function') {
+
+      if (
+        (pilotStore?.Pilots?.length ?? 0) === 0 &&
+        typeof pilotStore?.LoadPilots === 'function'
+      ) {
+        await pilotStore.LoadPilots()
+      } else if (this.pilotSheets().length === 0) {
+        // Caso esquisito: pilotos carregados mas nenhuma ficha. As fichas vivem em
+        // `pilot_sheets` e podem estar vazias por conta própria (o sync da sala
+        // substitui a lista) — recarrega só elas.
+        await this.loadPilotSheets()
+      }
+      if ((npcStore?.Npcs?.length ?? 0) === 0 && typeof npcStore?.LoadNpcs === 'function') {
         await npcStore.LoadNpcs()
       }
+
+      const depois = {
+        pilotos: this.pilotStore()?.Pilots?.length ?? 0,
+        fichas: this.pilotSheets().length,
+        npcs: this.npcStore()?.Npcs?.length ?? 0,
+      }
+      if (force || antes.pilotos !== depois.pilotos || antes.fichas !== depois.fichas) {
+        tokenTrackerLog('stores', 'lojas locais recarregadas', { antes, depois })
+      }
     } catch (err) {
-      console.warn('[TokenTracker] Falha ao carregar os rosters locais:', err)
+      tokenTrackerWarn('stores', 'falha ao carregar os rosters locais', err)
+    }
+  }
+
+  /** Nenhuma fonte local tem nada? (sinal de armazenamento/driver que não respondeu) */
+  private localSourcesAreEmpty(): boolean {
+    return (
+      (this.pilotStore()?.Pilots?.length ?? 0) === 0 &&
+      this.pilotSheets().length === 0 &&
+      (this.npcStore()?.Npcs?.length ?? 0) === 0
+    )
+  }
+
+  /** `PilotSheetStore().LoadPilotSheets()`, quando o store estiver acessível. */
+  private async loadPilotSheets(): Promise<void> {
+    try {
+      const store = this.pilotSheetStore()
+      if (store && typeof store.LoadPilotSheets === 'function') await store.LoadPilotSheets()
+    } catch (err) {
+      tokenTrackerWarn('stores', 'falha ao carregar as fichas do modo ativo', err)
     }
   }
 
   private storesLoadAttempted = false
+  private storesLoadAt = 0
+  private warnedStorageEmpty = false
 
   /** Redesenha só os tokens que apontam para uma ficha (chamado quando ela muda). */
   public async refreshTokensForSheet(sheetId: string): Promise<void> {
@@ -495,6 +660,7 @@ class TokenTrackerService {
 
     const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
     if (!binding) {
+      tokenTrackerTrace('refresh', `token ${tokenId}: sem vínculo; limpando itens`)
       await this.clearItems(tokenId)
       this.signatures.delete(tokenId)
       return
@@ -517,6 +683,32 @@ class TokenTrackerService {
       prefs: this.getPrefs(),
     })
 
+    const movementState = this.movementStateFor(tokenId, state.owner)
+
+    tokenTrackerTrace('refresh', `"${token.name || tokenId}"`, {
+      vinculo: summarizeBinding(binding),
+      papel: this.role,
+      lado: state.side,
+      fonteDosValores: state.readerSource,
+      forcaDaFonte: state.rank,
+      resumoDeQuem: summary ? `${summary.w}` : 'nenhum',
+      desenhandoDoResumo: summaryWins,
+      chavesLidas: dumpRawStats(state.reader),
+      valoresLocais: summarizeValues(localValues),
+      resumoNoToken: summary ? summarizeValues(summaryToValues(summary)) : 'nenhum',
+      valoresFinais: summarizeValues(merged.values),
+      estadoDoMovimento: movementState,
+      naListaDestaJanela: tracked,
+    })
+
+    if (!merged.hasValues) {
+      tokenTrackerWarn(
+        'refresh',
+        `"${token.name || tokenId}": NENHUM valor — nem ficha local (${state.readerSource}) nem resumo no token; o painel fica vazio`,
+        { chavesLidas: dumpRawStats(state.reader) }
+      )
+    }
+
     // A escrita do resumo independe de o painel aparecer nesta janela: o número
     // precisa existir para as OUTRAS janelas desenharem. A força da fonte vai no
     // escritor para uma fonte fraca não passar por cima de uma forte.
@@ -533,6 +725,12 @@ class TokenTrackerService {
     })
 
     if (!decision.render) {
+      tokenTrackerTrace('refresh', `"${token.name || tokenId}": não desenha (${decision.reason})`, {
+        lado: state.side,
+        naLista: tracked,
+        ocultoNoEncontro: state.hiddenFromPlayers,
+        politica: this.config.playerVisibility,
+      })
       await this.clearItems(tokenId)
       this.signatures.delete(tokenId)
       return
@@ -540,6 +738,7 @@ class TokenTrackerService {
 
     const bounds = await OBR.scene.items.getItemBounds([tokenId]).catch(() => null)
     if (!bounds) {
+      tokenTrackerWarn('refresh', `"${token.name || tokenId}" sem bounds; nada a desenhar`)
       await this.clearItems(tokenId)
       return
     }
@@ -548,14 +747,21 @@ class TokenTrackerService {
       bounds,
       values: merged.values,
       config: this.config,
+      movementState,
     })
 
     const signature = [
       buildTrackerSignature(merged.values, this.config),
+      // O estado do movimento muda a COR do badge sem mudar valores: sem ele aqui, um
+      // Boost concedido não repintaria o badge.
+      movementState,
       [bounds.min.x, bounds.min.y, bounds.max.x, bounds.max.y].join(','),
     ].join('|')
 
-    if (this.signatures.get(tokenId) === signature) return
+    if (this.signatures.get(tokenId) === signature) {
+      tokenTrackerTrace('refresh', `"${token.name || tokenId}": assinatura igual, itens intactos`)
+      return
+    }
     this.signatures.set(tokenId, signature)
 
     const wanted = buildTokenTrackerItems(tokenId, commands, {
@@ -570,6 +776,34 @@ class TokenTrackerService {
     this.version.value++
   }
 
+  /**
+   * Quem sabe se um gesto está com estouro pendente (§13.5) — a captura registra.
+   *
+   * É um resolvedor registrado de fora, e não um `import`, para não criar ciclo entre
+   * o serviço e a captura (a captura já importa o serviço).
+   */
+  public setMovementOverflowResolver(resolver: ((tokenId: string) => boolean) | null): void {
+    this.movementOverflowResolver = resolver
+  }
+
+  private movementOverflowResolver: ((tokenId: string) => boolean) | null = null
+
+  /**
+   * Estado visual do Movimento para o badge (§6.1): estouro pendente ganha de Boost,
+   * que ganha do normal.
+   */
+  private movementStateFor(tokenId: string, owner: unknown): MovementVisualState {
+    try {
+      if (this.movementOverflowResolver?.(tokenId)) return 'overflow'
+    } catch {
+      // resolvedor quebrado não pode derrubar o desenho
+    }
+    const boostBonus = toTrackerInt(
+      (owner as { CombatController?: { BoostBonus?: unknown } } | null)?.CombatController?.BoostBonus
+    )
+    return boostBonus > 0 ? 'boosted' : 'normal'
+  }
+
   /** Aplica a diferença entre o que existe no token e o que deveria existir. */
   private async syncItems(tokenId: string, wanted: Item[]): Promise<void> {
     const existing = await OBR.scene.local.getItemAttachments([tokenId]).catch(() => [] as Item[])
@@ -581,9 +815,21 @@ class TokenTrackerService {
     const toUpdate = ours.filter(item => desiredById.has(item.id)).map(item => item.id)
     const toAdd = wanted.filter(item => !existingIds.has(item.id))
 
+    // Contagem por slot: responde "faltam os quadrados de Estresse" sem achismo — se
+    // `stress` vier 0 aqui, a linha foi descartada na montagem.
+    const porSlot: Record<string, number> = {}
+    for (const item of wanted) {
+      const slot = String(item.metadata?.[TOKEN_TRACKER_ITEM_SLOT_KEY] ?? '?')
+      porSlot[slot] = (porSlot[slot] ?? 0) + 1
+    }
+    tokenTrackerTrace('items', `token ${tokenId}: +${toAdd.length} ~${toUpdate.length} -${toDelete.length}`, {
+      desejados: wanted.length,
+      porSlot,
+    })
+
     if (toDelete.length) {
       await OBR.scene.local.deleteItems(toDelete).catch(err => {
-        console.warn('[TokenTracker] Falha ao remover itens do painel:', err)
+        tokenTrackerWarn('items', 'falha ao remover itens do painel', err)
       })
     }
 
@@ -596,13 +842,13 @@ class TokenTrackerService {
           }
         })
         .catch(err => {
-          console.warn('[TokenTracker] Falha ao atualizar itens do painel:', err)
+          tokenTrackerWarn('items', 'falha ao atualizar itens do painel', err)
         })
     }
 
     if (toAdd.length) {
       await OBR.scene.local.addItems(toAdd).catch(err => {
-        console.warn('[TokenTracker] Falha ao criar itens do painel:', err)
+        tokenTrackerWarn('items', 'falha ao criar itens do painel', err)
       })
     }
   }
@@ -637,6 +883,7 @@ class TokenTrackerService {
       const resolved = statReaderForActor(combatant.actor ?? combatant.npc, binding)
       return {
         reader: resolved.reader,
+        owner: resolved.owner,
         side: normalizeSide(combatant.side),
         hiddenFromPlayers: combatant.hiddenFromPlayers === true,
         readerSource: `encontro ativo desta janela → ${resolved.source}`,
@@ -653,6 +900,7 @@ class TokenTrackerService {
       const resolved = statReaderForActor(storedCombatant.actor ?? storedCombatant.npc, binding)
       return {
         reader: resolved.reader,
+        owner: resolved.owner,
         side: normalizeSide(storedCombatant.side),
         hiddenFromPlayers: storedCombatant.hiddenFromPlayers === true,
         readerSource: `encontro "${encounterName}" lido do storage → ${resolved.source}`,
@@ -663,6 +911,7 @@ class TokenTrackerService {
     const local = this.readerFromLocalStores(binding)
     return {
       reader: local.reader,
+      owner: local.owner,
       side: this.sideFromLocalSnapshot(binding),
       hiddenFromPlayers: false,
       readerSource: local.source,
@@ -716,7 +965,7 @@ class TokenTrackerService {
       this.storedEncountersCache = { at: now, instances }
       return instances
     } catch (err) {
-      console.warn('[TokenTracker] Falha ao ler os encontros ativos do storage:', err)
+      tokenTrackerWarn('stores', 'falha ao ler os encontros ativos do storage', err)
       this.storedEncountersCache = { at: now, instances: [] }
       return []
     }
@@ -727,9 +976,121 @@ class TokenTrackerService {
     this.storedEncountersCache = null
   }
 
+  /**
+   * Tudo que a captura de movimento (§13.3) precisa saber do token: o
+   * `CombatController` do dono da ficha e os números do turno.
+   *
+   * Devolve `null` quando o token não tem vínculo, não tem ficha resolvida nesta
+   * janela, ou o dono não tem `CombatController` — nos três casos não há o que
+   * debitar, e a captura prefere não tocar em nada.
+   */
+  public async getMovementTarget(tokenId: string): Promise<MovementTarget | null> {
+    try {
+      const token = (await OBR.scene.items.getItems([tokenId]).catch(() => [] as Item[]))[0]
+      if (!token) {
+        tokenTrackerWarn('movimento', `token ${tokenId} não existe mais na cena`)
+        return null
+      }
+
+      const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
+      if (!binding) {
+        // Esperado ao arrastar cenário: a captura já filtra isso, então chegar aqui
+        // significa que o vínculo sumiu entre o gesto e o settle.
+        tokenTrackerTrace(
+          'movimento',
+          `"${token.name || tokenId}": sem vínculo em metadata["${COMPCON_METADATA_KEY}"]`
+        )
+        return null
+      }
+
+      // Janela sem NENHUMA fonte (nem piloto, nem ficha, nem NPC): a tentativa de
+      // carga do boot pode ter chegado antes de o armazenamento responder. Tenta de
+      // novo — com cooldown — antes de concluir que a ficha não existe aqui.
+      if (this.localSourcesAreEmpty()) {
+        await this.ensureLocalStoresLoaded(true)
+        // Continuou vazio: o problema não é timing, é esta janela não enxergar o
+        // armazenamento (origem diferente ou driver em memória). Vale dizer isso uma
+        // vez, com o retrato que responde a pergunta.
+        if (this.localSourcesAreEmpty() && !this.warnedStorageEmpty) {
+          this.warnedStorageEmpty = true
+          const report = await reportStorage()
+          tokenTrackerWarn(
+            'stores',
+            'esta janela não enxerga NENHUMA ficha: ou o token não está vinculado a uma ficha que exista aqui, ou o armazenamento/ origem desta janela é outro (compare `__ccTokenTracker.storage()` nas duas janelas)',
+            report ?? undefined
+          )
+        }
+      }
+
+      const state = await this.resolveActorState(binding)
+      const owner = state.owner as { CombatController?: any } | null
+      const combat = owner?.CombatController
+      if (!combat || typeof combat.SpendMovement !== 'function') {
+        tokenTrackerWarn(
+          'movimento',
+          `"${token.name || tokenId}": ficha resolvida mas o dono não tem CombatController com SpendMovement — nada debitado`,
+          {
+            vinculo: summarizeBinding(binding),
+            fonteDosValores: state.readerSource,
+            temStatController: !!state.reader,
+            dono: describeOwner(owner),
+          }
+        )
+        return null
+      }
+
+      const values = readTrackerValuesFromStats(state.reader)
+      const remaining = values.speed?.current ?? 0
+      const maxSpeed = toTrackerInt(combat.StatController?.getMax?.('speed'))
+
+      tokenTrackerTrace('movimento', `alvo de movimento de "${token.name || tokenId}"`, {
+        vinculo: summarizeBinding(binding),
+        fonte: state.readerSource,
+        dono: describeOwner(owner),
+        restante: remaining,
+        capDoTurno: toTrackerInt(combat.BoostedSpeed),
+        boostBonus: toTrackerInt(combat.BoostBonus),
+      })
+
+      return {
+        tokenId,
+        owner,
+        combatController: combat,
+        statController: combat.StatController ?? null,
+        remaining,
+        maxSpeed,
+        boostBonus: toTrackerInt(combat.BoostBonus),
+        canBoost: this.canBoost(combat),
+        immobilized: this.hasStatus(combat, 'immobilized'),
+        binding,
+      }
+    } catch (err) {
+      tokenTrackerWarn('movimento', 'falha ao resolver o alvo de movimento', err)
+      return null
+    }
+  }
+
+  /** `CanActivate('boost')` do motor, sem deixar uma ficha estranha derrubar a captura. */
+  private canBoost(combat: any): boolean {
+    try {
+      return combat?.CanActivate?.('boost') === true
+    } catch {
+      return false
+    }
+  }
+
+  private hasStatus(combat: any, status: string): boolean {
+    try {
+      return combat?.HasStatus?.(status) === true
+    } catch {
+      return false
+    }
+  }
+
   /** Ficha local desta janela (o jogador tem a própria; o GM tem todas que foram sincronizadas). */
   private readerFromLocalStores(binding: TokenTrackerBinding): {
     reader: TokenTrackerStatReader | null
+    owner: unknown
     source: string
   } {
     try {
@@ -740,7 +1101,11 @@ class TokenTrackerService {
       const kind = sheetKindForBinding(binding)
 
       if (!pilotStore && !npcStore) {
-        return { reader: null, source: 'sem acesso aos stores (setStoreAccessors não foi chamado)' }
+        return {
+          reader: null,
+          owner: null,
+          source: 'sem acesso aos stores (setStoreAccessors não foi chamado)',
+        }
       }
 
       const npcCount = npcStore?.Npcs?.length ?? 0
@@ -751,19 +1116,25 @@ class TokenTrackerService {
       // MECHA (`ActiveMech`/`Mechs[mechId]`), vínculo sem ele lê o PRÓPRIO piloto.
       // Nunca misturar: o StatController do piloto não tem calor/estrutura/estresse de
       // mecha, e o mecha do Hangar pode estar com os máximos pela metade.
-      const candidates: Array<{ reader: TokenTrackerStatReader | null; source: string }> = []
-      const readerFor = (actor: unknown): TokenTrackerStatReader | null =>
-        kind === 'mech' ? statReaderForActor(actor, binding).reader : statReaderOf(actor)
+      const candidates: Array<{
+        reader: TokenTrackerStatReader | null
+        owner: unknown
+        source: string
+      }> = []
+      const readerFor = (actor: unknown): { reader: TokenTrackerStatReader | null; owner: unknown } =>
+        kind === 'mech'
+          ? statReaderForActor(actor, binding)
+          : { reader: statReaderOf(actor), owner: actor }
 
       if (kind === 'npc') {
         const npc = npcStore?.getNpcByID?.(binding.sheetId)
         if (npc) {
-          candidates.push({ reader: readerFor(npc), source: `NpcStore(${npcCount} npcs) por sheetId` })
+          candidates.push({ ...readerFor(npc), source: `NpcStore(${npcCount} npcs) por sheetId` })
         }
       } else {
         if (activeSheet && sheetMatchesBinding(activeSheet, binding)) {
           candidates.push({
-            reader: readerFor(activeSheet?.Pilot ?? activeSheet?.Combatant?.actor),
+            ...readerFor(activeSheet?.Pilot ?? activeSheet?.Combatant?.actor),
             source: `ficha ATIVA desta janela [${kindLabel}]`,
           })
         }
@@ -771,7 +1142,7 @@ class TokenTrackerService {
         const sheet = sheets.find((candidate: any) => sheetMatchesBinding(candidate, binding))
         if (sheet) {
           candidates.push({
-            reader: readerFor(sheet?.Pilot ?? sheet?.Combatant?.actor),
+            ...readerFor(sheet?.Pilot ?? sheet?.Combatant?.actor),
             source: `PilotSheetStore(${sheets.length} fichas) [${kindLabel}]`,
           })
         }
@@ -780,7 +1151,7 @@ class TokenTrackerService {
         if (pilot) {
           const resolved = statReaderForActor(pilot, binding)
           candidates.push({
-            reader: readerFor(pilot),
+            ...readerFor(pilot),
             source:
               kind === 'mech'
                 ? `PilotStore(${pilotCount} pilotos) → ${resolved.source} [${kindLabel}]`
@@ -791,12 +1162,13 @@ class TokenTrackerService {
 
       const npc = npcStore?.getNpcByID?.(binding.sheetId)
       if (npc) {
-        candidates.push({ reader: readerFor(npc), source: `NpcStore(${npcCount} npcs) por fallback` })
+        candidates.push({ ...readerFor(npc), source: `NpcStore(${npcCount} npcs) por fallback` })
       }
 
       if (!candidates.length) {
         return this.withCachedReader(binding, {
           reader: null,
+          owner: null,
           source: `ficha ${binding.sheetId} não está no PilotStore(${pilotCount} pilotos), no PilotSheetStore(${sheets.length} fichas) nem no NpcStore(${npcCount} npcs)`,
         })
       }
@@ -819,19 +1191,29 @@ class TokenTrackerService {
             : `${candidate.source}=${candidate.score}`
         )
         .join(' | ')
+      tokenTrackerTrace('resolve', `disputa de fontes para ${summarizeBinding(binding)}`, {
+        candidatos: scored.map(candidate => `${candidate.source}=${candidate.score}`),
+        escolhida: best.source,
+        pontuacao: best.score,
+      })
 
       if (best.score > 0) {
-        this.rememberReader(binding, { reader: best.reader, source: `(${best.score}) ${best.source}` })
-        return { reader: best.reader, source: overview }
+        this.rememberReader(binding, {
+          reader: best.reader,
+          owner: best.owner,
+          source: `(${best.score}) ${best.source}`,
+        })
+        return { reader: best.reader, owner: best.owner, source: overview }
       }
 
       return this.withCachedReader(binding, {
         reader: best.reader,
+        owner: best.owner,
         source: `${overview} (nenhuma fonte tinha valores)`,
       })
     } catch (err) {
-      console.warn('[TokenTracker] Falha ao resolver a ficha local:', err)
-      return { reader: null, source: `erro: ${String(err)}` }
+      tokenTrackerWarn('resolve', 'falha ao resolver a ficha local', err)
+      return { reader: null, owner: null, source: `erro: ${String(err)}` }
     }
   }
 
@@ -850,7 +1232,7 @@ class TokenTrackerService {
    */
   private resolvedReaders = new Map<
     string,
-    { reader: TokenTrackerStatReader; source: string; score: number }
+    { reader: TokenTrackerStatReader; owner: unknown; source: string; score: number }
   >()
 
   private bindingKey(binding: TokenTrackerBinding): string {
@@ -859,7 +1241,7 @@ class TokenTrackerService {
 
   private rememberReader(
     binding: TokenTrackerBinding,
-    resolved: { reader: TokenTrackerStatReader | null; source: string }
+    resolved: { reader: TokenTrackerStatReader | null; owner: unknown; source: string }
   ): void {
     if (!resolved.reader) return
     const key = this.bindingKey(binding)
@@ -868,21 +1250,32 @@ class TokenTrackerService {
     // Um controlador mais completo nunca é trocado por um parcial que apareceu
     // depois (o mecha do Hangar tem os máximos pela metade).
     if (previous && previous.score > score) return
-    this.resolvedReaders.set(key, { reader: resolved.reader, source: resolved.source, score })
+    this.resolvedReaders.set(key, {
+      reader: resolved.reader,
+      owner: resolved.owner,
+      source: resolved.source,
+      score,
+    })
   }
 
   /** Usa o controlador memorizado quando a resolução fresca não achou valores. */
   private withCachedReader(
     binding: TokenTrackerBinding,
-    fallback: { reader: TokenTrackerStatReader | null; source: string }
-  ): { reader: TokenTrackerStatReader | null; source: string } {
+    fallback: { reader: TokenTrackerStatReader | null; owner: unknown; source: string }
+  ): { reader: TokenTrackerStatReader | null; owner: unknown; source: string } {
     const cached = this.resolvedReaders.get(this.bindingKey(binding))
     if (!cached) return fallback
 
     const freshScore = scoreTrackerValues(readTrackerValuesFromStats(fallback.reader))
     if (cached.score > freshScore) {
+      tokenTrackerLog(
+        'resolve',
+        'usando o controlador memorizado (as fontes desta janela esvaziaram)',
+        { fonteMemorizada: cached.source, pontuacaoAtual: freshScore, pontuacaoMemorizada: cached.score }
+      )
       return {
         reader: cached.reader,
+        owner: cached.owner,
         source: `memorizado (${cached.source}) porque as fontes atuais têm ${freshScore} contra ${cached.score}`,
       }
     }
@@ -930,6 +1323,15 @@ class TokenTrackerService {
     }
   }
 
+  /** O STORE de fichas (não a lista): é ele que sabe recarregar do armazenamento. */
+  private pilotSheetStore(): any {
+    try {
+      return this.stores?.sheetsStore?.() ?? null
+    } catch {
+      return null
+    }
+  }
+
   /** Injetado no boot por `useTokenTrackerBridge` (mantém os specs leves). */
   public setStoreAccessors(accessors: {
     pilot: () => any
@@ -938,6 +1340,8 @@ class TokenTrackerService {
     sheets?: () => any[]
     /** A ficha do modo ativo aberta nesta janela. */
     activeSheet?: () => any
+    /** O store de fichas, dono do `LoadPilotSheets()`. */
+    sheetsStore?: () => any
   }): void {
     this.stores = accessors
   }
@@ -948,6 +1352,7 @@ class TokenTrackerService {
     cards: () => unknown[]
     sheets?: () => any[]
     activeSheet?: () => any
+    sheetsStore?: () => any
   } | null = null
 
   /** Ids da ficha desta janela (o jogador escreve resumo só da própria). */
@@ -993,7 +1398,18 @@ class TokenTrackerService {
       binding,
       config: this.config,
     })
-    if (!allowed || Object.keys(localValues).length === 0) return
+    if (!allowed || Object.keys(localValues).length === 0) {
+      tokenTrackerTrace('resumo', `token ${tokenId}: esta janela não grava o resumo`, {
+        papel: this.role,
+        trackersLigados: this.config.enabled,
+        fonteEscolhida: allowed,
+        valores: summarizeValues(localValues),
+      })
+      return
+    }
+    tokenTrackerTrace('resumo', `token ${tokenId}: agendado para gravar (${writer})`, {
+      valores: summarizeValues(localValues),
+    })
     this.pendingSummaries.set(tokenId, { values: localValues, writer })
     if (this.summaryTimer) return
     this.summaryTimer = setTimeout(() => {
@@ -1069,3 +1485,16 @@ class TokenTrackerService {
 export const TOKEN_TRACKER_STATE_EVENT = 'compcon-token-trackers-changed'
 
 export const tokenTrackerService = new TokenTrackerService()
+
+/**
+ * Identifica o dono do `CombatController` no log: `Mech id=…`, `Pilot id=…` ou o tipo
+ * cru quando é um objeto sem constructor claro (o caso de uma cópia deserializada).
+ */
+function describeOwner(owner: unknown): string {
+  if (!owner || typeof owner !== 'object') return String(owner ?? 'nenhum')
+  const participant = owner as { ID?: unknown; Name?: unknown; constructor?: { name?: string } }
+  const kind = participant.constructor?.name ?? 'objeto'
+  const id = typeof participant.ID === 'string' ? participant.ID : 'sem-id'
+  const name = typeof participant.Name === 'string' && participant.Name ? ` "${participant.Name}"` : ''
+  return `${kind} id=${id}${name}`
+}

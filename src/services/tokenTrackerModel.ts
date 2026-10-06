@@ -24,6 +24,14 @@ import { isCombatantHidden, isSideAllowed } from '@/services/tokenTrackerPolicy'
 export interface TokenTrackerStatReader {
   getCurrent(stat: string): unknown
   getMax(stat: string): unknown
+  /**
+   * Cap do turno com Boost (`CombatController.BoostedSpeed` = `getMax(speed) +
+   * BoostBonus`), quando o ator tem um `CombatController`.
+   *
+   * É o máximo do Movimento (§5/§13): depois de um Boost, `10/10` é o certo e
+   * `5/5` seria mentira. Antes do primeiro Boost os dois coincidem.
+   */
+  getBoostedSpeed?(): unknown
 }
 
 interface SlotRule {
@@ -34,6 +42,8 @@ interface SlotRule {
    * capacidade e a Blindagem costuma não ter máximo nenhum (nasce 0/0).
    */
   allowOverflow?: boolean
+  /** `true` quando o máximo é o cap do turno com Boost, não a chave crua. */
+  maxFromBoostedSpeed?: boolean
 }
 
 const SLOT_RULES: Record<TokenTrackerSlotId, SlotRule> = {
@@ -49,7 +59,13 @@ const SLOT_RULES: Record<TokenTrackerSlotId, SlotRule> = {
    * devolvia sempre 0 — era o "calor não sincroniza".
    */
   heat: { currentKey: 'heatcap', maxKey: 'heatcap', allowOverflow: true },
-  speed: { currentKey: 'speed', maxKey: 'speed' },
+  /**
+   * Movimento: `current` é o RESTANTE do turno e `max` é o cap com Boost (§13).
+   *
+   * NÃO entra em `allowOverflow`: com Boost o máximo já É o cap do turno, então o
+   * restante nunca deveria passar dele — se passar, é dado corrompido.
+   */
+  speed: { currentKey: 'speed', maxKey: 'speed', maxFromBoostedSpeed: true },
   structure: { currentKey: 'structure', maxKey: 'structure' },
   stress: { currentKey: 'stress', maxKey: 'stress' },
 }
@@ -78,9 +94,25 @@ export function toTrackerInt(value: unknown): number {
 
 function readSlot(reader: TokenTrackerStatReader, rule: SlotRule): TokenTrackerValue {
   const current = toTrackerInt(reader.getCurrent(rule.currentKey))
-  const max = toTrackerInt(reader.getMax(rule.maxKey))
+  const boosted = rule.maxFromBoostedSpeed ? readBoostedSpeed(reader) : null
+  const max = boosted ?? toTrackerInt(reader.getMax(rule.maxKey))
   if (!rule.allowOverflow && max > 0) return { current: Math.min(current, max), max }
   return { current, max }
+}
+
+/**
+ * O cap do turno com Boost, quando o leitor expõe isso. `null` quando não expõe —
+ * aí o `max` cai na chave crua (comportamento antigo, para leitores simples).
+ */
+function readBoostedSpeed(reader: TokenTrackerStatReader): number | null {
+  if (typeof reader.getBoostedSpeed !== 'function') return null
+  try {
+    const value = reader.getBoostedSpeed()
+    if (value === undefined || value === null) return null
+    return toTrackerInt(value)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -387,7 +419,7 @@ export function scoreTrackerValues(values: TokenTrackerValues | null | undefined
 export function statReaderForActor(
   actor: unknown,
   binding: TokenTrackerBinding
-): { reader: TokenTrackerStatReader | null; source: string } {
+): { reader: TokenTrackerStatReader | null; owner: unknown; source: string } {
   const entry = actor as { ActiveMech?: any; Mechs?: any[]; CombatController?: any } | null
   const mechs = [entry?.ActiveMech, ...(entry?.Mechs ?? [])].filter(Boolean)
 
@@ -398,19 +430,37 @@ export function statReaderForActor(
   if (mech) {
     return {
       reader: statReaderOf(mech),
+      owner: mech,
       source: binding.mechId && mech.ID === binding.mechId ? 'mecha por mechId' : 'mecha ativo',
     }
   }
 
-  return { reader: statReaderOf(actor), source: 'ator (sem mecha)' }
+  return { reader: statReaderOf(actor), owner: actor, source: 'ator (sem mecha)' }
 }
 
-/** O `StatController` do ator, quando ele expõe um. */
+/**
+ * O `StatController` do ator, quando ele expõe um.
+ *
+ * Devolve um invólucro leve em vez do controlador cru: além de `getCurrent`/`getMax`,
+ * ele expõe o **cap do turno** (`CombatController.BoostedSpeed`), que é o máximo
+ * correto do Movimento (§5/§13). O invólucro é estável por leitura e lê sempre o
+ * objeto vivo por baixo, então funciona com o cache de controlador do serviço.
+ */
 export function statReaderOf(actor: unknown): TokenTrackerStatReader | null {
-  const controller = (actor as { CombatController?: { StatController?: unknown } } | null)
-    ?.CombatController?.StatController
+  const combat = (actor as { CombatController?: { StatController?: unknown; BoostedSpeed?: unknown } } | null)
+    ?.CombatController
+  const controller = combat?.StatController as
+    | { getCurrent?: (stat: string) => unknown; getMax?: (stat: string) => unknown }
+    | undefined
   if (!controller || typeof controller !== 'object') return null
-  return controller as TokenTrackerStatReader
+  if (typeof controller.getCurrent !== 'function' || typeof controller.getMax !== 'function') return null
+
+  return {
+    getCurrent: stat => controller.getCurrent!(stat),
+    getMax: stat => controller.getMax!(stat),
+    // `BoostedSpeed` mora no CombatController, não no StatController.
+    getBoostedSpeed: () => combat?.BoostedSpeed,
+  }
 }
 
 /**

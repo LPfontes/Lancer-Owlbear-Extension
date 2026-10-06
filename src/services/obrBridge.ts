@@ -9,6 +9,9 @@ import { toRaw } from 'vue'
 import { dddiceService } from './dddiceService'
 import { statusMarkerService } from './statusMarkerService'
 import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrackerService'
+import { tokenMovementCapture } from './tokenMovementCapture'
+import { tokenTrackerLog } from './tokenTrackerDebug'
+import type { MovementSpendReply, MovementSpendRequest } from '@/types/token-movement'
 import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
 import { isActiveModePrewarm } from './prewarmContext'
@@ -184,6 +187,17 @@ class OBRBridge {
           .start()
           .then(() => tokenTrackerService.cleanupLegacyItems())
           .catch(err => console.warn('[OBRBridge] Falha ao iniciar os token trackers:', err))
+
+        // Captura do arrasto do token → gasto de movimento (§13). Fica aqui, junto dos
+        // trackers, porque depende do mesmo vínculo token↔ficha para achar o motor.
+        try {
+          // A decisão mora no iframe que tem o controlador VIVO (a janela da ficha);
+          // a janela do mapa manda o gesto por broadcast.
+          tokenMovementCapture.setRelaySend(payload => this.sendBroadcastMessage(payload))
+          tokenMovementCapture.start()
+        } catch (err) {
+          console.warn('[OBRBridge] Falha ao iniciar a captura de movimento:', err)
+        }
       }
 
       if (onReadyCallback) onReadyCallback()
@@ -444,6 +458,15 @@ class OBRBridge {
         window.dispatchEvent(new CustomEvent('compcon-tracker-clear'))
       } else if (msg.type === 'TRACKER_SYNC_REQUEST') {
         window.dispatchEvent(new CustomEvent('compcon-tracker-sync-request'))
+      } else if (msg.type === 'MOVEMENT_SPEND') {
+        // Um iframe arrastou o token e este aqui pode ter o controlador vivo: só a
+        // janela da ficha aplica (e só se o vínculo for de uma ficha dela).
+        const reply = await tokenMovementCapture.applyRemoteSpend(msg as MovementSpendRequest)
+        if (reply && msg.replyTo !== false) {
+          await this.sendBroadcastMessage({ type: 'MOVEMENT_SPENT', ...reply })
+        }
+      } else if (msg.type === 'MOVEMENT_SPENT') {
+        await tokenMovementCapture.onSpendReply(msg as MovementSpendReply)
       } else if (msg.type === 'ENCOUNTER_STORAGE_UPDATED') {
         const { EncounterStore } = await import('@/stores')
         await EncounterStore().LoadEncounters()
@@ -2374,6 +2397,9 @@ class OBRBridge {
         sheets: () => PilotSheetStore().PilotSheets,
         // A ficha aberta nesta janela é a fonte mais viva: é nela que o combate escreve.
         activeSheet: () => PilotSheetStore().GetActiveSheet(),
+        // O STORE (não a lista): é ele que sabe recarregar do armazenamento quando a
+        // janela começa vazia (boot antes de o storage responder).
+        sheetsStore: () => PilotSheetStore(),
       })
 
       // "A ficha desta janela": é ela que autoriza este cliente a gravar o resumo
@@ -2385,6 +2411,13 @@ class OBRBridge {
         return [sheet.ID, actor?.ID, actor?.ActiveMech?.ID].filter(
           (value): value is string => typeof value === 'string' && value.length > 0
         )
+      })
+
+      tokenTrackerLog('bridge', 'stores registrados para os trackers', {
+        pilotos: PilotStore().Pilots?.length ?? 0,
+        npcs: NpcStore().Npcs?.length ?? 0,
+        fichasDaLojaPilotSheet: PilotSheetStore().PilotSheets?.length ?? 0,
+        papel: this.role,
       })
     } catch (e) {
       console.warn('[OBRBridge] Falha ao registrar os stores dos token trackers:', e)

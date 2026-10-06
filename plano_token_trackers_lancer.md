@@ -16,7 +16,7 @@ abaixo (ou acima) do token:
 | 1 | **PV** | barra (atual/máx), ocupa a largura do token | `hp` |
 | 1b | **Blindagem** | numérico colado à direita da barra de PV | `overshield` |
 | 2 | **Calor** | barra (atual/capacidade) | `heat` / `heatcap` |
-| 3 | **Movimento** | numérico | `speed` |
+| 3 | **Movimento** | numérico (restante/cap do turno) | `speed` + `BoostBonus` — **dinâmico**, ver §13 |
 | 4 | **Estrutura** | N quadrados, preenchidos conforme o número | `structure` |
 | 5 | **Estresse** | N quadrados, preenchidos conforme o número | `stress` |
 
@@ -283,6 +283,10 @@ export const LANCER_TOKEN_TRACKER_SLOTS: TokenTrackerSlot[] = [
 ]
 ```
 
+O slot `speed` é o único **dinâmico** do conjunto: o `current` deixa de ser um número fixo lido da
+ficha e passa a ser o **movimento restante do turno**, alimentado pelo arrasto do token no mapa.
+Os tipos do movimento ficam em `src/types/token-movement.ts` e o desenho no §13.
+
 ---
 
 ## 5. Leitura do estado (ficha → valores)
@@ -306,12 +310,13 @@ Leitura única por chave, independente de Piloto/Meia/NPC/Doodad/Eidolon:
 ```ts
 // combatant.actor → Pilot (usa ActiveMech) | Unit | Doodad | Eidolon
 // todos expõem CombatController.StatController
-const sc = resolveStatController(actor)          // actor?.CombatController?.StatController
+const cc = actor?.CombatController               // dono do StatController, do BoostedSpeed e do Boost
+const sc = resolveStatController(actor)          // cc?.StatController
 const values: TokenTrackerValues = {
   pv:         { current: sc.getCurrent('hp'),         max: sc.getMax('hp') },
   overshield: { current: sc.getCurrent('overshield'), max: sc.getMax('overshield') }, // Blindagem
-  heat:       { current: sc.getCurrent('heat'),       max: sc.getMax('heatcap') },
-  speed:      { current: sc.getCurrent('speed'),      max: sc.getMax('speed') },      // Movimento gasto aparece
+  heat:       { current: sc.getCurrent('heatcap'),    max: sc.getMax('heatcap') },
+  speed:      { current: sc.getCurrent('speed'),      max: cc.BoostedSpeed },         // RESTANTE / cap do turno (§13)
   structure:  { current: sc.getCurrent('structure'),  max: sc.getMax('structure') },
   stress:     { current: sc.getCurrent('stress'),     max: sc.getMax('stress') },
 }
@@ -323,6 +328,11 @@ const values: TokenTrackerValues = {
   (`showBlindagemWhenZero: false`). Se `max > 0`, mostra `current/max`.
 - Para `heat`, o `current` pode exceder o cap: a barra enche e recebe tratamento de aviso
   (cor de erro) em vez de estourar a largura.
+- **Movimento (§13) é o único slot dinâmico.** `current` é o movimento **restante** — o motor já o
+  debita em `CombatController.SpendMovement` — e `max` é o **cap do turno** =
+  `CombatController.BoostedSpeed` (`getMax('speed') + BoostBonus`), **não** `getMax('speed')`.
+  Antes do primeiro Boost os dois coincidem; depois, não (um Boost de 5 num mecha speed 5 deixa
+  `10/10`, não `5/5`). Enquanto nada no mapa escrever no motor, este slot é somente leitura.
 - `resolveStatController` resolve, nesta ordem: `actor.CombatController` → `actor` é `Pilot`
   (usa `actor.ActiveMech`) → busca por id em `PilotStore()`/`NpcStore()` quando só o vínculo
   está disponível (`mechId`/`sheetId`).
@@ -363,6 +373,11 @@ Regras de layout:
   confirmado) e o resto vazio — os vazios são a estrutura/estresse já perdidos. Rótulo à
   esquerda quando `showLabels`. Com `invertSquares: true`, inverte (preenchido = perdido).
 - `max` acima de `config.maxSquares` → desenha `maxSquares` e anexa `+N` no rótulo.
+- **Slot de Movimento (§13):** imprime `restante/cap` e ganha dois estados além dos já previstos
+  (o estouro de calor): **Boost concedido** (`BoostBonus > 0` → cor de destaque) e **estouro
+  pendente** (o gesto passou do cap e aguarda Boost/Desfazer → cor de erro). A cor do slot deixa de
+  ser fixa e passa a vir do estado, como já acontece no calor. Opcionalmente aceita `kind: 'bar'`
+  para o jogador enxergar a fração em vez do número.
 
 ### 6.2 Render (OBR) — `src/services/tokenTrackerRender.ts`
 
@@ -727,7 +742,11 @@ idênticas, não há laço; mas o handler de `onChange` precisa:
 | `src/services/tokenTrackerWatchlist.ts` | **novo** — composição/persistência local da watchlist (§7.4, puro + `Storage`) |
 | `src/services/tokenTrackerSummary.ts` | **novo** — formato do resumo, sanitização, eleição de escritor, throttle (§7.6, puro + OBR isolado) |
 | `src/services/tokenTrackerPolicy.ts` | **novo** — política por lado + sanitização do payload da sala (§7.5, puro) |
-| `src/services/*.spec.ts` | **novos** — model, layout, render, watchlist |
+| `src/types/token-movement.ts` | **novo** (§13) — tipos do movimento, config default |
+| `src/services/tokenMovement.ts` | **novo** (§13) — custo, classificação, decisão de cap/boost (**puro**) |
+| `src/services/tokenMovementCapture.ts` | **novo** (§13) — snapshot de posição, settle, `getDistance`, `SpendMovement` |
+| `src/ui/components/TokenTrackers/TokenTrackerPanel.vue` | editar (§13) — controles de movimento (livre armado, reverter) |
+| `src/services/*.spec.ts` | **novos** — model, layout, render, watchlist, movimento (§13) |
 
 Nada em `owl-trackers/` é alterado.
 
@@ -736,8 +755,11 @@ Nada em `owl-trackers/` é alterado.
 ## 9. Fases
 
 > **Progresso:** F0 ✅, F1 ✅, F2 ✅, F3 ✅, F4 ✅ e F5 ✅ (parte automatizada) —
-> 147 specs dos trackers verdes, suíte completa 1949 passando, `npm run typecheck` limpo e
-> `npm run build` ok (`✓ built in 18.48s`).
+> suíte completa **2012 passando** (151 arquivos, zero falhas), `npm run typecheck` limpo e
+> `npm run build` ok (`✓ built in 20.11s`).
+> **Movimento dinâmico (§13):** M0 ✅ (tipos + `decideMovement` + `classifyMode`/`classifyMovementKind`),
+> V0 ✅ (identificadores confirmados pelo usuário), M1 ✅ (captura + gasto + diff puro + cores de
+> estado); M2/M3 pendentes. O máximo do slot `speed` já lê `BoostedSpeed` (§5).
 > Arquivos: `src/types/token-tracker.ts`, `src/services/tokenTracker{Model,Policy,Summary,Layout,Render,Watchlist,Service}.ts`
 > (+ `.spec.ts`), `src/composables/useTokenTrackerBridge.ts`, `src/ui/components/TokenTrackers/*`,
 > integração em `src/services/obrBridge.ts`, `src/App.vue` e `src/features/active_mode/TableChatView.vue`,
@@ -746,12 +768,14 @@ Nada em `owl-trackers/` é alterado.
 > comportamento no canvas (âncora dos itens, corrida entre janelas no resumo, política vista por
 > dois clientes) pode ser validado fora de uma sala do Owlbear.
 >
-> **Diagnóstico (para testar a sincronização com a ficha):** `src/services/tokenTrackerDebug.ts`.
-> Logs **ligados por padrão** (pedido do usuário); `__ccTokenTracker.disable()` silencia, e
-> `__ccTokenTracker.dump()` imprime a tabela por token
-> (vínculo, fonte do leitor, chaves cruas do `StatController`, resumo no token, valores finais,
-> motivo de não desenhar e contagem de itens no mapa). O roteiro em
-> `docs/roteiro-token-trackers.md` tem a tabela "como ler 'está vazio'".
+> **Diagnóstico:** `src/services/tokenTrackerDebug.ts`, **ligado por padrão** em nível `summary`.
+> `__ccTokenTracker.{level,summary,verbose,off,dump}()` no console da janela da extensão. O nível
+> `summary` responde "por que não debitou / não atualizou" (fonte escolhida, token sem valor,
+> resumo gravado e **todo gesto de movimento**); `verbose` responde "por que não aparece" (cada
+> rodada de refresh, cada add/update/delete de item, slots descartados com motivo). O roteiro em
+> `docs/roteiro-token-trackers.md` tem as tabelas de leitura. Foi este diagnóstico que entregou o
+> `heat` lido da chave errada, o mecha do Hangar vencendo a ficha ativa, a cópia do encontro com o
+> calor de verdade e o `slotsDesligados` do Estresse.
 >
 > **Correções de robustez que saíram daí:** (1) o serviço agora sobe também na janela de
 > chat/ações — antes ele ficava fora do bloco `!isStandaloneChat`, e é justamente nessa janela
@@ -759,12 +783,16 @@ Nada em `owl-trackers/` é alterado.
 > quando vazios, senão uma janela que nunca abriu o Hangar não encontrava ficha nenhuma;
 > (3) piloto sem `ActiveMech` nesta janela cai no primeiro mecha dele.
 >
-> **Falha pré-existente (não é desta feature):** `src/__tests__/rules/coverage.spec.ts` acusa
-> `T-MARKER-order-01..04` sem regra correspondente — o spec lê `lancer-rules.json` do disco e não
-> importa nada dos trackers. Verificado com `git status`/`git log` em `src/__tests__/rules`.
+> **Falha pré-existente (não é desta feature):** `src/__tests__/rules/coverage.spec.ts` acusava
+> `T-MARKER-order-01..04` sem regra correspondente; já resolvida no repositório — a suíte está
+> inteiramente verde.
 >
 > **Nota de ambiente:** o `vite build` falha ao remover o temporário do esbuild no `%TEMP%` padrão
 > (`Access is denied`). Rodando com `TEMP`/`TMP` dentro do workspace, o build passa.
+>
+> **Movimento dinâmico (§13):** fases próprias **M0–M3** mais o spike **V0**, ainda **não
+> iniciadas**. A numeração é separada de F0–F5 de propósito — aquele bloco está concluído, e a
+> única coisa que o movimento compartilha com ele é o slot `speed`.
 
 **F0 — Contratos ✅ (concluída).** Tipos, preset LANCER, config default, resolver de ficha,
 `canRenderToken` (§7.5) e o formato do resumo (§7.6) com sanitização e eleição de escritor.
@@ -831,7 +859,10 @@ throttle de ~1 s, aí sim se reabre a discussão de broadcast — não antes.
   só o próprio, ninguém escreve com trackers desligados), e
   `tokenTrackerPolicy.spec.ts` (sanitização do `playerVisibility` vindo da sala: tipos
   coagidos, `hiddenCombatantIds` limitado e deduplicado, default seguro quando o metadata está
-  corrompido).
+  corrompido), e
+  `tokenMovement.spec.ts` (§13.4: matriz de `decideMovement` — voluntário/livre/involuntário,
+  imobilizado, dentro do cap, estouro com e sem Boost legal, `spaces = 0`, classificação de `mode`
+  na fronteira do move padrão, e o caso "`remaining` já é 0").
   Nada de OBR nesses testes → funções puras obrigatórias.
 - **Componente (projeto `component`):** só se a UI de config/lista ganhar lógica própria
   (mapeamento de chips → config, montagem da watchlist, estado "bloqueado pelo mestre").
@@ -869,6 +900,14 @@ throttle de ~1 s, aí sim se reabre a discussão de broadcast — não antes.
 | Duplicidade com o `owl-trackers` instalado | desenhar em offset/layer distintos (ATTACHMENT vs camadas do plugin) e avisar na doc: não usar os dois no mesmo token |
 | i18n: 12 locales | adicionar só em pt/en e deixar fallback; rodar checagem de chaves |
 | Performance com muitos tokens | a watchlist limita o que é desenhado; `maxSquares` e assinatura limitam o custo por token |
+| **Gasto de movimento debitado duas vezes** (a mesma janela processa o gesto duas vezes, ou duas janelas se acham donas) | atribuição única por `Item.lastModifiedUserId`; só a janela que moveu debita; na dúvida **não** debita (§13.3); o débito é idempotente por gesto (marca o `gestureKey` já aplicado) |
+| `items.onChange` disparando dezenas de vezes por segundo durante o arrasto | debounce de *settle* de 250 ms por token antes de fechar o gesto (§13.3); nunca debitar por frame |
+| Distância em linha reta subestimar quem contorna obstáculo | limitação aceita e documentada (§13.9); o número é o da métrica da grade, não o do caminho |
+| Cena em `EUCLIDEAN` devolver distância fracionária | arredondar para cima e avisar uma vez; o alvo do LANCER é `CHEBYSHEV` (1 célula = 1 espaço) |
+| `SpendMovement` clampando em 0 e perdendo o excedente | decidir **antes** de gastar: `decideMovement` roda primeiro e o cartão de estouro usa o valor original (§13.4) |
+| Reverter um movimento que só coube por Boost | o Boost não é desfeito (já consumiu o quick e está no log); o diálogo diz isso explicitamente (§13.6) |
+| Empurrão do GM cobrado como movimento do jogador | movimento cuja atribuição não é desta janela é involuntário e não debita (§13.3) |
+| Token sem ficha/ator no mapa | sem `CombatController` não há cap nem débito; o slot fica sem dados, como o resto do painel (§5) |
 
 ---
 
@@ -883,4 +922,328 @@ throttle de ~1 s, aí sim se reabre a discussão de broadcast — não antes.
   token (§7.5).
 - Broadcast de valores em tempo real (< 1 s): o resumo no token cobre o caso; reabrir só se
   aparecer necessidade real (ver a nota no §9).
+- **Terreno, elevação e caminho (§13.9):** custo de terreno difícil, THT/elevação e o traçado do
+  caminho andado. O Owlbear não expõe nada disso; `getDistance` é a menor distância pela métrica da
+  grade.
+- **Interceptar o arrasto antes dele acontecer (§13.10):** exige uma ferramenta customizada
+  (`ToolMode`). O v1 corrige **depois** que o movimento assentou.
+- **Retraçar o caminho ao reverter:** o v1 devolve o token à posição inicial do gesto em linha
+  reta, não pelo caminho que ele andou.
 - Alterar/remover `owl-trackers/` do repositório.
+
+---
+
+## 13. Movimento dinâmico: ligar o arrasto do token ao gasto de movimento
+
+> Escopo: transformar o slot `speed` (§1, hoje um número estático lido da ficha) em um tracker
+> **vivo** — o movimento restante do turno, que cai quando o token é arrastado no mapa, aceita
+> Boost quando estoura o cap e volta ao normal no fim do turno.
+>
+> **Isto não é um porte do Lancer Automations (Foundry).** Lá o tracker reconstrói um modelo de
+> bandas do zero porque o Foundry não tem regra de LANCER nenhuma. Aqui o motor de regras **já
+> existe** (§13.1) — o trabalho é de fiação, não de reimplementação. O que o Foundry entrega e o
+> Owlbear não entrega está em §13.9 e fica fora do v1.
+
+### 13.1 O que o motor já resolve
+
+| Peça | Onde | O que dá |
+|---|---|---|
+| `StatController` `SPEED` | ficha do ator | `current` = movimento **restante**, `max` = speed |
+| `CombatController.BoostedSpeed` | `CombatController.ts` | `getMax(speed) + BoostBonus` = **cap do turno** |
+| `CombatController.Boost()` | `BaseActions.boost` | `BoostBonus += speed` **e** `bumpCurrentStat(SPEED, +speed)`; consome quick |
+| `CombatController.SpendMovement(n, mode)` | `CombatController.ts` | debita o restante e registra `move` no log de combate |
+| `CanActivate('boost')` | `ActionPoolController` | legalidade — `slow` e `immobilized` negam boost; `stunned`/`jammed`/`downandout` negam tudo |
+| `StatusRules` | `StatusRules.ts` | `immobilized: denies ['move','boost']`, `slow: denies ['boost']`, `prone ⇒ slow` |
+| `OverchargeApplies` | `ActionPoolController` | segundo Boost |
+| `standUp()` | `BaseActions.ts` | levantar consome o move padrão inteiro |
+
+Consequência de projeto: **não há bandas para calcular nem cap a derivar.** O cap é `BoostedSpeed`,
+o gasto do turno é `BoostedSpeed - getCurrent(SPEED)`, e conceder Boost é uma chamada de engine.
+O que o LA chama de legs (`standard`/`boost`/`over-boost`) aqui já é o par
+(`SPEED` corrente, `BoostBonus`).
+
+### 13.2 O gap real
+
+1. Arrastar um token no Owlbear **não toca no motor**: o número na tela nunca cai sozinho.
+2. O slot imprime `getMax('speed')`, mas depois de um Boost o cap é `BoostedSpeed` (§5, corrigido).
+3. Não há sinal de estouro de cap nem oferta de Boost.
+4. Nada distingue movimento **voluntário** de **involuntário** (empurrão do GM).
+5. Não há reverter.
+
+### 13.3 Captura: `items.onChange` + snapshot
+
+O SDK não tem gancho de "antes/depois do movimento": o único sinal é
+`OBR.scene.items.onChange`, que entrega a **lista inteira** a cada mudança, **sem diff**. A captura
+é, portanto, um diff nosso.
+
+Arquivo novo: `src/services/tokenMovementCapture.ts`
+
+```ts
+// O snapshot guarda o CENTRO do token, não o canto: `position` cru erra diagonal em
+// token de tamanho ímpar.
+const lastSeen = new Map<string, Vector2>()
+const gestureStart = new Map<string, { center: Vector2; corner: Vector2 }>()
+const settleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+const SETTLE_MS = 250
+```
+
+Fluxo:
+
+1. `onChange(items)` → para cada item de token (`layer === 'CHARACTER'`), compara a posição com o
+   snapshot.
+2. Primeira divergência → grava o gesto (canto + centro, via `getItemBounds`) e liga o timer de
+   *settle*.
+3. Cada divergência seguinte apenas reinicia o timer.
+4. `SETTLE_MS` sem mexer → o gesto **assentou**: fecha o movimento e decide o gasto (§13.4).
+5. O ponto final vira o novo `lastSeen`.
+
+**Distância** — o centro, não o canto (`OBR.scene.items.getItemBounds([id])` devolve `center`):
+
+```ts
+const spaces = await OBR.scene.grid.getDistance(startCenter, endCenter)
+```
+
+`getDistance` devolve **células** pela métrica da cena (a doc oficial é explícita: "an integer of how
+many grid cells were traversed"; só em `EUCLIDEAN` é fracionário). Em LANCER 1 célula = 1 espaço,
+então o valor **já é o gasto em espaços** — desde que a cena esteja em `CHEBYSHEV` (diagonal = 1).
+Cena em `EUCLIDEAN` devolve fracionário: arredondar para cima e avisar uma vez.
+
+**Atribuição — quem debita.** `Item.lastModifiedUserId` diz qual cliente mexeu no item por último.
+Se for **esta** janela, o movimento é voluntário e é **esta janela que debita no motor**; se for
+outra, é involuntário e ninguém debita.
+
+| Situação | Classificação | Debita? |
+|---|---|---|
+| `lastModifiedUserId` = esta janela | **voluntário** | sim, `mode` conforme §13.4 |
+| esta janela + movimento livre armado (§13.7) | **livre** | não |
+| `lastModifiedUserId` = outra janela | **involuntário** (empurrão/teleporte do GM) | não |
+| ator com `immobilized` | **bloqueado** | não (e o v1 devolve o token, §13.5) |
+| token sem `CombatController` (sem ficha) | **sem dados** | não |
+
+> **Verificar no spike V0:** se `Item.lastModifiedUserId` e `OBR.player.id` são o mesmo espaço de
+> identificadores. Se não forem, a comparação precisa ser com `getConnectionId()`. O fallback
+> (na dúvida, **não** debitar) continua correto nos dois casos: melhor sobrar movimento do que
+> cobrar duas vezes.
+
+### 13.4 Gasto e cap
+
+Arquivo novo: `src/services/tokenMovement.ts` (**puro**, testável no projeto `domain`).
+
+```ts
+export interface MovementInput {
+  /** Espaços do gesto (getDistance, já em células = espaços). */
+  spaces: number
+  /** Movimento restante agora (getCurrent(SPEED)). */
+  remaining: number
+  /** BoostBonus corrente. */
+  boostBonus: number
+  /** getMax(SPEED) — o move padrão. */
+  maxSpeed: number
+  /** CanActivate('boost'). */
+  canBoost: boolean
+  /** Atribuição do gesto (§13.3). */
+  kind: 'voluntary' | 'involuntary' | 'free'
+  immobilized: boolean
+}
+
+export interface MovementDecision {
+  action: 'spend' | 'offer-boost' | 'reject'
+  spend: number
+  mode: 'move' | 'boost'
+  reason?: 'free' | 'involuntary' | 'immobilized' | 'over-cap-no-boost'
+}
+
+export function decideMovement(input: MovementInput): MovementDecision
+```
+
+Regras, em ordem:
+
+1. `kind === 'involuntary'` → `reject` (`reason: 'involuntary'`).
+2. `kind === 'free'` → `reject` (`reason: 'free'`).
+3. `immobilized` → `reject`.
+4. `spaces <= remaining` → `spend`.
+   `mode` = `'boost'` quando `boostBonus > 0` **e** o gasto passa do move padrão
+   (`(BoostedSpeed - remaining) + spaces > maxSpeed`), senão `'move'`. É a mesma classificação de
+   leg que o cartão de combate já usa.
+5. `spaces > remaining` e `canBoost` → `offer-boost` (§13.5).
+6. `spaces > remaining` e **não** `canBoost` → `reject` (`reason: 'over-cap-no-boost'`).
+
+**Ordem obrigatória: decidir antes de gastar.** `SpendMovement` faz
+`Math.max(0, from - spent)` — ele **clampa em 0** e joga fora o excedente. Um gasto de 9 com 5
+restantes viraria "5" silenciosamente e não haveria como oferecer Boost depois.
+
+```ts
+// decideMovement já garantiu spaces <= remaining
+cc.SpendMovement(decision.spend, decision.mode)
+```
+
+O `Record('move', …)` que o próprio `SpendMovement` faz é o log de combate — **não** registrar de
+novo.
+
+### 13.5 Estouro de cap e Boost
+
+Sem ferramenta customizada (§13.10), o v1 corrige **depois** que o gesto assentou. O token já andou
+no mapa; a escolha é do jogador:
+
+```
+MOVIMENTO ACIMA DO CAP — 9/5
+Este movimento excede o movimento restante (5) sem Boost.
+[ Boost (+5) ]   [ Desfazer ]
+```
+
+- **Boost:** `cc.CanActivate('boost')` → `cc.Boost()`. O `boost()` do motor já soma
+  `BoostBonus += speed` **e** `bumpCurrentStat(SPEED, +speed)`, ou seja, depois dele o restante é
+  suficiente por construção. Em seguida `SpendMovement(spaces, 'boost')`.
+- **Sem Boost legal** (`slow`, `immobilized`, sem quick, `stunned`): o cartão mostra só **Desfazer**
+  mais o motivo. Reusar o vocabulário de motivo que o log de combate já tem
+  (`Record('blocked', { reason })`).
+- **Desfazer:** `updateItems` de volta para o canto do gesto (§13.6), sem debitar nada.
+- **Imobilizado:** nem cartão de Boost — o token volta e o motivo é `immobilized`.
+
+O segundo Boost (`OverchargeApplies` → `InOvercharge`) entra pela mesma porta: se `CanActivate`
+responder que sim, o cartão volta a oferecer Boost em vez de Desfazer.
+
+### 13.6 Reverter
+
+Dois pontos de entrada, **um** caminho:
+
+| Entrada | Onde |
+|---|---|
+| Item de menu de contexto | `src/services/obrBridge.ts` (ao lado do `compcon-bind-token`) |
+| Botão no painel | `TokenTrackerPanel.vue` |
+
+Implementação:
+
+```ts
+await OBR.scene.items.updateItems([tokenId], draft => { draft.position = gestureStart.corner })
+// se o gesto foi debitado, devolver o movimento:
+sc.setCurrentStat(StatKey.SPEED, remaining + spend, { silent: true })
+```
+
+**Limites honestos:** devolve em **linha reta** para a posição inicial do gesto, não pelo caminho
+andado — o Owlbear não expõe o traçado (§13.9). E reverter um movimento que só coube por causa do
+Boost **não** desfaz o Boost: ele já consumiu o quick e está no log. O diálogo diz isso.
+
+### 13.7 Movimento livre
+
+O LA usa **tecla segurada** (`V`). O Owlbear não tem listener global de teclado — `onKeyDown` só
+existe dentro de um `ToolMode` ativo (§13.10). Então o v1 usa **estado armado**, não modificador:
+
+- Toggle no painel: "próximo movimento é livre" — arma para o próximo gesto e desarma sozinho.
+- Persistência **local da janela** (`Storage`, como a watchlist do §7.4). É estado de UI: não vai
+  para metadata de token nem de sala, e armar "livre" nesta janela não afeta o que os outros veem.
+
+### 13.8 Reset por turno
+
+O reset **já é responsabilidade do motor**: o fluxo de fim de turno zera `BoostBonus`, e
+`ClearBoost()` existe exatamente para isso. O tracker **não reimplementa reset** — apenas
+**redesenha** no mesmo evento que já vira o turno.
+
+Gatilho: o snapshot de iniciativa que a janela já recebe (`trackerSyncService`, o mesmo de onde o
+§7.5 tira o `combatant.side`). Na troca de `inTurnId`, `refreshAll()` e limpeza do `gestureStart`
+local.
+
+> Se um dia o reset precisar ser dirigido pelo mapa (ex.: "limpar o movimento de quem não está em
+> combate"), aí sim entra lógica nova — não antes.
+
+### 13.9 O que o Owlbear não entrega (limites do v1)
+
+**Atualizado pela sessão:** o app roda em **iframes separados** — o modo ativo (ficha viva) vive na
+janela persistente (`windowType=floating`, `isSheetWindowContext()`) e o arrasto acontece na janela
+do mapa. O `StatController` **vivo** só existe no primeiro, então o débito não pode ser feito onde o
+arrasto acontece. Implementado: a janela do mapa envia o **gesto** por broadcast
+(`MOVEMENT_SPEND`) e a janela da ficha decide com os números frescos e responde
+(`MOVEMENT_SPENT`), aplicando `SpendMovement` no controlador vivo. Sem esse relay, debitar a cópia
+deserializada da janela do mapa seria perdido (a ficha salva por cima) ou cobrado em dobro.
+
+Registrado aqui para não virar promessa em outro lugar:
+
+| Sem análogo no Owlbear | Consequência |
+|---|---|
+| **Caminho percorrido / waypoints** | `getDistance(from, to)` é a **menor distância** pela métrica da grade, não o custo do que foi andado. Contornar uma parede custa o mesmo que atravessá-la. |
+| **Terreno difícil** | não existe no modelo de cena; sem penalidade de custo. |
+| **Elevação / THT** | não existe; sem custo de subida e sem leitura de altura. |
+| **Intercepção antes do movimento** | `items.onChange` só avisa **depois**. O v1 corrige post-hoc (§13.5). |
+| **Histórico nativo por token** | `OBR.scene.history` é undo **global** do usuário, não do token. Reverter é implementação nossa (§13.6). |
+| **Teclas seguradas globais** | sem `V`/`B`; modificadores só existem com um `ToolMode` ativo. Daí o toggle armado (§13.7). |
+
+### 13.10 Fase opcional: ferramenta customizada (M3)
+
+`OBR.tool.createMode` aceita `onToolDragStart` / `onToolDragMove` / `onToolDragEnd` /
+`onToolDragCancel`, mais um filtro `preventDrag` cuja documentação diz que, ao casar, "the default
+drag operation will be used which mimics the Move tool" — que é exatamente o que a intercepção
+precisa.
+
+O exemplo oficial registra um mode com `icons[].filter.activeTools: ["rodeo.owlbear.tools/pointer"]`,
+o que sugere que dá para ancorar um mode numa ferramenta **nativa**. **Isso não está confirmado
+pela documentação** — a redação de `preventDrag` é ambígua. Por isso M3 começa pelo spike V0, e o
+v1 **não depende** dele.
+
+Se V0 der positivo, M3 troca o post-hoc por: cartão **durante** o arrasto, cancelamento antes de
+aplicar, e modificadores reais (`shiftKey`/`ctrlKey`/`altKey` vêm no `ToolEvent`).
+
+### 13.11 Fases do movimento
+
+**V0 — Spike (0,5–1 dia), bloqueia apenas M3.**
+Confirmar: (a) `Item.lastModifiedUserId` ↔ `OBR.player.id`; (b) se um `ToolMode` pode ser ancorado
+na ferramenta nativa de mover e o que `preventDrag` faz de fato.
+
+**M0 — Contratos e lógica pura (1–2 dias). ✅ FEITO.**
+`src/types/token-movement.ts` (`MovementKind`, `MovementMode`, `MovementInput`, `MovementDecision`)
++ `src/services/tokenMovement.ts` (`decideMovement`, `classifyMode`, `classifyMovementKind`,
+`normalizeSpaces`, `remainingAfterBoost`, `remainingAfterSpend`) + 21 specs.
+*Critério cumprido:* nenhuma linha de OBR nos specs.
+
+Decisões que a implementação fixou (e que os specs pinam):
+
+- `spaces` é arredondado **para cima** e nunca negativo (`normalizeSpaces`);
+- `remaining` corrompido (`NaN`) vira **0**, não `NaN` — `Math.max(0, NaN)` devolve `NaN`, e um
+  `NaN` faria `spaces <= remaining` virar `false`, mandando um gesto comum para o caminho de Boost;
+- o `mode` é `boost` só quando já houve Boost **e** o total do turno passa do padrão
+  (`alreadySpent + spaces > maxSpeed`), a mesma conta do cartão de combate;
+- a precedência da rejeição é `involuntary` → `free` → `immobilized` → estouro sem Boost, e há
+  spec para cada degrau.
+
+**§5 antecipado junto com a M0:** o `max` do slot `speed` já lê `CombatController.BoostedSpeed`
+(via `getBoostedSpeed()` opcional no leitor), com `getMax('speed')` como fallback para leitores
+simples. Antes só o padrão era lido — depois de um Boost apareceria `5/5` em vez de `10/10`.
+
+**M1 — Captura e gasto (2–3 dias). ✅ FEITO (falta o teste em sala).**
+`src/services/tokenMovementCapture.ts` (snapshot, settle, `getItemBounds` → `getDistance` →
+`decideMovement` → `SpendMovement`) + `src/services/tokenMovementGesture.ts` (**puro**: diff de
+posição, coberto por 13 specs) + cores de estado no badge (§6.1).
+*Critério cumprido na parte automatizada; o de sala segue pendente.*
+
+Decisões que a implementação fixou:
+
+- **Diff no canto, medição no centro.** O diff entre `onChange`s compara `position` (barato, roda
+  a cada mudança); o centro só é buscado pelo `getItemBounds` **uma vez por gesto** (guardado como
+  promessa, para não correr com o settle). Medir canto→centro somaria meio token ao gasto.
+- **Item do painel não é token.** O `collectTokenPositions` só aceita `layer === 'CHARACTER'`:
+  os itens do painel são anexados, e sem esse filtro o desenho realimentaria a captura.
+- **Token novo não custa movimento** — `changedTokenIds` ignora id sem retrato anterior.
+- **Sem o centro do fim, não cobra** (`spaces: 0`): na dúvida, sobra movimento em vez de cobrar
+  errado, o mesmo princípio do §13.3.
+- **O Desfazer atualiza o retrato ANTES de mover o token**, senão o nosso próprio `updateItems`
+  entraria no diff como um gesto novo e seria debitado de novo.
+- **Estouro não é debitado.** Fica em `pendingOverflows` (lido por `getPendingOverflow`) e o badge
+  pinta de erro. Só depois da escolha do jogador (M2) é que sai o `SpendMovement` — é isso que
+  preserva a chance do Boost, já que `SpendMovement` clampa em zero.
+- **`SpendMovement` já registra `Record('move', …)`**: a captura não registra de novo.
+- O estado do movimento entra na **assinatura de redesenho**, senão um Boost concedido não
+  repintaria o badge.
+
+**V0 — Spike. ✅ RESPONDIDO pelo usuário:** `Item.lastModifiedUserId` e `OBR.player.id` são o
+mesmo espaço de identificadores, então a comparação é direta (sem `getConnectionId()`). Falta só
+a parte (b): se um `ToolMode` pode ser ancorado na ferramenta nativa de mover — irrelevante para
+M1/M2, bloqueia apenas M3.
+
+**M2 — Estouro, Boost e reverter (2–3 dias).** Cartão de estouro, `cc.Boost()`, reverter pelo menu
+de contexto e pelo painel, movimento livre armado.
+*Critério:* estouro oferece Boost quando é legal e só Desfazer quando não é; reverter devolve a
+posição **e** o movimento.
+
+**M3 — Intercepção no arrasto (3–5 dias, opcional).** Ferramenta customizada com ciclo de drag.
+*Critério:* o cartão aparece **durante** o arrasto e o movimento acima do cap nunca chega a ser
+aplicado.

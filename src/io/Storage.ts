@@ -168,21 +168,104 @@ const storeRegistry: Record<string, LocalForage> = {
   table_actions: createStore('table_actions', 'Stores Table Actions and Chat history'),
 }
 
-const Initialize = async function () {
-  localforage.config({
+/**
+ * Quantos registros existem nesta coleção em CADA driver, **independente** do que
+ * está ativo agora.
+ *
+ * Motivo: `Initialize()` decide o driver por CAPACIDADE (`indexedDbIsUsable` só olha
+ * se `indexedDB` existe), não por um teste real. Se a primeira operação falhar com
+ * permissão negada, a camada troca tudo para LocalStorage — e os dados gravados
+ * quando o IndexedDB funcionava ficam **invisíveis**, porque cada driver tem o seu
+ * namespace. Sem esta contagem, o sintoma é "a ficha sumiu" sem nenhuma pista.
+ */
+export async function inspectDrivers(
+  collection: string
+): Promise<{ indexeddb: number | null; localstorage: number | null }> {
+  const count = async (driver: string): Promise<number | null> => {
+    try {
+      const store = localforage.createInstance({
+        name: dbName,
+        storeName: collection.toLowerCase(),
+        driver: [driver],
+      })
+      // `ready()` não resolve quando o driver pedido não existe: corre contra o tempo.
+      const ready = await Promise.race([
+        store.ready().then(() => true),
+        new Promise<boolean>(resolve => setTimeout(() => resolve(false), 1500)),
+      ])
+      if (!ready) return null
+      return await store.length()
+    } catch {
+      return null
+    }
+  }
+
+  const [indexeddb, localstorage] = await Promise.all([
+    count(localforage.INDEXEDDB),
+    count(localforage.LOCALSTORAGE),
+  ])
+  return { indexeddb, localstorage }
+}
+
+/**
+ * O IndexedDB funciona **mesmo** neste contexto?
+ *
+ * `indexedDbIsUsable()` só olha se a API existe — e é por isso que o boot anunciava
+ * "INDEXEDDB (durável)" para depois trocar tudo para LocalStorage na primeira
+ * operação real (`Storage: IndexedDB indisponível; operando em LocalStorage`). Essa
+ * troca tardia é pior do que parece: cada driver tem o seu namespace, então os dados
+ * gravados quando o IndexedDB funcionava ficam invisíveis.
+ *
+ * Aqui a decisão é por um teste de verdade: abre o banco e faz uma escrita, com
+ * timeout. É a diferença entre "a API existe" e "posso gravar".
+ */
+async function probeIndexedDb(): Promise<boolean> {
+  if (!indexedDbIsUsable()) return false
+
+  try {
+    const probe = localforage.createInstance({
+      name: dbName,
+      storeName: 'settings',
+      driver: [localforage.INDEXEDDB],
+    })
+
+    // `ready()` não resolve quando o driver não existe: corre contra o tempo.
+    const ready = await Promise.race([
+      probe.ready().then(() => true),
+      new Promise<boolean>(resolve => setTimeout(() => resolve(false), 2500)),
+    ])
+    if (!ready) return false
+
+    const key = '__cc_idb_probe__'
+    await probe.setItem(key, '1')
+    const ok = (await probe.getItem(key)) === '1'
+    await probe.removeItem(key)
+    return ok
+  } catch (err) {
+    logger.warn(
+      'Storage: IndexedDB presente mas NÃO gravável neste contexto (iframe de terceiros com armazenamento bloqueado?).',
+      { erro: String(err) },
+    )
+    return false
+  }
+}
+
+const Initialize = async function () {  localforage.config({
     name: dbName,
     driver: [localforage.INDEXEDDB, localforage.LOCALSTORAGE],
   })
 
-  // Resolve o driver já no boot: assim a primeira escrita não precisa descobrir
-  // (e falhar) que o IndexedDB está bloqueado neste contexto.
-  if (indexedDbIsUsable()) {
+  // Resolve o driver já no boot, com uma GRAVAÇÃO de teste: assim a primeira
+  // operação não precisa descobrir (e falhar) que o IndexedDB está bloqueado neste
+  // contexto — o que trocaria o driver no meio da sessão e esconderia os dados que
+  // vivem no outro namespace.
+  if (await probeIndexedDb()) {
     storageDriver.value = 'INDEXEDDB'
     storageIsDurable.value = true
     // Log de boot: comparar o driver entre as janelas (popover esquerdo x janela da
     // ficha) é o que revela duas janelas lendo storages diferentes — cada uma com o
     // seu driver, sem enxergar os dados da outra.
-    console.log('[Storage] driver=INDEXEDDB (durável).')
+    console.log('[Storage] driver=INDEXEDDB (verificado com gravação de teste).')
     return
   }
 
