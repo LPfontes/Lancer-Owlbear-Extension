@@ -1179,6 +1179,19 @@
     }
   },
   "active": {
+    "handshake": {
+      "playerWaitingTitle": "Waiting for GM",
+      "playerWaitingText": "You requested to join combat. Waiting for GM authorization...",
+      "cancelRequest": "Cancel",
+      "gmAuthTitle": "Authorize Pilot",
+      "wantsToJoin": "wants to join combat with pilot:",
+      "approve": "Approve and Add",
+      "deny": "Deny"
+    },
+    "contextMenu": {
+      "bindToken": "Bind COMP/CON Sheet",
+      "openSheet": "Open Sheet (Active Mode)"
+    },
     "tokenTrackers": {
       "tab": "Token Trackers",
       "settingsTitle": "Trackers on the map",
@@ -1430,10 +1443,12 @@
       "exitWithoutSaving": "Exit Without Saving"
     },
     "endRound": {
-      "endRound": "End Round",
-      "confirmEndRound": "Confirm End Round",
-      "endTurn": "End Turn",
-      "confirmEndTurn": "Confirm End Turn"
+      "endRound": "Finish Turn",
+      "confirmEndRound": "Confirm Finish Turn",
+      "endTurn": "Finish Turn",
+      "confirmEndTurn": "Confirm Finish Turn",
+      "finishTurn": "Finish Turn",
+      "confirmFinishTurn": "Confirm Finish Turn"
     },
     "actionChips": {
       "protocol": "Protocol",
@@ -1492,7 +1507,10 @@
       "noSelected": "No equipment selected."
     },
     "pilotRunner": {
-      "loading": "Loading pilot sheet…"
+      "loading": "Loading pilot sheet…",
+      "notFoundTitle": "Sheet not found",
+      "notFoundHint": "This window does not have the sheet and the table has not published a copy of it. Open the sheet in the window that created it, or ask the player to join combat.",
+      "readOnlyBanner": "Read-only — sheet preview without editing. Nothing here is sent to the table or saved."
     },
     "gmOptions": {
       "exportState": "Export Encounter State",
@@ -1631,6 +1649,31 @@
       "statusesConditions": "Statuses/Conditions",
       "counters": "Counters",
       "openSheet": "Open sheet"
+    },
+    "damageApply": {
+      "title": "Apply Damage",
+      "incoming": "Incoming damage",
+      "dice": "Roll dice",
+      "type": "Damage type",
+      "kinetic": "Kinetic",
+      "energy": "Energy",
+      "explosive": "Explosive",
+      "heat": "Heat",
+      "burn": "Burn",
+      "half": "Half",
+      "ap": "Armor piercing (AP)",
+      "irreducible": "Irreducible",
+      "burnStack": "BURN stack",
+      "preview": "Preview",
+      "lethal": "This damage destroys the target.",
+      "burnNote": "Also stacks BURN {n} and applies burn damage (ignores ARMOR).",
+      "apply": "Apply and publish",
+      "condition": {
+        "resistance": "Resistance",
+        "immunity": "Immunity",
+        "vulnerable": "Vulnerable",
+        "other": "Condition"
+      }
     },
     "damageMenu": {
       "takeDamage": "Take Damage",
@@ -2020,6 +2063,9 @@
       "spectatorMode": "Spectator Mode",
       "campaignDisplay": "Campaign Display",
       "allPilots": "All Pilots",
+      "openPilotSheetReadOnly": "Open pilot sheet in read-only mode",
+      "trackerSyncedFromTable": "TABLE ENCOUNTER — initiative published in the room",
+      "adoptRoomEncounter": "Replace with the room encounter",
       "heatCapacity": "Heat Capacity",
       "repairCapacity": "Repair Capacity",
       "saveTarget": "Save Target",
@@ -3831,6 +3877,30 @@
       "d20": "1d20",
       "d20Plus": "1d20 +",
       "until": "Until",
+      "durations": {
+        "startTurnSelf": "the start of your turn",
+        "startTurnTarget": "the start of target's turn",
+        "endTurnSelf": "the end of your turn",
+        "endTurnTarget": "the end of target's turn",
+        "nextTurnEndSelf": "the end of your next turn",
+        "nextTurnEndTarget": "the end of target's next turn",
+        "nextTurnStartSelf": "the start of your next turn",
+        "nextTurnStartTarget": "the start of target's next turn",
+        "endOfEncounter": "the end of the encounter"
+      },
+      "damageRoll": "Damage Roll",
+      "criticalDamageRoll": "Critical Damage Roll",
+      "totalDamage": "Total Damage",
+      "applied": "Applied",
+      "gained": "Gained",
+      "appliedEffect": "Applied Effect",
+      "gainedEffect": "Gained Effect",
+      "targetedBy": "Targeted by {initiator}'s {effect}:",
+      "asAction": "as a {action} Action",
+      "ap": "AP",
+      "irreducible": "Irreducible",
+      "reliable": "Reliable",
+      "incomingAttack": "Incoming",
       "vsStat": "vs {stat}",
       "noTarget": "No Target Selected",
       "vs": "VS",
@@ -4600,6 +4670,9 @@
     "activeMode": "Active Mode",
     "encountersGm": "Encounters (GM)",
     "npcs": "NPCs",
+    "chatAndActions": "Chat & Actions",
+    "combatTracker": "Combat Tracker",
+    "combatTrackerSubtitle": "Initiative, rounds, and table combat management",
     "options": "Options",
     "actions": "Actions",
     "characterAndPilot": "Character & Pilot",
@@ -4668,6 +4741,9 @@
     "expandWideMode": "Expand to Wide Mode (1120px)",
     "compactSideMode": "Compact / Side Mode (520px)",
     "minimizeCompactBar": "Minimize to compact bar (48px)",
+    "reloadWindow": "Reload Window",
+    "reloadWindowConfirm": "Reload the extension iframe? In-memory state is discarded; saved sheets, encounters and logbooks stay in local storage.",
+    "reloadWindowAction": "Reload now",
     "mainMenuTitle": "Main Menu",
     "gmSection": "Game Master (GM)",
     "installLcpsFull": "Install LCPs (.lcp / .llp)",
@@ -4677,7 +4753,10 @@
     "encounterPrefix": "Encounter",
     "back": "Back",
     "centerOnScreen": "Center on Screen",
-    "centerOnScreenDesc": "Center of the map"
+    "centerOnScreenDesc": "Center of the map",
+    "wsConnected": "Real-Time Sync Connected",
+    "wsReconnecting": "Reconnecting Table Sync...",
+    "wsDisconnected": "Sync Offline (Local Mode)"
   },
   "hud": {
     "attack": "Attack",

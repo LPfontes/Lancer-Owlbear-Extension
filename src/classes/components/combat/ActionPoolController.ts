@@ -213,6 +213,7 @@ class ActionPoolController {
 
   public ResetCombatActions(): void {
     this.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }
+    this._parent.CombatLogVersion++
   }
 
   public toggleCombatAction(action: string): void {

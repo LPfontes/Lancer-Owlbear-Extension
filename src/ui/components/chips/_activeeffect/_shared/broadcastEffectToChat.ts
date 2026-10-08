@@ -1,6 +1,7 @@
 import { i18n } from '@/i18n'
 import { rollDamageRows } from '@/util/diceRoll'
 import { useTableActionStore } from '@/stores/tableActionStore'
+import { translateDamageType } from '@/classes/components/feature/active_effects/_activeEffectUtils'
 import type { ActiveEffectLike } from '@/classes/components/feature/active_effects/ActiveEffect'
 import type { CombatantData } from '@/classes/encounter/Encounter'
 
@@ -66,7 +67,8 @@ export async function broadcastEffectToChat(
     summary,
     ...rolled.map((r, i) => {
       const row = rows[i]
-      return `<b>${row.label}${row.type ? ` [${row.type}]` : ''}</b>: ${r.breakdown} (${r.formula})`
+      const typeLabel = row.type ? translateDamageType(row.type) : ''
+      return `<b>${row.label}${typeLabel ? ` [${typeLabel}]` : ''}</b>: ${r.breakdown} (${r.formula})`
     }),
   ]
     .filter(Boolean)

@@ -13,7 +13,7 @@ import {
   IActiveEffectData,
 } from '@/classes/components/feature/active_effects/ActiveEffect'
 import { localize } from '@/i18n/localize'
-import { keyPrefixes } from '@/i18n/contentKeys'
+import { keyPrefixes, slug } from '@/i18n/contentKeys'
 
 interface IFrameTraitData {
   name: string
@@ -43,10 +43,13 @@ class FrameTrait {
   private _integrated: string[]
   private _special_equipment: string[]
 
-  public constructor(data: IFrameTraitData) {
+  public constructor(data: IFrameTraitData, parentId?: string) {
     this._name = data.name
     this._description = data.description || ''
     this._lkey = keyPrefixes.get(data as object)
+    if (!this._lkey && parentId && data.name) {
+      this._lkey = `${parentId}.trait_${slug(data.name)}`
+    }
     this.Use = data.use || ''
     this.ActiveEffects = data.active_effects
       ? data.active_effects.map(x => new ActiveEffect(x, this))

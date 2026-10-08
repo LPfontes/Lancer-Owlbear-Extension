@@ -7,7 +7,9 @@ import type { TokenTrackerConfig } from '@/types/token-tracker'
 import { SetItem } from '@/io/Storage'
 import { toRaw } from 'vue'
 import { dddiceService } from './dddiceService'
+import { tableSyncSocket, roomSyncedSheets } from './tableSyncSocket'
 import { statusMarkerService } from './statusMarkerService'
+import { isSheetReadOnlySession } from './sheetReadOnlySession'
 import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrackerService'
 import { tokenMovementCapture } from './tokenMovementCapture'
 import { getTrackerIconUrl } from './tokenTrackerIcons'
@@ -16,27 +18,26 @@ import { TOKEN_TRACKER_MOVEMENT_KEY } from '@/types/token-tracker'
 import { tokenTrackerLog } from './tokenTrackerDebug'
 import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
-import { isActiveModePrewarm } from './prewarmContext'
 import { TAB_ID } from './tabId'
+import {
+  addToTableRoster,
+  removeFromTableRoster,
+  setTableRosterRoom,
+  tableRosterEntries,
+  tableRosterIds,
+} from './tableRoster'
 
-// Reexportado para quem já importava a constante daqui (ver `types/compcon-obr`).
-export { COMPCON_METADATA_KEY }
+// Chaves usadas só dentro deste módulo: nenhuma delas faz parte da API do bridge.
+// Chave de metadado de token/ficha quem precisa importa de `types/compcon-obr`.
 
-export const COMPCON_PILOT_PREFIX = 'com.compcon.activemode/p/'
-export const COMPCON_NPC_PREFIX = 'com.compcon.activemode/n/'
-export const COMPCON_PILOT_INDEX_KEY = 'com.compcon.activemode/pilots_index'
-export const COMPCON_NPC_INDEX_KEY = 'com.compcon.activemode/npcs_index'
-export const COMPCON_PILOTS_METADATA_KEY = 'com.compcon.activemode/pilots'
-export const COMPCON_NPCS_METADATA_KEY = 'com.compcon.activemode/npcs'
-export const COMPCON_PILOT_ROSTER_KEY = 'com.compcon.activemode/pilot_roster'
-export const COMPCON_NPC_ROSTER_KEY = 'com.compcon.activemode/npc_roster'
-export const COMPCON_TABLE_ACTIONS_KEY = 'com.compcon.activemode/table_actions'
-export const COMPCON_TRACKER_SYNC_KEY = 'com.compcon.activemode/tracker_sync'
-export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
-export const COMPCON_ICON_URL = '/icon.svg'
-export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
-export const COMPCON_AUTO_TOKEN_STORAGE_KEY = 'compcon_auto_token_enabled'
-
+/** Histórico de ações/chat da mesa gravado na sala (lido por `tableActionStore`). */
+const COMPCON_TABLE_ACTIONS_KEY = 'com.compcon.activemode/table_actions'
+/** Canal de broadcast da sala: fichas, rolagens e recados entre janelas. */
+const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
+/** Ícone dos menus de contexto registrados por esta extensão. */
+const COMPCON_ICON_DATA_URI = '/icon.svg'
+/** Flag local do vínculo automático de token ao abrir uma ficha. */
+const COMPCON_AUTO_TOKEN_STORAGE_KEY = 'compcon_auto_token_enabled'
 
 class OBRBridge {
   private isReady = false
@@ -45,45 +46,25 @@ class OBRBridge {
   private tabId: string = TAB_ID
   private isSyncingFromRemote = false
   private isSavingToRemote = false
-  private incomingChunks = new Map<string, { chunks: string[]; total: number; timestamp: number }>()
   private processedMsgIds = new Set<string>()
-  private localTabChannel?: BroadcastChannel
   private broadcastUnsubscribe?: () => void
-  private lastSyncBroadcastTime = 0
   private broadcastQueue: Array<{ payload: any; resolve: () => void }> = []
   private isProcessingBroadcastQueue = false
-  private lastRoomPilotMetadataHash: string = ''
-  private lastRoomNpcMetadataHash: string = ''
-  private lastScenePilotMetadataHash: string = ''
-  private lastSceneNpcMetadataHash: string = ''
-  private lastRoomPilotRosterStr: string = ''
-  private lastRoomNpcRosterStr: string = ''
-  private cachedPilotRoster: Record<string, any> = {}
-  private cachedNpcRoster: Record<string, any> = {}
   private playerSelectionUnsubscribe?: () => void
+  private messageListenerAdded = false
+  private statusChangeListenerAdded = false
+  private pendingStatusSyncs = new Map<string, { statuses: string[]; originId?: string }>()
+  private statusSyncTimeout: ReturnType<typeof setTimeout> | null = null
 
   public async init(onReadyCallback?: () => void) {
     if (this.isReady) return
-
-    // Inicializa canal de broadcast local entre abas do mesmo navegador
-    if (typeof BroadcastChannel !== 'undefined' && !this.localTabChannel) {
-      try {
-        this.localTabChannel = new BroadcastChannel('compcon_obr_local_tabs')
-        this.localTabChannel.onmessage = async (event) => {
-          if (!event.data || typeof event.data !== 'object') return
-          if (event.data.senderTabId && event.data.senderTabId === this.tabId) return
-          await this.handleBroadcastMessage(event.data)
-        }
-      } catch (e) {
-        console.warn('[OBRBridge] BroadcastChannel local não suportado:', e)
-      }
-    }
 
     // Cross-window traffic, restricted to this extension's own windows. The
     // bridge must not act on messages posted by whatever page embeds or opened
     // the app, so both the origin and the envelope are required: a foreign page
     // can then neither read the broadcast payloads nor inject commands.
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !this.messageListenerAdded) {
+      this.messageListenerAdded = true
       window.addEventListener('message', async (event) => {
         try {
           if (event.origin !== window.location.origin) return
@@ -103,6 +84,8 @@ class OBRBridge {
 
     if (!OBR.isAvailable) {
       console.log('[OBRBridge] Owlbear Rodeo SDK não disponível neste ambiente.')
+      void tableSyncSocket.init()
+      if (onReadyCallback) onReadyCallback()
       return
     }
 
@@ -125,81 +108,54 @@ class OBRBridge {
         this.playerId = 'client_' + Math.random().toString(36).slice(2, 9)
       }
       obrPlayerId.value = this.playerId
+      // O roster da mesa é local e namespaced pela sala: nenhum registro de ficha
+      // da mesa vai para os metadados do Owlbear.
+      setTableRosterRoom(OBR.room.id)
       console.log(`[OBRBridge] Inicializado com sucesso. Role: ${this.role}, PlayerId: ${this.playerId}, TabId: ${this.tabId}`)
 
-      const isStandaloneChat =
-        typeof window !== 'undefined' &&
-        (window.location.hash.includes('/table-chat') || window.location.search.includes('/table-chat'))
-
-      // O iframe oculto de pré-aquecimento é uma segunda instância do app: sincroniza
-      // fichas normalmente, mas não pode mexer em nada que o usuário perceba (menu de
-      // contexto do Owlbear, integrações externas). Ver `services/prewarmContext.ts`.
-      const isPrewarmDocument = isActiveModePrewarm()
-
+      this.setupContextMenu()
+      this.setupSceneListeners()
+      this.setupPlayerSelectionListener()
       this.setupBroadcastListener()
       this.setupRoomMetadataListener()
 
-      if (!isStandaloneChat) {
-        if (!isPrewarmDocument) {
-          this.setupContextMenu()
-        }
-        this.setupSceneMetadataListener()
-        this.setupPlayerSelectionListener()
+      // Solicita sincronização cross-scene com todos os jogadores na sala
+      await this.requestSyncFromRoom().catch(() => { })
 
-        // Carrega fichas já salvas na cena/sala do Owlbear
-        await this.syncFromRoom().catch(() => {})
+      // Limpa marcadores legados de status com URLs inválidas que possam ter ficado gravados na cena
+      void statusMarkerService.cleanupLegacyMarkers().catch(() => { })
 
-        // Solicita sincronização cross-scene com todos os jogadores na sala
-        await this.requestSyncFromRoom().catch(() => {})
+      // Inicializa serviço de dados 3D compartilhados (dddice) e WebSocket
+      dddiceService.init()
+      void tableSyncSocket.init()
 
-        // Remove payloads de ficha que instalações antigas deixaram gravados na
-        // sala/cena (a sincronização acima já os migrou para o storage local).
-        void this.cleanupRoomMetadata()
-
-        // Limpa marcadores legados de status com URLs inválidas que possam ter ficado gravados na cena
-        void statusMarkerService.cleanupLegacyMarkers().catch(() => {})
-
-        // Inicializa serviço de dados 3D compartilhados (dddice) — só na janela visível,
-        // para não abrir uma segunda conexão por aba.
-        if (!isPrewarmDocument) {
-          dddiceService.init()
-        }
-
-        // Listener global para sincronizar marcadores de status quando fichas mudarem no COMP/CON
-        if (typeof window !== 'undefined') {
-          window.addEventListener('compcon-combatant-statuses-changed', async (e: any) => {
-            const { combatantId, statuses, originId } = e.detail || {}
-            if (combatantId && Array.isArray(statuses)) {
-              await this.syncCombatantStatusMarkers(combatantId, statuses, originId).catch(() => {})
-            }
-          })
-        }
+      // Listener global para sincronizar marcadores de status quando fichas mudarem no COMP/CON
+      if (typeof window !== 'undefined' && !this.statusChangeListenerAdded) {
+        this.statusChangeListenerAdded = true
+        window.addEventListener('compcon-combatant-statuses-changed', async (e: any) => {
+          const { combatantId, statuses, originId } = e.detail || {}
+          if (combatantId && Array.isArray(statuses)) {
+            await this.syncCombatantStatusMarkers(combatantId, statuses, originId).catch(() => { })
+          }
+        })
       }
 
       // Trackers dos tokens (PV, Blindagem, Calor, Movimento, Estrutura, Estresse).
-      //
-      // Fora do `if (!isStandaloneChat)` de propósito: a janela de chat/ações é
-      // justamente onde fica o painel de configuração, e o desenho é LOCAL — cada
-      // janela precisa do serviço rodando para desenhar o que ela conhece. O único
-      // documento de fora é o iframe oculto de pré-aquecimento, que não pode mexer
-      // em nada visível.
-      if (!isPrewarmDocument) {
-        await this.registerTokenTrackerStores()
-        await tokenTrackerService
-          .start()
-          .then(() => tokenTrackerService.cleanupLegacyItems())
-          .catch(err => console.warn('[OBRBridge] Falha ao iniciar os token trackers:', err))
+      await this.registerTokenTrackerStores()
+      await tokenTrackerService
+        .start()
+        .then(() => tokenTrackerService.cleanupLegacyItems())
+        .catch(err => console.warn('[OBRBridge] Falha ao iniciar os token trackers:', err))
 
-        // Captura do arrasto do token → gasto de movimento (§13). Fica aqui, junto dos
-        // trackers, porque depende do mesmo vínculo token↔ficha para achar o motor.
-        try {
-          // A decisão mora no iframe que tem o controlador VIVO (a janela da ficha);
-          // a janela do mapa manda o gesto por broadcast.
-          tokenMovementCapture.setRelaySend(payload => this.sendBroadcastMessage(payload))
-          tokenMovementCapture.start()
-        } catch (err) {
-          console.warn('[OBRBridge] Falha ao iniciar a captura de movimento:', err)
-        }
+      // Captura do arrasto do token → gasto de movimento (§13). Fica aqui, junto dos
+      // trackers, porque depende do mesmo vínculo token↔ficha para achar o motor.
+      try {
+        // A decisão mora no iframe que tem o controlador VIVO (a janela da ficha);
+        // a janela do mapa manda o gesto por broadcast.
+        tokenMovementCapture.setRelaySend(payload => this.sendBroadcastMessage(payload))
+        tokenMovementCapture.start()
+      } catch (err) {
+        console.warn('[OBRBridge] Falha ao iniciar a captura de movimento:', err)
       }
 
       if (onReadyCallback) onReadyCallback()
@@ -224,13 +180,13 @@ class OBRBridge {
             .show(
               'Não deu para ativar o movimento deste token: vincule a ficha primeiro (o movimento sai do SPEED dela).'
             )
-            .catch(() => {})
+            .catch(() => { })
         } else {
-          await OBR.notification.show('Movimento ativado neste token.').catch(() => {})
+          await OBR.notification.show('Movimento ativado neste token.').catch(() => { })
         }
       } else {
         await tokenMovementCapture.disarmMovement(tokenId)
-        await OBR.notification.show('Movimento parado neste token.').catch(() => {})
+        await OBR.notification.show('Movimento parado neste token.').catch(() => { })
       }
     }
   }
@@ -283,7 +239,7 @@ class OBRBridge {
             void this.setMovementArmed(context.items.map((item: Item) => item.id), false)
           },
         })
-        .catch(e => console.warn('[ORBridge] Aviso ao criar o item de menu de parada:', e))
+        .catch(e => console.warn('[OBRBridge] Aviso ao criar o item de menu de parada:', e))
 
       // Menu de contexto para vincular token à ficha
       void OBR.contextMenu.create({
@@ -291,7 +247,7 @@ class OBRBridge {
         icons: [
           {
             icon: COMPCON_ICON_DATA_URI,
-            label: 'Vincular Ficha COMP/CON',
+            label: i18n.global.t('active.contextMenu.bindToken'),
             filter: {
               roles: ['GM', 'PLAYER'],
               min: 1,
@@ -318,7 +274,7 @@ class OBRBridge {
         icons: [
           {
             icon: COMPCON_ICON_DATA_URI,
-            label: 'Abrir Ficha (Modo Ativo)',
+            label: i18n.global.t('active.contextMenu.openSheet'),
             filter: {
               roles: ['GM', 'PLAYER'],
               min: 1,
@@ -354,44 +310,12 @@ class OBRBridge {
   }
 
   /**
-   * Monitora alterações de metadados da sala para sincronização bidirecional em tempo real
+   * Metadados da sala: nenhuma ficha (nem o registro de quais fichas estão na
+   * mesa) é escrita ali por este fork, então sobram só as ações de mesa e a
+   * detecção automática de sala do dddice.
    */
   private setupRoomMetadataListener() {
     OBR.room.onMetadataChange(async (metadata) => {
-      if (this.isSyncingFromRemote || this.isSavingToRemote) return
-
-      // Notifica componentes quando o roster de pilotos ou NPCs mudar
-      const pilotRoster = metadata[COMPCON_PILOT_ROSTER_KEY]
-      const pilotRosterStr = JSON.stringify(pilotRoster || {})
-      if (this.lastRoomPilotRosterStr !== '' && pilotRosterStr !== this.lastRoomPilotRosterStr) {
-        window.dispatchEvent(new CustomEvent('compcon-pilot-synced'))
-      }
-      this.lastRoomPilotRosterStr = pilotRosterStr
-
-      const npcRoster = metadata[COMPCON_NPC_ROSTER_KEY]
-      const npcRosterStr = JSON.stringify(npcRoster || {})
-      if (this.lastRoomNpcRosterStr !== '' && npcRosterStr !== this.lastRoomNpcRosterStr) {
-        window.dispatchEvent(new CustomEvent('compcon-npc-synced'))
-      }
-      this.lastRoomNpcRosterStr = npcRosterStr
-
-      // Verifica se houve mudança real nas chaves de index ou dados dos pilotos/NPCs
-      const pilotIndex = metadata[COMPCON_PILOT_INDEX_KEY]
-      const currentPilotHash = JSON.stringify({ r: pilotRoster, i: pilotIndex })
-
-      const npcIndex = metadata[COMPCON_NPC_INDEX_KEY]
-      const currentNpcHash = JSON.stringify({ r: npcRoster, i: npcIndex })
-
-      const pilotChanged = this.lastRoomPilotMetadataHash !== '' && currentPilotHash !== this.lastRoomPilotMetadataHash
-      const npcChanged = this.lastRoomNpcMetadataHash !== '' && currentNpcHash !== this.lastRoomNpcMetadataHash
-
-      this.lastRoomPilotMetadataHash = currentPilotHash
-      this.lastRoomNpcMetadataHash = currentNpcHash
-
-      if (pilotChanged || npcChanged) {
-        await this.syncFromRoom()
-      }
-
       if (COMPCON_TABLE_ACTIONS_KEY in metadata) {
         const raw = metadata[COMPCON_TABLE_ACTIONS_KEY]
         if (Array.isArray(raw)) {
@@ -408,44 +332,18 @@ class OBRBridge {
   }
 
   /**
-   * Monitora alterações de metadados na cena ativa (limite de 25 MB)
+   * Ciclo de vida da cena: entrar numa cena nova limpa marcadores legados de status.
+   * As fichas são sincronizadas em tempo real via WebSocket Go (tableSyncSocket).
    */
-  private setupSceneMetadataListener() {
-    OBR.scene.onMetadataChange(async (metadata) => {
-      if (this.isSyncingFromRemote || this.isSavingToRemote) return
-
-      const pilotIndex = metadata[COMPCON_PILOT_INDEX_KEY]
-      const npcIndex = metadata[COMPCON_NPC_INDEX_KEY]
-      const currentScenePilotHash = JSON.stringify(pilotIndex || [])
-      const currentSceneNpcHash = JSON.stringify(npcIndex || [])
-
-      const pilotChanged = this.lastScenePilotMetadataHash !== '' && currentScenePilotHash !== this.lastScenePilotMetadataHash
-      const npcChanged = this.lastSceneNpcMetadataHash !== '' && currentSceneNpcHash !== this.lastSceneNpcMetadataHash
-
-      this.lastScenePilotMetadataHash = currentScenePilotHash
-      this.lastSceneNpcMetadataHash = currentSceneNpcHash
-
-      if (pilotChanged || npcChanged) {
-        await this.syncFromRoom()
-      }
-    })
-
+  private setupSceneListeners() {
     OBR.scene.onReadyChange(async (ready) => {
       if (ready) {
-        console.log('[OBRBridge] Nova cena ativada no Owlbear Rodeo. Sincronizando fichas cross-scene...')
-        await this.syncFromRoom()
-        await this.pushAllLocalPilotsToRoom()
-        await this.pushAllLocalNpcsToRoom()
-        // A cena não guarda fichas: só índices de IDs.
-        void this.cleanupRoomMetadata()
-        void statusMarkerService.cleanupLegacyMarkers().catch(() => {})
+        console.log('[OBRBridge] Nova cena ativada no Owlbear Rodeo.')
+        void statusMarkerService.cleanupLegacyMarkers().catch(() => { })
       }
     })
   }
 
-  /**
-   * Monitora mensagens em tempo real via OBR Broadcast (independente da cena)
-   */
   /**
    * Monitora mensagens em tempo real via OBR Broadcast (independente da cena)
    */
@@ -466,7 +364,8 @@ class OBRBridge {
   }
 
   /**
-   * Trata mensagens recebidas tanto do OBR Broadcast quanto do BroadcastChannel local entre abas
+   * Trata mensagens recebidas tanto do OBR Broadcast quanto do BroadcastChannel local entre abas.
+   * As fichas da mesa trafegam via WebSocket Go; o broadcast cuida de rolagens, UI e ações.
    */
   private async handleBroadcastMessage(msg: any): Promise<void> {
     if (!msg || typeof msg !== 'object') return
@@ -482,29 +381,7 @@ class OBRBridge {
     }
 
     try {
-      if (msg.type === 'SYNC_REQUEST' || msg.action === 'SYNC_REQUEST') {
-        if (msg.senderId && msg.senderId === this.playerId) {
-          // Requisição do mesmo usuário/jogador local, não precisa retransmitir no OBR broadcast
-          return
-        }
-        await this.handleDebouncedSyncRequest()
-      } else if (msg.type === 'PILOT_DATA') {
-        await this.handleReceivedPilot(msg.pilotId, msg.data)
-      } else if (msg.type === 'PILOT_CHUNK') {
-        await this.handleIncomingChunk('pilot', msg.pilotId, msg.chunkIndex, msg.totalChunks, msg.chunkData)
-      } else if (msg.type === 'PILOT_UPDATE') {
-        await this.handleReceivedPilotUpdate(msg.pilotId, msg.patch)
-      } else if (msg.type === 'PILOT_REMOVED') {
-        console.log('[OBRBridge] Piloto removido por outro participante:', msg.pilotId)
-        window.dispatchEvent(new CustomEvent('compcon-pilot-removed', { detail: { pilotId: msg.pilotId } }))
-      } else if (msg.type === 'NPC_REMOVED') {
-        console.log('[OBRBridge] NPC removido por outro participante:', msg.npcId)
-        window.dispatchEvent(new CustomEvent('compcon-npc-removed', { detail: { npcId: msg.npcId } }))
-      } else if (msg.type === 'NPC_DATA') {
-        await this.handleReceivedNpc(msg.npcId, msg.data)
-      } else if (msg.type === 'NPC_CHUNK') {
-        await this.handleIncomingChunk('npc', msg.npcId, msg.chunkIndex, msg.totalChunks, msg.chunkData)
-      } else if (msg.type === 'RESTORE_MAIN_WINDOW') {
+      if (msg.type === 'RESTORE_MAIN_WINDOW') {
         // Reexibe a janela persistente da ficha (mesmo iframe, sem recarregar).
         const { restoreSheetWindow } = await import('./mainWindow')
         await restoreSheetWindow()
@@ -523,20 +400,12 @@ class OBRBridge {
         )
       } else if (msg.type === 'TABLE_ACTION') {
         window.dispatchEvent(new CustomEvent('compcon-table-action', { detail: msg.action }))
-      } else if (msg.type === 'TRACKER_SYNC') {
-        window.dispatchEvent(new CustomEvent('compcon-tracker-sync', { detail: msg.snapshot }))
-      } else if (msg.type === 'TRACKER_SYNC_CLEAR') {
-        window.dispatchEvent(new CustomEvent('compcon-tracker-clear'))
       } else if (msg.type === 'TRACKER_SYNC_REQUEST') {
+        // O estado do tracker NÃO trafega por aqui: quem o entrega é o servidor de
+        // sincronização (`tableSyncSocket`). Só o PEDIDO de snapshot continua no
+        // broadcast, porque o protocolo do servidor ainda não tem esse tipo.
         window.dispatchEvent(new CustomEvent('compcon-tracker-sync-request'))
       } else if (msg.type === 'MOVEMENT_ROUND_RESET') {
-        // O iframe oculto de pré-aquecimento também escuta broadcasts, e ele não tem
-        // nada que reiniciar (nem cena pronta na hora em que a mensagem chega). O
-        // trabalho é da janela da ficha.
-        const { isActiveModePrewarm } = await import('./prewarmContext')
-        if (isActiveModePrewarm()) return
-        // Fim de rodada (ou de turno) em outra janela: reinicia as cópias DESTA janela
-        // (idempotente) e não reenvia, senão as janelas ficariam se avisando para sempre.
         await tokenMovementCapture.resetRoundMovements({
           broadcast: false,
           filter: (msg as { filter?: { sheetId?: string; mechId?: string } }).filter,
@@ -545,25 +414,18 @@ class OBRBridge {
         const { EncounterStore } = await import('@/stores')
         await EncounterStore().LoadEncounters()
         window.dispatchEvent(new CustomEvent('compcon-encounters-reloaded'))
+      } else if (msg.type === 'PILOT_JOIN_REQUEST') {
+        window.dispatchEvent(new CustomEvent('compcon-pilot-join-request', { detail: msg }))
+      } else if (msg.type === 'PILOT_JOIN_RESPONSE') {
+        window.dispatchEvent(new CustomEvent('compcon-pilot-join-response', { detail: msg }))
+      } else if (msg.type === 'PILOT_JOIN_CANCEL') {
+        window.dispatchEvent(new CustomEvent('compcon-pilot-join-cancel', { detail: msg }))
       } else if (msg.senderName && msg.title) {
         // Evento de rolagem de combate compartilhado
         window.dispatchEvent(new CustomEvent('compcon-combat-roll', { detail: msg }))
       }
     } catch (err) {
       console.warn('[OBRBridge] Erro ao tratar mensagem de broadcast:', err)
-    }
-  }
-
-  private async handleDebouncedSyncRequest() {
-    const now = Date.now()
-    if (now - this.lastSyncBroadcastTime < 5000) {
-      return
-    }
-    this.lastSyncBroadcastTime = now
-    console.log('[OBRBridge] Processando pedido de sincronização cross-scene...')
-    await this.broadcastAllLocalPilots()
-    if (this.role === 'GM') {
-      await this.broadcastAllLocalNpcs()
     }
   }
 
@@ -578,31 +440,10 @@ class OBRBridge {
       senderId: this.playerId,
     }
 
-    // 1. Envia via BroadcastChannel local (sincronização instantânea entre abas no mesmo navegador)
-    if (!this.localTabChannel && typeof BroadcastChannel !== 'undefined') {
-      try {
-        this.localTabChannel = new BroadcastChannel('compcon_obr_local_tabs')
-        this.localTabChannel.onmessage = async (event) => {
-          if (!event.data || typeof event.data !== 'object') return
-          if (event.data.senderTabId && event.data.senderTabId === this.tabId) return
-          await this.handleBroadcastMessage(event.data)
-        }
-      } catch (e) {
-        console.warn('[OBRBridge] BroadcastChannel local não suportado:', e)
-      }
-    }
-    if (this.localTabChannel) {
-      try {
-        this.localTabChannel.postMessage(fullPayload)
-      } catch (e) {
-        console.warn('[OBRBridge] Erro ao postar no BroadcastChannel local:', e)
-      }
-    }
 
-    // 2. Sends via window.postMessage to the parent/opener or sibling windows.
-    // The target origin is pinned to our own origin: only this extension's own
-    // windows speak this protocol, so a cross-origin host page or opener must
-    // not receive the serialized sheet payloads.
+
+    // 1. Envia via window.postMessage para a janela pai/opener ou janelas irmãs.
+    // O destino é restrito à nossa própria origem para evitar vazamento de dados de ficha.
     if (typeof window !== 'undefined') {
       const envelope = { obrBridgeBroadcast: true, payload: fullPayload }
       const ownOrigin = window.location.origin
@@ -625,7 +466,7 @@ class OBRBridge {
       }
     }
 
-    // 3. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting.
+    // 2. Envia via Owlbear Rodeo broadcast com fila sequencial e rate limiting.
     // Mensagens localOnly (ex.: abrir ficha na própria janela principal) não devem
     // chegar aos outros jogadores da sala.
     if (!localOnly && OBR.isAvailable && this.isReady) {
@@ -678,162 +519,26 @@ class OBRBridge {
     this.isProcessingBroadcastQueue = false
   }
 
-  private async handleIncomingChunk(
-    type: 'pilot' | 'npc',
-    id: string,
-    chunkIndex: number,
-    totalChunks: number,
-    chunkData: string
-  ) {
-    const key = `${type}_${id}`
-    let item = this.incomingChunks.get(key)
-    if (!item || item.total !== totalChunks) {
-      item = { chunks: new Array(totalChunks).fill(''), total: totalChunks, timestamp: Date.now() }
-      this.incomingChunks.set(key, item)
-    }
-    item.chunks[chunkIndex] = chunkData
-
-    const isComplete = item.chunks.every(c => typeof c === 'string' && c.length > 0)
-    if (isComplete) {
-      const fullCompressed = item.chunks.join('')
-      this.incomingChunks.delete(key)
-      if (type === 'pilot') {
-        await this.handleReceivedPilot(id, fullCompressed)
-      } else {
-        await this.handleReceivedNpc(id, fullCompressed)
-      }
-    }
-  }
-
-  private async handleReceivedPilot(pilotId: string, compressedData: string): Promise<void> {
-    try {
-      const data = await this.decompressData(compressedData)
-      if (!data || typeof data !== 'object') return
-
-      const { PilotStore } = await import('@/features/pilot_management/store')
-      const { Pilot } = await import('@/classes/pilot/Pilot')
-      const { NavStore } = await import('@/stores/nav')
-
-      const sanitized: any = {
-        ...data,
-        id: data.id || data.ID || pilotId,
-        skills: Array.isArray(data.skills) ? data.skills : [],
-        talents: Array.isArray(data.talents) ? data.talents : [],
-        core_bonuses: Array.isArray(data.core_bonuses) ? data.core_bonuses : [],
-        licenses: Array.isArray(data.licenses) ? data.licenses : [],
-        mechs: Array.isArray(data.mechs) ? data.mechs : [],
-        special_equipment: data.special_equipment || {},
-        quirks: Array.isArray(data.quirks) ? data.quirks : [],
-      }
-
-      const pilot = Pilot.Deserialize(sanitized)
-      const pilotStore = PilotStore()
-      const existingIdx = pilotStore.Pilots.findIndex(p => p.ID === pilot.ID)
-      if (existingIdx === -1) {
-        pilotStore.Pilots.push(pilot)
-        NavStore().updatePilotEntry(pilot)
-        console.log(`[OBRBridge] Novo piloto recebido via broadcast: ${pilot.Name} (${pilot.Callsign})`)
-      } else {
-        pilotStore.Pilots.splice(existingIdx, 1, pilot)
-        console.log(`[OBRBridge] Piloto atualizado via broadcast: ${pilot.Name} (${pilot.Callsign})`)
-      }
-
-      // Persiste no IndexedDB local de quem recebeu
-      await SetItem('pilots', sanitized)
-
-      // Garante que o piloto seja indexado no PilotGroupStore para aparecer no Hangar (Roster)
-      const { PilotGroupStore } = await import('@/features/pilot_management/store/PilotGroupStore')
-      const groupStore = PilotGroupStore()
-      if (!groupStore.PilotGroups || groupStore.PilotGroups.length === 0) {
-        await groupStore.LoadGroups()
-      }
-      await groupStore.ImportUngroupedPilots()
-      await groupStore.SaveGroupData()
-
-      // Dispara evento na janela para re-renderizar o Hangar imediatamente em todas as abas
-      window.dispatchEvent(new CustomEvent('compcon-pilot-synced', { detail: { pilotId: pilot.ID, pilot } }))
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao processar piloto recebido via broadcast:', pilotId, e)
-    }
-  }
-
-  private async handleReceivedPilotUpdate(pilotId: string, patch: any): Promise<void> {
-    try {
-      if (!patch || typeof patch !== 'object') return
-      const { PilotStore } = await import('@/features/pilot_management/store')
-      const pilot = PilotStore().Pilots.find(p => p.ID === pilotId)
-      if (pilot && pilot.ActiveMech) {
-        const mech = pilot.ActiveMech as any
-        if (patch.hp && mech.CurrentHP !== undefined) {
-          mech.CurrentHP = patch.hp.current ?? mech.CurrentHP
-        }
-        if (patch.heat && mech.CurrentHeat !== undefined) {
-          mech.CurrentHeat = patch.heat.current ?? mech.CurrentHeat
-        }
-        if (patch.structure && mech.CurrentStructure !== undefined) {
-          mech.CurrentStructure = patch.structure.current ?? mech.CurrentStructure
-        }
-        if (patch.stress && mech.CurrentStress !== undefined) {
-          mech.CurrentStress = patch.stress.current ?? mech.CurrentStress
-        }
-      }
-      window.dispatchEvent(new CustomEvent('compcon-pilot-patch', { detail: { pilotId, patch } }))
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao aplicar patch de piloto via broadcast:', pilotId, e)
-    }
-  }
-
-  private async handleReceivedNpc(npcId: string, compressedData: string): Promise<void> {
-    try {
-      const data = await this.decompressData(compressedData)
-      if (!data || typeof data !== 'object') return
-
-      const { NpcStore } = await import('@/features/gm/store/npc_store')
-      const { Unit } = await import('@/classes/npc/unit/Unit')
-      const { Doodad } = await import('@/classes/npc/doodad/Doodad')
-      const { Eidolon } = await import('@/classes/npc/eidolon/Eidolon')
-      const { NavStore } = await import('@/stores/nav')
-
-      let npc: any = null
-      if (data.npcType === 'unit') {
-        npc = Unit.Deserialize(data)
-      } else if (data.npcType === 'doodad') {
-        npc = Doodad.Deserialize(data)
-      } else if (data.npcType === 'eidolon') {
-        npc = Eidolon.Deserialize(data)
-      }
-
-      if (npc) {
-        const npcStore = NpcStore()
-        const existingIdx = npcStore.Npcs.findIndex(n => n.ID === npc.ID)
-        if (existingIdx === -1) {
-          npcStore.Npcs.push(npc)
-          NavStore().updateNpcEntry(npc)
-          console.log(`[OBRBridge] Novo NPC recebido via broadcast: ${npc.Name}`)
-        } else {
-          npcStore.Npcs.splice(existingIdx, 1, npc)
-          console.log(`[OBRBridge] NPC atualizado via broadcast: ${npc.Name}`)
-        }
-        await SetItem('npcs', data)
-        window.dispatchEvent(new CustomEvent('compcon-npc-synced', { detail: { npcId: npc.ID, npc } }))
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao processar NPC recebido via broadcast:', npcId, e)
-    }
-  }
-
   /**
-   * Solicita que todos os outros clientes na sala transmitam suas fichas
+   * Solicita sincronização das fichas da sala.
+   * Na nova arquitetura, o estado completo das fichas ativas é entregue automaticamente
+   * pelo servidor Go via INIT_SYNC ao conectar. Mantido para compatibilidade com Startup.ts.
    */
   public async requestSyncFromRoom(): Promise<void> {
-    await this.sendBroadcastMessage({
-      type: 'SYNC_REQUEST',
-      senderRole: this.role,
-    })
+    // No-op: o servidor WebSocket Go entrega o snapshot no INIT_SYNC.
   }
 
   /**
-   * Transmite pilotos da mesa locais em tempo real para a sala
+   * Pede sincronização das fichas da sala.
+   * Mantido para compatibilidade com o fluxo de inicialização (Startup.ts).
+   */
+  public async syncFromRoom(): Promise<{ pilotsCount: number; npcsCount: number }> {
+    await this.requestSyncFromRoom()
+    return { pilotsCount: 0, npcsCount: 0 }
+  }
+
+  /**
+   * Sincroniza pilotos da mesa locais via WebSocket Go.
    */
   public async broadcastAllLocalPilots(): Promise<void> {
     try {
@@ -844,22 +549,20 @@ class OBRBridge {
 
       if (pilots && pilots.length > 0) {
         for (const p of pilots) {
-          // Só faz broadcast se o piloto constar no roster da mesa
           if (rosterIds.has(p.ID)) {
             await this.broadcastSinglePilot(p)
-            await new Promise((r) => setTimeout(r, 60))
           }
         }
       }
     } catch (e) {
-      console.warn('[OBRBridge] Erro ao transmitir pilotos locais via broadcast:', e)
+      console.warn('[OBRBridge] Erro ao sincronizar pilotos locais via WebSocket:', e)
     }
   }
 
   /**
-   * Transmite um único piloto via broadcast (com suporte a chunks se necessário)
+   * Sincroniza um único piloto com a mesa via WebSocket Go.
    */
-  public async broadcastSinglePilot(pilotObj: any): Promise<void> {
+  public async broadcastSinglePilot(pilotObj: any, localOnly: boolean = false): Promise<void> {
     try {
       const { Pilot } = await import('@/classes/pilot/Pilot')
       const raw = toRaw(pilotObj)
@@ -879,6 +582,7 @@ class OBRBridge {
 
       const sanitized = JSON.parse(JSON.stringify(serialized))
       sanitized.id = sanitized.id || sanitized.ID || id
+      sanitized.ID = sanitized.id
       sanitized.skills = Array.isArray(sanitized.skills) ? sanitized.skills : []
       sanitized.talents = Array.isArray(sanitized.talents) ? sanitized.talents : []
       sanitized.core_bonuses = Array.isArray(sanitized.core_bonuses) ? sanitized.core_bonuses : []
@@ -886,35 +590,20 @@ class OBRBridge {
       sanitized.mechs = Array.isArray(sanitized.mechs) ? sanitized.mechs : []
       sanitized.special_equipment = sanitized.special_equipment || {}
 
-      const compressed = await this.compressData(sanitized)
-      const MAX_BROADCAST_PAYLOAD = 12000
-
-      if (compressed.length <= MAX_BROADCAST_PAYLOAD) {
-        await this.sendBroadcastMessage({
-          type: 'PILOT_DATA',
-          pilotId: id,
-          data: compressed,
-        })
-      } else {
-        const chunkCount = Math.ceil(compressed.length / MAX_BROADCAST_PAYLOAD)
-        for (let i = 0; i < chunkCount; i++) {
-          const chunk = compressed.slice(i * MAX_BROADCAST_PAYLOAD, (i + 1) * MAX_BROADCAST_PAYLOAD)
-          await this.sendBroadcastMessage({
-            type: 'PILOT_CHUNK',
-            pilotId: id,
-            chunkIndex: i,
-            totalChunks: chunkCount,
-            chunkData: chunk,
-          })
-        }
+      // Envia via WebSocket em tempo real se conectado (alta eficiência, sem limites de payload)
+      // Não sobrescreve com dados do hangar se o piloto já estiver ativo em combate na sala
+      const isAlreadyInCombat = roomSyncedSheets.value[id]?.inCombat
+      if (tableSyncSocket.IsConnected && !localOnly && !isAlreadyInCombat) {
+        console.log(`[OBRBridge][Sync] Sincronizando ficha do piloto "${sanitized.callsign || sanitized.name || id}" (${id}) via WebSocket...`)
+        tableSyncSocket.sendSyncFullSheet(id, 'pilot', sanitized)
       }
     } catch (e) {
-      console.warn('[OBRBridge] Falha ao enviar broadcast de piloto:', e)
+      console.warn('[OBRBridge] Falha ao sincronizar piloto via WebSocket:', e)
     }
   }
 
   /**
-   * Transmite NPCs da mesa locais em tempo real para a sala
+   * Sincroniza NPCs da mesa locais via WebSocket Go.
    */
   public async broadcastAllLocalNpcs(): Promise<void> {
     try {
@@ -925,24 +614,18 @@ class OBRBridge {
 
       if (npcs && npcs.length > 0) {
         for (const n of npcs) {
-          // Só faz broadcast se o NPC constar no roster da mesa
           if (rosterIds.has(n.ID)) {
             await this.broadcastSingleNpc(n)
-            await new Promise((r) => setTimeout(r, 60))
           }
         }
       }
     } catch (e) {
-      console.warn('[OBRBridge] Erro ao transmitir NPCs locais via broadcast:', e)
+      console.warn('[OBRBridge] Erro ao sincronizar NPCs locais via WebSocket:', e)
     }
   }
 
   /**
-   * Transmite um único NPC via broadcast.
-   *
-   * `localOnly` entrega só às outras janelas deste navegador (BroadcastChannel),
-   * sem publicar a ficha para a sala — usado quando outra janela da própria mesa
-   * precisa conhecer o NPC para abrir a ficha dele.
+   * Sincroniza um único NPC com a mesa via WebSocket Go.
    */
   public async broadcastSingleNpc(npcObj: any, localOnly: boolean = false): Promise<void> {
     try {
@@ -951,260 +634,17 @@ class OBRBridge {
       if (!id) return
       const serialized = typeof raw.Serialize === 'function' ? raw.Serialize() : raw
       const sanitized = JSON.parse(JSON.stringify(serialized))
+      sanitized.id = sanitized.id || sanitized.ID || id
+      sanitized.ID = sanitized.id
 
-      const compressed = await this.compressData(sanitized)
-      const MAX_BROADCAST_PAYLOAD = 12000
-
-      if (compressed.length <= MAX_BROADCAST_PAYLOAD) {
-        await this.sendBroadcastMessage(
-          {
-            type: 'NPC_DATA',
-            npcId: id,
-            data: compressed,
-          },
-          localOnly
-        )
-      } else {
-        const chunkCount = Math.ceil(compressed.length / MAX_BROADCAST_PAYLOAD)
-        for (let i = 0; i < chunkCount; i++) {
-          const chunk = compressed.slice(i * MAX_BROADCAST_PAYLOAD, (i + 1) * MAX_BROADCAST_PAYLOAD)
-          await this.sendBroadcastMessage(
-            {
-              type: 'NPC_CHUNK',
-              npcId: id,
-              chunkIndex: i,
-              totalChunks: chunkCount,
-              chunkData: chunk,
-            },
-            localOnly
-          )
-        }
+      // Envia via WebSocket em tempo real se conectado (apenas se não estiver em combate)
+      const isNpcInCombat = roomSyncedSheets.value[id]?.inCombat
+      if (tableSyncSocket.IsConnected && !localOnly && !isNpcInCombat) {
+        tableSyncSocket.sendSyncFullSheet(id, 'npc', sanitized)
       }
     } catch (e) {
-      console.warn('[OBRBridge] Falha ao enviar broadcast de NPC:', e)
+      console.warn('[OBRBridge] Falha ao sincronizar NPC via WebSocket:', e)
     }
-  }
-
-  /**
-   * Transmite atualizações parciais de combate de um piloto
-   */
-  public async broadcastPilotUpdate(pilotId: string, patch: any): Promise<void> {
-    await this.sendBroadcastMessage({
-      type: 'PILOT_UPDATE',
-      pilotId,
-      patch,
-    })
-  }
-
-  /**
-   * Remove dos metadados qualquer PAYLOAD de ficha (sala e cena).
-   *
-   * A ficha é persistida apenas no `pilot_sheets`/`pilots`/`npcs` local; nos
-   * metadados do Owlbear fica somente um link por id (roster e índices). Esta
-   * rotina limpa INSTALAÇÕES ANTIGAS que ainda carregam cópias comprimidas das
-   * fichas — que além de desatualizadas, estouravam a cota da sala (16 kB) e
-   * inflavam a cena (25 MB).
-   */
-  public async cleanupRoomMetadata(): Promise<void> {
-    if (!this.isReady || !OBR.isAvailable) return
-
-    const isSheetPayloadKey = (key: string) =>
-      key.startsWith(COMPCON_PILOT_PREFIX) ||
-      key.startsWith(COMPCON_NPC_PREFIX) ||
-      key === COMPCON_PILOTS_METADATA_KEY ||
-      key === COMPCON_NPCS_METADATA_KEY
-
-    try {
-      const roomMeta = await OBR.room.getMetadata()
-      // O room nunca precisa de índice: rosters são os manifestos leves da sala.
-      const roomDelete: Record<string, undefined> = {}
-      for (const key of Object.keys(roomMeta)) {
-        if (
-          isSheetPayloadKey(key) ||
-          key === COMPCON_PILOT_INDEX_KEY ||
-          key === COMPCON_NPC_INDEX_KEY
-        ) {
-          roomDelete[key] = undefined
-        }
-      }
-      if (Object.keys(roomDelete).length > 0) {
-        console.log('[OBRBridge] Limpando payloads de ficha do room:', Object.keys(roomDelete))
-        await OBR.room.setMetadata(roomDelete)
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Aviso ao limpar metadados do room:', e)
-    }
-
-    try {
-      const sceneReady = await OBR.scene.isReady().catch(() => false)
-      if (!sceneReady) return
-      const sceneMeta = await OBR.scene.getMetadata()
-      const sceneDelete: Record<string, undefined> = {}
-      for (const key of Object.keys(sceneMeta)) {
-        if (isSheetPayloadKey(key)) sceneDelete[key] = undefined
-      }
-      if (Object.keys(sceneDelete).length > 0) {
-        console.log('[OBRBridge] Limpando payloads de ficha da cena:', Object.keys(sceneDelete))
-        await OBR.scene.setMetadata(sceneDelete)
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Aviso ao limpar metadados da cena:', e)
-    }
-  }
-
-  // =========================================================================
-  // COMPRESSÃO & FRAGMENTAÇÃO DE DADOS (Limite de 16 kB do Owlbear Rodeo)
-  // =========================================================================
-
-  private async streamToUint8Array(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-    const reader = stream.getReader()
-    const chunks: Uint8Array[] = []
-    let totalLength = 0
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        chunks.push(value)
-        totalLength += value.length
-      }
-    }
-    const result = new Uint8Array(totalLength)
-    let offset = 0
-    for (const chunk of chunks) {
-      result.set(chunk, offset)
-      offset += chunk.length
-    }
-    return result
-  }
-
-  private async streamToText(stream: ReadableStream<Uint8Array>): Promise<string> {
-    const reader = stream.getReader()
-    const decoder = new TextDecoder()
-    let text = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        text += decoder.decode(value, { stream: true })
-      }
-    }
-    text += decoder.decode()
-    return text
-  }
-
-  private async decompressStreamWithFallback(bytes: Uint8Array): Promise<string | null> {
-    if (typeof DecompressionStream === 'undefined' || bytes.length === 0) return null
-
-    // Identifica o provável formato pelos magic bytes
-    const isGzip = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b
-    const isDeflate = bytes.length >= 1 && bytes[0] === 0x78
-    const formats: ('gzip' | 'deflate' | 'deflate-raw')[] = isGzip
-      ? ['gzip', 'deflate', 'deflate-raw']
-      : isDeflate
-      ? ['deflate', 'gzip', 'deflate-raw']
-      : ['gzip', 'deflate', 'deflate-raw']
-
-    for (const format of formats) {
-      try {
-        const stream = new Blob([bytes as any]).stream().pipeThrough(new DecompressionStream(format))
-        const text = await this.streamToText(stream)
-        if (text && (text.startsWith('{') || text.startsWith('['))) {
-          return text
-        }
-      } catch {
-        // Tenta o próximo formato
-      }
-    }
-
-    // Fallback: se os bytes eram UTF-8 puro
-    try {
-      const text = new TextDecoder().decode(bytes)
-      if (text && (text.startsWith('{') || text.startsWith('['))) {
-        return text
-      }
-    } catch {
-      // ignore
-    }
-
-    return null
-  }
-
-  private async compressData(data: any): Promise<string> {
-    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data)
-    if (typeof CompressionStream !== 'undefined') {
-      try {
-        const stream = new Blob([jsonStr]).stream().pipeThrough(new CompressionStream('gzip'))
-        const bytes = await this.streamToUint8Array(stream)
-        let binary = ''
-        const chunkSize = 8192
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)))
-        }
-        return 'gz:' + btoa(binary)
-      } catch (e) {
-        console.warn('[OBRBridge] Falha ao comprimir com gzip, usando texto plano:', e)
-      }
-    }
-    return jsonStr
-  }
-
-  private async decompressData(val: any): Promise<any> {
-    if (!val) return null
-
-    if (typeof val === 'string' && val.startsWith('gz:')) {
-      const rawBase64 = val.slice(3).trim()
-      try {
-        const binary = atob(rawBase64)
-        const bytes = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i)
-        }
-        const decompressedText = await this.decompressStreamWithFallback(bytes)
-        if (decompressedText) {
-          return JSON.parse(decompressedText)
-        }
-      } catch {
-        // Se atob falhou ou não é base64 válido, tenta se o conteúdo após 'gz:' era JSON puro
-        try {
-          return JSON.parse(rawBase64)
-        } catch {
-          // ignore
-        }
-      }
-      return null
-    }
-
-    if (typeof val === 'string') {
-      try {
-        return JSON.parse(val)
-      } catch {
-        return val
-      }
-    }
-
-    return val
-  }
-
-  /**
-   * Lê um payload que instalações antigas gravaram nos metadados da sala/cena,
-   * possivelmente fragmentado em chunks. A ESCRITA correspondente foi removida:
-   * fichas não vão mais para metadados, só o link por id. Este leitor permanece
-   * apenas para migrar dados legados para o armazenamento local.
-   */
-  private async decodeDataFromChunks(baseKey: string, metadata: Record<string, any>): Promise<any> {
-    const val = metadata[baseKey]
-    if (!val) return null
-
-    if (typeof val === 'string' && val.startsWith('gz_chunked:')) {
-      const count = parseInt(val.split(':')[1], 10) || 0
-      let fullCompressed = ''
-      for (let i = 0; i < count; i++) {
-        fullCompressed += (metadata[`${baseKey}_${i}`] || '')
-      }
-      return await this.decompressData(fullCompressed)
-    }
-
-    return await this.decompressData(val)
   }
 
   // =========================================================================
@@ -1212,10 +652,8 @@ class OBRBridge {
   // =========================================================================
 
   /**
-   * Salva pilotos localmente, transmite via broadcast para a sala e atualiza roster/cache
-   */
-  /**
-   * Salva pilotos localmente, transmite via broadcast para a sala e atualiza roster/cache
+   * Salva pilotos localmente (IndexedDB), transmite via broadcast para a sala e
+   * registra as fichas publicadas no roster LOCAL da mesa.
    */
   public async savePilotsToRoom(pilots: any[], forcePublish: boolean = false): Promise<void> {
     if (!this.isReady || !OBR.isAvailable || this.isSyncingFromRemote) return
@@ -1223,19 +661,18 @@ class OBRBridge {
       this.isSavingToRemote = true
       const { Pilot } = await import('@/classes/pilot/Pilot')
 
-      const roomMeta = await OBR.room.getMetadata().catch(() => ({}))
-      const currentRoster = { ...(((roomMeta as Record<string, any>)[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}) }
-
-      const rosterEntries: Record<string, any> = {}
-      const sceneUpdates: Record<string, any> = {}
+      // Roster da mesa é LOCAL (namespaced pela sala): nada de ficha — nem o
+      // registro dela — é gravado nos metadados do Owlbear.
+      const tableIds = await tableRosterIds('pilot')
+      const published: string[] = []
 
       for (const p of pilots) {
         const raw = toRaw(p)
         const id = raw?.ID || raw?.id
         if (!id) continue
 
-        // Se forcePublish for falso, só atualiza se já constar no roster da mesa
-        if (!forcePublish && !currentRoster[id]) {
+        // Se forcePublish for falso, só publica ficha que já está na mesa
+        if (!forcePublish && !tableIds.has(id)) {
           continue
         }
 
@@ -1252,6 +689,7 @@ class OBRBridge {
 
         const sanitized = JSON.parse(JSON.stringify(serialized))
         sanitized.id = sanitized.id || sanitized.ID || id
+        sanitized.ID = sanitized.id
         sanitized.skills = Array.isArray(sanitized.skills) ? sanitized.skills : []
         sanitized.talents = Array.isArray(sanitized.talents) ? sanitized.talents : []
         sanitized.core_bonuses = Array.isArray(sanitized.core_bonuses) ? sanitized.core_bonuses : []
@@ -1262,160 +700,58 @@ class OBRBridge {
         // 1. Persiste no IndexedDB local de quem está salvando (nunca perde dados)
         await SetItem('pilots', sanitized)
 
-        // 2. Transmite via broadcast para os outros jogadores e GM na sala (cross-scene)
+        // 2. Sincroniza via WebSocket com a mesa
         await this.broadcastSinglePilot(sanitized)
 
-        // 3. Monta a entrada do roster da sala: APENAS o link por id.
-        // Nome, callsign e qualquer estado da ficha são lidos da ficha local,
-        // nunca duplicados no metadata da sala.
-        rosterEntries[id] = {
-          id,
-          updatedAt: Date.now(),
-        }
+        published.push(id)
       }
 
-      if (Object.keys(rosterEntries).length > 0) {
-        this.cachedPilotRoster = { ...this.cachedPilotRoster, ...currentRoster, ...rosterEntries }
-        // Atualiza roster no Room metadata (sem estourar cota de 16 kB)
-        try {
-          await OBR.room.setMetadata({
-            [COMPCON_PILOT_ROSTER_KEY]: { ...currentRoster, ...rosterEntries },
-          })
-        } catch (e) {
-          console.warn('[OBRBridge] Falha ao atualizar roster no room:', e)
-        }
-
-        // A cena guarda apenas o ÍNDICE de IDs das fichas da mesa — nunca o
-        // conteúdo delas. O payload vive no armazenamento local (IndexedDB) e é
-        // replicado por broadcast.
-        const isSceneReady = await OBR.scene.isReady().catch(() => false)
-        if (isSceneReady) {
-          const sceneMetadata = await OBR.scene.getMetadata()
-          const existingIndex: string[] = (sceneMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || []
-          const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
-          sceneUpdates[COMPCON_PILOT_INDEX_KEY] = Array.from(indexSet)
-          await OBR.scene.setMetadata(sceneUpdates)
-        }
+      if (published.length > 0) {
+        // 3. Registra na mesa apenas no roster local: quem monta a lista da mesa é
+        // o armazenamento desta janela, nunca o metadata da sala.
+        await addToTableRoster('pilot', published)
 
         // Notifica componentes locais da janela atual imediatamente
-        for (const [id, entry] of Object.entries(rosterEntries)) {
-          window.dispatchEvent(new CustomEvent('compcon-pilot-synced', { detail: { pilotId: id, pilot: entry } }))
+        for (const id of published) {
+          window.dispatchEvent(new CustomEvent('compcon-pilot-synced', { detail: { pilotId: id } }))
         }
       }
 
-      // Libera chaves de payload de ficha que tenham ficado no metadata legado
-      void this.cleanupRoomMetadata()
-
-      console.log(`[OBRBridge] ${Object.keys(rosterEntries).length} piloto(s) sincronizado(s) via broadcast + local.`)
+      console.log(`[OBRBridge] ${published.length} piloto(s) sincronizado(s) via WebSocket + local.`)
     } catch (err) {
-      console.error('[OBRBridge] Erro ao salvar pilotos no OBR:', err)
+      console.error('[OBRBridge] Erro ao salvar pilotos:', err)
     } finally {
       this.isSavingToRemote = false
     }
   }
 
   /**
-   * Salva um único piloto na sala/broadcast (publica no roster da mesa)
+   * Salva um único piloto na sala (publica no roster da mesa e no WebSocket)
    */
   public async savePilotToRoom(pilot: any, forcePublish: boolean = true): Promise<void> {
     await this.savePilotsToRoom([pilot], forcePublish)
   }
 
   /**
-   * Remove um piloto dos metadados da sala, cena e desvincula tokens
+   * Tira o piloto do roster local da mesa, notifica via WebSocket e
+   * desvincula os tokens que apontavam para ele.
    */
   public async removePilotFromRoom(pilotId: string): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
     try {
       this.isSavingToRemote = true
 
-      // 1. Avisa os outros clientes via broadcast (local e remoto)
-      await this.sendBroadcastMessage({
-        type: 'PILOT_REMOVED',
-        pilotId,
-      })
+      // 1. Notifica o servidor de sincronização WebSocket
+      tableSyncSocket.sendRemoveSheet(pilotId, 'pilot')
       window.dispatchEvent(new CustomEvent('compcon-pilot-removed', { detail: { pilotId } }))
 
-      // 2. Remove do Room Metadata (Roster, Index, Chaves e Chunks)
-      try {
-        const roomMeta = await OBR.room.getMetadata()
-        const roomUpdates: Record<string, any> = {}
+      // 2. Sai do roster LOCAL da mesa (nada de ficha vive em metadados do Owlbear)
+      await removeFromTableRoster('pilot', pilotId)
 
-        // Remove do Roster
-        delete this.cachedPilotRoster[pilotId]
-        for (const k of Object.keys(this.cachedPilotRoster)) {
-          if (k.toLowerCase() === pilotId.toLowerCase()) delete this.cachedPilotRoster[k]
-        }
-        const roster = { ...((roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}) }
-        let rosterChanged = false
-        for (const k of Object.keys(roster)) {
-          if (k === pilotId || k.toLowerCase() === pilotId.toLowerCase() || roster[k]?.id === pilotId || roster[k]?.ID === pilotId) {
-            delete roster[k]
-            rosterChanged = true
-          }
-        }
-        if (rosterChanged) {
-          roomUpdates[COMPCON_PILOT_ROSTER_KEY] = roster
-        }
-
-        // Remove do Index
-        const roomIndex: string[] = (roomMeta[COMPCON_PILOT_INDEX_KEY] as string[]) || []
-        const newRoomIndex = roomIndex.filter(id => id !== pilotId && id.toLowerCase() !== pilotId.toLowerCase())
-        if (newRoomIndex.length !== roomIndex.length) {
-          roomUpdates[COMPCON_PILOT_INDEX_KEY] = newRoomIndex
-        }
-
-        // Remove chaves de dados do Room (incluindo possíveis chunks)
-        const baseKey = COMPCON_PILOT_PREFIX + pilotId
-        for (const k of Object.keys(roomMeta)) {
-          if (k === baseKey || k.startsWith(baseKey + '_') || k.toLowerCase().startsWith(baseKey.toLowerCase())) {
-            roomUpdates[k] = undefined
-          }
-        }
-
-        // Remove de dados legados no Room se existirem
-        const legacyPilots = roomMeta[COMPCON_PILOTS_METADATA_KEY] as Record<string, any> | undefined
-        if (legacyPilots && (legacyPilots[pilotId] || Object.keys(legacyPilots).some(k => k.toLowerCase() === pilotId.toLowerCase()))) {
-          const updatedLegacy = { ...legacyPilots }
-          delete updatedLegacy[pilotId]
-          for (const k of Object.keys(updatedLegacy)) {
-            if (k.toLowerCase() === pilotId.toLowerCase()) delete updatedLegacy[k]
-          }
-          roomUpdates[COMPCON_PILOTS_METADATA_KEY] = updatedLegacy
-        }
-
-        if (Object.keys(roomUpdates).length > 0) {
-          await OBR.room.setMetadata(roomUpdates)
-        }
-      } catch (err) {
-        console.warn('[OBRBridge] Erro ao remover piloto dos metadados da sala:', err)
-      }
-
-      // 3. Remove da cena ativa se estiver pronta
       const isSceneReady = await OBR.scene.isReady().catch(() => false)
       if (isSceneReady) {
         try {
-          const metadata = await OBR.scene.getMetadata()
-          const sceneUpdates: Record<string, any> = {}
-
-          const index: string[] = (metadata[COMPCON_PILOT_INDEX_KEY] as string[]) || []
-          const newIndex = index.filter(id => id !== pilotId && id.toLowerCase() !== pilotId.toLowerCase())
-          if (newIndex.length !== index.length) {
-            sceneUpdates[COMPCON_PILOT_INDEX_KEY] = newIndex
-          }
-
-          const baseKey = COMPCON_PILOT_PREFIX + pilotId
-          for (const k of Object.keys(metadata)) {
-            if (k === baseKey || k.startsWith(baseKey + '_') || k.toLowerCase().startsWith(baseKey.toLowerCase())) {
-              sceneUpdates[k] = undefined
-            }
-          }
-
-          if (Object.keys(sceneUpdates).length > 0) {
-            await OBR.scene.setMetadata(sceneUpdates)
-          }
-
-          // 4. Desvincula qualquer token da cena que estivesse vinculado a este piloto
+          // 3. Desvincula qualquer token da cena que estivesse vinculado a este piloto
           const boundTokens = await OBR.scene.items.getItems((item) => {
             const meta = item.metadata[COMPCON_METADATA_KEY] as any
             return meta && (meta.sheetId === pilotId || meta.sheetId?.toLowerCase() === pilotId.toLowerCase())
@@ -1427,7 +763,9 @@ class OBRBridge {
               }
             })
             for (const it of boundTokens) {
-              await statusMarkerService.clearTokenStatusMarkers(it.id).catch(() => {})
+              await statusMarkerService.clearTokenStatusMarkers(it.id).catch(() => { })
+              await tokenTrackerService.clearItems(it.id).catch(() => { })
+              await tokenTrackerService.clearSummary(it.id).catch(() => { })
             }
           }
         } catch (err) {
@@ -1441,103 +779,6 @@ class OBRBridge {
     } finally {
       this.isSavingToRemote = false
     }
-  }
-
-  /**
-   * Obtém os pilotos salvos na cena do Owlbear (filtrados pelo roster ativo da mesa)
-   */
-  public async getRoomPilots(): Promise<Record<string, any>> {
-    if (!this.isReady || !OBR.isAvailable) return {}
-    const pilots: Record<string, any> = {}
-
-    // Lê o roster do room para saber quais pilotos pertencem oficialmente à mesa
-    let allowedPilotIds: Set<string> | null = null
-    let roomMetadata: Record<string, any> = {}
-    try {
-      roomMetadata = await OBR.room.getMetadata()
-      if (roomMetadata[COMPCON_PILOT_ROSTER_KEY] !== undefined) {
-        const roster = (roomMetadata[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
-        allowedPilotIds = new Set(Object.keys(roster))
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao ler metadados do room:', e)
-    }
-
-    // 1. Tenta carregar da Cena ativa (25 MB de limite)
-    let isSceneReady = false
-    try {
-      isSceneReady = await OBR.scene.isReady()
-    } catch {
-      isSceneReady = false
-    }
-
-    if (isSceneReady) {
-      try {
-        const sceneMetadata = await OBR.scene.getMetadata()
-        const pilotIds = new Set<string>((sceneMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || [])
-        for (const key of Object.keys(sceneMetadata)) {
-          if (key.startsWith(COMPCON_PILOT_PREFIX)) {
-            const rest = key.slice(COMPCON_PILOT_PREFIX.length)
-            if (!rest.includes('_')) {
-              pilotIds.add(rest)
-            }
-          }
-        }
-
-        for (const id of pilotIds) {
-          if (allowedPilotIds !== null && !allowedPilotIds.has(id)) {
-            continue
-          }
-          const data = await this.decodeDataFromChunks(COMPCON_PILOT_PREFIX + id, sceneMetadata)
-          if (data && typeof data === 'object' && (data.id || data.ID || data.callsign || data.name || data.skills)) {
-            pilots[id] = data
-          }
-        }
-      } catch (e) {
-        console.warn('[OBRBridge] Erro ao ler pilotos da cena:', e)
-      }
-    }
-
-    // 2. Fallback / migração de metadados legados do Room (16 kB de limite)
-    try {
-      const roomPilotIds = new Set<string>((roomMetadata[COMPCON_PILOT_INDEX_KEY] as string[]) || [])
-      for (const key of Object.keys(roomMetadata)) {
-        if (key.startsWith(COMPCON_PILOT_PREFIX)) {
-          const rest = key.slice(COMPCON_PILOT_PREFIX.length)
-          if (!rest.includes('_')) {
-            roomPilotIds.add(rest)
-          }
-        }
-      }
-
-      for (const id of roomPilotIds) {
-        if (allowedPilotIds !== null && !allowedPilotIds.has(id)) {
-          continue
-        }
-        if (!pilots[id]) {
-          const data = await this.decodeDataFromChunks(COMPCON_PILOT_PREFIX + id, roomMetadata)
-          if (data && typeof data === 'object' && (data.id || data.ID || data.callsign || data.name || data.skills)) {
-            pilots[id] = data
-          }
-        }
-      }
-
-      const legacy = roomMetadata[COMPCON_PILOTS_METADATA_KEY] as Record<string, any> | undefined
-      if (legacy && typeof legacy === 'object') {
-        for (const [id, data] of Object.entries(legacy)) {
-          if (allowedPilotIds !== null && !allowedPilotIds.has(id)) {
-            continue
-          }
-          if (!pilots[id] && data && typeof data === 'object' && (data.id || data.ID || data.callsign || data.name || data.skills)) {
-            pilots[id] = data
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao ler pilotos legados do room:', e)
-    }
-
-    return pilots
   }
 
   /**
@@ -1557,185 +798,85 @@ class OBRBridge {
   /**
    * Salva lista de NPCs localmente, transmite via broadcast e atualiza cache da cena
    */
-  /**
-   * Salva lista de NPCs localmente, transmite via broadcast e atualiza cache da cena
-   */
   public async saveNpcsToRoom(npcs: any[], forcePublish: boolean = false): Promise<void> {
     if (!this.isReady || !OBR.isAvailable || this.isSyncingFromRemote) return
     try {
       this.isSavingToRemote = true
 
-      const roomMeta = await OBR.room.getMetadata().catch(() => ({}))
-      const currentRoster = { ...(((roomMeta as Record<string, any>)[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}) }
-
-      const rosterEntries: Record<string, any> = {}
-      const sceneUpdates: Record<string, any> = {}
+      // Roster da mesa é LOCAL (namespaced pela sala): nada de ficha — nem o
+      // registro dela — é gravado nos metadados do Owlbear.
+      const tableIds = await tableRosterIds('npc')
+      const published: string[] = []
 
       for (const n of npcs) {
         const raw = toRaw(n)
         const id = raw.ID || raw.id
         if (!id) continue
 
-        // Se forcePublish for falso, só atualiza se já constar no roster da mesa
-        if (!forcePublish && !currentRoster[id]) {
+        // Se forcePublish for falso, só publica ficha que já está na mesa
+        if (!forcePublish && !tableIds.has(id)) {
           continue
         }
 
         const serialized = typeof raw.Serialize === 'function' ? raw.Serialize() : raw
         const sanitized = JSON.parse(JSON.stringify(serialized))
+        sanitized.id = sanitized.id || sanitized.ID || id
+        sanitized.ID = sanitized.id
 
         // 1. Persiste no IndexedDB local
         await SetItem('npcs', sanitized)
 
-        // 2. Broadcast em tempo real
+        // 2. Sincroniza via WebSocket com a mesa
         await this.broadcastSingleNpc(sanitized)
 
-        // 3. Roster leve: apenas o link por id (a ficha em si não vai para os metadados)
-        rosterEntries[id] = {
-          id,
-          updatedAt: Date.now(),
-        }
+        published.push(id)
       }
 
-      if (Object.keys(rosterEntries).length > 0) {
-        this.cachedNpcRoster = { ...this.cachedNpcRoster, ...currentRoster, ...rosterEntries }
-        // Atualiza roster no Room metadata
-        try {
-          await OBR.room.setMetadata({
-            [COMPCON_NPC_ROSTER_KEY]: { ...currentRoster, ...rosterEntries },
-          })
-        } catch (e) {
-          console.warn('[OBRBridge] Falha ao atualizar roster de NPCs no room:', e)
-        }
-
-        // A cena guarda apenas o ÍNDICE de IDs, nunca o conteúdo das fichas.
-        const isSceneReady = await OBR.scene.isReady().catch(() => false)
-        if (isSceneReady) {
-          const sceneMetadata = await OBR.scene.getMetadata()
-          const existingIndex: string[] = (sceneMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || []
-          const indexSet = new Set<string>([...existingIndex, ...Object.keys(rosterEntries)])
-          sceneUpdates[COMPCON_NPC_INDEX_KEY] = Array.from(indexSet)
-          await OBR.scene.setMetadata(sceneUpdates)
-        }
+      if (published.length > 0) {
+        // 3. Registra na mesa apenas no roster local desta janela
+        await addToTableRoster('npc', published)
 
         // Notifica componentes locais da janela atual imediatamente
-        for (const [id, entry] of Object.entries(rosterEntries)) {
-          window.dispatchEvent(new CustomEvent('compcon-npc-synced', { detail: { npcId: id, npc: entry } }))
+        for (const id of published) {
+          window.dispatchEvent(new CustomEvent('compcon-npc-synced', { detail: { npcId: id } }))
         }
       }
 
-      void this.cleanupRoomMetadata()
-
-      console.log(`[OBRBridge] ${Object.keys(rosterEntries).length} NPC(s) sincronizado(s) via broadcast + local.`)
+      console.log(`[OBRBridge] ${published.length} NPC(s) sincronizado(s) via WebSocket + local.`)
     } catch (err) {
-      console.error('[OBRBridge] Erro ao salvar NPCs no OBR:', err)
+      console.error('[OBRBridge] Erro ao salvar NPCs:', err)
     } finally {
       this.isSavingToRemote = false
     }
   }
 
   /**
-   * Salva um único NPC na sala/broadcast (publica no roster da mesa)
+   * Salva um único NPC na sala (registra no roster local da mesa e no WebSocket)
    */
   public async saveNpcToRoom(npc: any, forcePublish: boolean = true): Promise<void> {
     await this.saveNpcsToRoom([npc], forcePublish)
   }
 
   /**
-   * Remove um NPC dos metadados da sala, cena e desvincula tokens
+   * Tira o NPC do roster local da mesa, notifica via WebSocket e
+   * desvincula os tokens que apontavam para ele.
    */
   public async removeNpcFromRoom(npcId: string): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
     try {
       this.isSavingToRemote = true
 
-      // 1. Avisa os outros clientes via broadcast (local e remoto)
-      await this.sendBroadcastMessage({
-        type: 'NPC_REMOVED',
-        npcId,
-      })
+      // 1. Notifica o servidor de sincronização WebSocket
+      tableSyncSocket.sendRemoveSheet(npcId, 'npc')
       window.dispatchEvent(new CustomEvent('compcon-npc-removed', { detail: { npcId } }))
 
-      // 2. Remove do Room Metadata
-      try {
-        const roomMeta = await OBR.room.getMetadata()
-        const roomUpdates: Record<string, any> = {}
+      // 2. Sai do roster LOCAL da mesa (nada de ficha vive em metadados do Owlbear)
+      await removeFromTableRoster('npc', npcId)
 
-        // Remove do Roster
-        delete this.cachedNpcRoster[npcId]
-        for (const k of Object.keys(this.cachedNpcRoster)) {
-          if (k.toLowerCase() === npcId.toLowerCase()) delete this.cachedNpcRoster[k]
-        }
-        const roster = { ...((roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}) }
-        let rosterChanged = false
-        for (const k of Object.keys(roster)) {
-          if (k === npcId || k.toLowerCase() === npcId.toLowerCase() || roster[k]?.id === npcId || roster[k]?.ID === npcId) {
-            delete roster[k]
-            rosterChanged = true
-          }
-        }
-        if (rosterChanged) {
-          roomUpdates[COMPCON_NPC_ROSTER_KEY] = roster
-        }
-
-        // Remove do Index
-        const roomIndex: string[] = (roomMeta[COMPCON_NPC_INDEX_KEY] as string[]) || []
-        const newRoomIndex = roomIndex.filter(id => id !== npcId && id.toLowerCase() !== npcId.toLowerCase())
-        if (newRoomIndex.length !== roomIndex.length) {
-          roomUpdates[COMPCON_NPC_INDEX_KEY] = newRoomIndex
-        }
-
-        // Remove chaves de dados do Room (incluindo possíveis chunks)
-        const baseKey = COMPCON_NPC_PREFIX + npcId
-        for (const k of Object.keys(roomMeta)) {
-          if (k === baseKey || k.startsWith(baseKey + '_') || k.toLowerCase().startsWith(baseKey.toLowerCase())) {
-            roomUpdates[k] = undefined
-          }
-        }
-
-        // Remove de dados legados no Room se existirem
-        const legacyNpcs = roomMeta[COMPCON_NPCS_METADATA_KEY] as Record<string, any> | undefined
-        if (legacyNpcs && (legacyNpcs[npcId] || Object.keys(legacyNpcs).some(k => k.toLowerCase() === npcId.toLowerCase()))) {
-          const updatedLegacy = { ...legacyNpcs }
-          delete updatedLegacy[npcId]
-          for (const k of Object.keys(updatedLegacy)) {
-            if (k.toLowerCase() === npcId.toLowerCase()) delete updatedLegacy[k]
-          }
-          roomUpdates[COMPCON_NPCS_METADATA_KEY] = updatedLegacy
-        }
-
-        if (Object.keys(roomUpdates).length > 0) {
-          await OBR.room.setMetadata(roomUpdates)
-        }
-      } catch (err) {
-        console.warn('[OBRBridge] Erro ao remover NPC dos metadados da sala:', err)
-      }
-
-      // 3. Remove da cena ativa se estiver pronta
       const isSceneReady = await OBR.scene.isReady().catch(() => false)
       if (isSceneReady) {
         try {
-          const metadata = await OBR.scene.getMetadata()
-          const sceneUpdates: Record<string, any> = {}
-
-          const index: string[] = (metadata[COMPCON_NPC_INDEX_KEY] as string[]) || []
-          const newIndex = index.filter(id => id !== npcId && id.toLowerCase() !== npcId.toLowerCase())
-          if (newIndex.length !== index.length) {
-            sceneUpdates[COMPCON_NPC_INDEX_KEY] = newIndex
-          }
-
-          const baseKey = COMPCON_NPC_PREFIX + npcId
-          for (const k of Object.keys(metadata)) {
-            if (k === baseKey || k.startsWith(baseKey + '_') || k.toLowerCase().startsWith(baseKey.toLowerCase())) {
-              sceneUpdates[k] = undefined
-            }
-          }
-
-          if (Object.keys(sceneUpdates).length > 0) {
-            await OBR.scene.setMetadata(sceneUpdates)
-          }
-
-          // 4. Desvincula qualquer token da cena
+          // 3. Desvincula qualquer token da cena
           const boundTokens = await OBR.scene.items.getItems((item) => {
             const meta = item.metadata[COMPCON_METADATA_KEY] as any
             return meta && (meta.sheetId === npcId || meta.sheetId?.toLowerCase() === npcId.toLowerCase())
@@ -1747,7 +888,9 @@ class OBRBridge {
               }
             })
             for (const it of boundTokens) {
-              await statusMarkerService.clearTokenStatusMarkers(it.id).catch(() => {})
+              await statusMarkerService.clearTokenStatusMarkers(it.id).catch(() => { })
+              await tokenTrackerService.clearItems(it.id).catch(() => { })
+              await tokenTrackerService.clearSummary(it.id).catch(() => { })
             }
           }
         } catch (err) {
@@ -1764,227 +907,13 @@ class OBRBridge {
   }
 
   /**
-   * Obtém os NPCs salvos na cena do Owlbear (filtrados pelo roster ativo da mesa)
-   */
-  public async getRoomNpcs(): Promise<Record<string, any>> {
-    if (!this.isReady || !OBR.isAvailable) return {}
-    const npcs: Record<string, any> = {}
-
-    let allowedNpcIds: Set<string> | null = null
-    let roomMetadata: Record<string, any> = {}
-    try {
-      roomMetadata = await OBR.room.getMetadata()
-      if (roomMetadata[COMPCON_NPC_ROSTER_KEY] !== undefined) {
-        const roster = (roomMetadata[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
-        allowedNpcIds = new Set(Object.keys(roster))
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao ler metadados do room:', e)
-    }
-
-    let isSceneReady = false
-    try {
-      isSceneReady = await OBR.scene.isReady()
-    } catch {
-      isSceneReady = false
-    }
-
-    if (isSceneReady) {
-      try {
-        const sceneMetadata = await OBR.scene.getMetadata()
-        const npcIds = new Set<string>((sceneMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || [])
-        for (const key of Object.keys(sceneMetadata)) {
-          if (key.startsWith(COMPCON_NPC_PREFIX)) {
-            const rest = key.slice(COMPCON_NPC_PREFIX.length)
-            if (!rest.includes('_')) {
-              npcIds.add(rest)
-            }
-          }
-        }
-
-        for (const id of npcIds) {
-          if (allowedNpcIds !== null && !allowedNpcIds.has(id)) {
-            continue
-          }
-          const data = await this.decodeDataFromChunks(COMPCON_NPC_PREFIX + id, sceneMetadata)
-          if (data && typeof data === 'object') {
-            npcs[id] = data
-          }
-        }
-      } catch (e) {
-        console.warn('[OBRBridge] Erro ao ler NPCs da cena:', e)
-      }
-    }
-
-    // Fallback / migração do Room
-    try {
-      const roomNpcIds = new Set<string>((roomMetadata[COMPCON_NPC_INDEX_KEY] as string[]) || [])
-      for (const key of Object.keys(roomMetadata)) {
-        if (key.startsWith(COMPCON_NPC_PREFIX)) {
-          const rest = key.slice(COMPCON_NPC_PREFIX.length)
-          if (!rest.includes('_')) {
-            roomNpcIds.add(rest)
-          }
-        }
-      }
-
-      for (const id of roomNpcIds) {
-        if (allowedNpcIds !== null && !allowedNpcIds.has(id)) {
-          continue
-        }
-        if (!npcs[id]) {
-          const data = await this.decodeDataFromChunks(COMPCON_NPC_PREFIX + id, roomMetadata)
-          if (data) npcs[id] = data
-        }
-      }
-
-      const legacy = roomMetadata[COMPCON_NPCS_METADATA_KEY] as Record<string, any> | undefined
-      if (legacy && typeof legacy === 'object') {
-        for (const [id, data] of Object.entries(legacy)) {
-          if (allowedNpcIds !== null && !allowedNpcIds.has(id)) {
-            continue
-          }
-          if (!npcs[id]) npcs[id] = data
-        }
-      }
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao ler NPCs legados do room:', e)
-    }
-
-    return npcs
-  }
-
-  /**
-   * Envia os NPCs da mesa locais via broadcast e para o cache da cena
+   * Envia os NPCs da mesa locais via broadcast (roster local)
    */
   public async pushAllLocalNpcsToRoom(): Promise<number> {
     const { NpcStore } = await import('@/features/gm/store/npc_store')
     const npcs = NpcStore().Npcs
     await this.saveNpcsToRoom(npcs, false)
     return npcs.length
-  }
-
-  // =========================================================================
-  // SINCRONIZAÇÃO DA SALA COM O COMP/CON LOCAL
-  // =========================================================================
-
-  /**
-   * Baixa pilotos e NPCs salvos na sala e solicita sincronização via broadcast
-   */
-  public async syncFromRoom(): Promise<{ pilotsCount: number; npcsCount: number }> {
-    if (!this.isReady || !OBR.isAvailable) return { pilotsCount: 0, npcsCount: 0 }
-
-    this.isSyncingFromRemote = true
-    let pilotsCount = 0
-    let npcsCount = 0
-
-    try {
-      const metadata = await OBR.room.getMetadata()
-
-      // --- PILOTOS ---
-      const roomPilots = await this.getRoomPilots()
-      if (Object.keys(roomPilots).length > 0) {
-        const { PilotStore } = await import('@/features/pilot_management/store')
-        const { Pilot } = await import('@/classes/pilot/Pilot')
-        const { NavStore } = await import('@/stores/nav')
-        const pilotStore = PilotStore()
-
-        for (const [id, rawData] of Object.entries(roomPilots)) {
-          if (!rawData || typeof rawData !== 'object') continue
-          try {
-            const data: any = {
-              ...rawData,
-              id: rawData.id || rawData.ID || id,
-              skills: Array.isArray(rawData.skills) ? rawData.skills : [],
-              talents: Array.isArray(rawData.talents) ? rawData.talents : [],
-              core_bonuses: Array.isArray(rawData.core_bonuses) ? rawData.core_bonuses : [],
-              licenses: Array.isArray(rawData.licenses) ? rawData.licenses : [],
-              mechs: Array.isArray(rawData.mechs) ? rawData.mechs : [],
-              special_equipment: rawData.special_equipment || {},
-              quirks: Array.isArray(rawData.quirks) ? rawData.quirks : [],
-            }
-            const pilot = Pilot.Deserialize(data)
-            const existingIdx = pilotStore.Pilots.findIndex(p => p.ID === id)
-            if (existingIdx === -1) {
-              pilotStore.Pilots.push(pilot)
-              NavStore().updatePilotEntry(pilot)
-            } else {
-              pilotStore.Pilots.splice(existingIdx, 1, pilot)
-            }
-            await SetItem('pilots', data)
-            pilotsCount++
-          } catch (e) {
-            console.warn('[OBRBridge] Erro ao desserializar piloto da sala:', id, e)
-          }
-        }
-
-        // Se havia a chave legada monolítica, remove para liberar quota de metadados
-        if (metadata[COMPCON_PILOTS_METADATA_KEY] !== undefined) {
-          await OBR.room.setMetadata({ [COMPCON_PILOTS_METADATA_KEY]: undefined })
-        }
-
-        // Garante que todos os pilotos carregados sejam indexados no PilotGroupStore para aparecer no Hangar (Roster)
-        const { PilotGroupStore } = await import('@/features/pilot_management/store/PilotGroupStore')
-        const groupStore = PilotGroupStore()
-        if (!groupStore.PilotGroups || groupStore.PilotGroups.length === 0) {
-          await groupStore.LoadGroups()
-        }
-        await groupStore.ImportUngroupedPilots()
-        await groupStore.SaveGroupData()
-      }
-
-      // --- NPCS ---
-      const roomNpcs = await this.getRoomNpcs()
-      if (Object.keys(roomNpcs).length > 0) {
-        const { NpcStore } = await import('@/features/gm/store/npc_store')
-        const { Unit } = await import('@/classes/npc/unit/Unit')
-        const { Doodad } = await import('@/classes/npc/doodad/Doodad')
-        const { Eidolon } = await import('@/classes/npc/eidolon/Eidolon')
-        const { NavStore } = await import('@/stores/nav')
-        const npcStore = NpcStore()
-
-        for (const [id, data] of Object.entries(roomNpcs)) {
-          if (!data) continue
-          try {
-            let npc: any = null
-            if (data.npcType === 'unit') {
-              npc = Unit.Deserialize(data)
-            } else if (data.npcType === 'doodad') {
-              npc = Doodad.Deserialize(data)
-            } else if (data.npcType === 'eidolon') {
-              npc = Eidolon.Deserialize(data)
-            }
-
-            if (npc) {
-              const existingIdx = npcStore.Npcs.findIndex(n => n.ID === id)
-              if (existingIdx === -1) {
-                npcStore.Npcs.push(npc)
-                NavStore().updateNpcEntry(npc)
-              } else {
-                npcStore.Npcs.splice(existingIdx, 1, npc)
-              }
-              await SetItem('npcs', data)
-              npcsCount++
-            }
-          } catch (e) {
-            console.warn('[OBRBridge] Erro ao desserializar NPC da sala:', id, e)
-          }
-        }
-
-        if (metadata[COMPCON_NPCS_METADATA_KEY] !== undefined) {
-          await OBR.room.setMetadata({ [COMPCON_NPCS_METADATA_KEY]: undefined })
-        }
-      }
-
-      // Limpa metadados legados se houver
-      void this.cleanupRoomMetadata()
-    } catch (err) {
-      console.error('[OBRBridge] Erro na sincronização da sala OBR:', err)
-    } finally {
-      this.isSyncingFromRemote = false
-    }
-
-    return { pilotsCount, npcsCount }
   }
 
   // =========================================================================
@@ -2024,20 +953,23 @@ class OBRBridge {
    */
   public async createTokenForSheet(sheet: any, type: 'pilot' | 'npc'): Promise<string | null> {
     if (!this.isReady || !OBR.isAvailable) return null
-    if (!sheet || !sheet.ID) return null
+    const sheetId = sheet?.ID || sheet?.id
+    if (!sheet || !sheetId) return null
+    // Modo leitura nunca gera token no mapa.
+    if (isSheetReadOnlySession()) return null
     if (!this.isAutoCreateTokenEnabled()) return null
 
     try {
       const sceneReady = await OBR.scene.isReady().catch(() => false)
       if (!sceneReady) return null
 
-      const mechId = type === 'pilot' ? sheet.ActiveMech?.ID : undefined
+      const mechId = type === 'pilot' ? (sheet.ActiveMech?.ID || sheet.ActiveMech?.id) : undefined
 
       // Evita duplicar: já existe token vinculado a esta ficha (ou ao mecha ativo)?
       const existing = await OBR.scene.items.getItems((item) => {
         const meta = item.metadata[COMPCON_METADATA_KEY] as any
         if (!meta) return false
-        if (meta.sheetId === sheet.ID) return true
+        if (meta.sheetId === sheetId) return true
         if (mechId && meta.mechId === mechId) return true
         return false
       })
@@ -2103,14 +1035,14 @@ class OBRBridge {
         .metadata({
           [COMPCON_METADATA_KEY]: {
             sheetType: type,
-            sheetId: sheet.ID,
+            sheetId: sheetId,
             ...(mechId ? { mechId } : {}),
           },
         })
         .build()
 
       await OBR.scene.items.addItems([token])
-      await OBR.notification.show(`Token criado: ${name}`).catch(() => {})
+      await OBR.notification.show(`Token criado: ${name}`).catch(() => { })
       return token.id
     } catch (e) {
       console.warn('[OBRBridge] Erro ao criar token para ficha:', e)
@@ -2201,7 +1133,10 @@ class OBRBridge {
    */
   private async fetchImageBlob(url: string): Promise<{ ok: boolean; blob?: Blob }> {
     try {
-      const res = await fetch(url, { method: 'GET', mode: 'cors', redirect: 'follow' })
+      const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+        ? AbortSignal.timeout(6000)
+        : undefined
+      const res = await fetch(url, { method: 'GET', mode: 'cors', redirect: 'follow', signal })
       if (!res.ok) return { ok: false }
       const blob = await res.blob()
       return { ok: true, blob }
@@ -2315,6 +1250,10 @@ class OBRBridge {
    */
   public async bindTokenToSheet(tokenId: string, binding: TokenSheetBinding): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
+    if (isSheetReadOnlySession()) {
+      console.log('[OBRBridge] Ficha em modo leitura: vínculo de token ignorado.')
+      return
+    }
 
     const link: Record<string, any> = {
       sheetType: binding.sheetType,
@@ -2334,11 +1273,11 @@ class OBRBridge {
 
     // Marcadores visuais são derivados do estado atual da ficha, não do vínculo.
     if (binding.statuses && binding.statuses.length > 0) {
-      await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => {})
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => { })
     }
 
     // Trackers: o painel é derivado do estado da ficha, então redesenha já.
-    await tokenTrackerService.refreshToken(tokenId).catch(() => {})
+    await tokenTrackerService.refreshToken(tokenId).catch(() => { })
   }
 
   /**
@@ -2346,6 +1285,7 @@ class OBRBridge {
    */
   public async unbindToken(tokenId: string): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
+    if (isSheetReadOnlySession()) return
 
     await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
       for (const item of items) {
@@ -2354,12 +1294,12 @@ class OBRBridge {
     })
 
     // Remove marcadores visuais de status anexados
-    await statusMarkerService.clearTokenStatusMarkers(tokenId).catch(() => {})
+    await statusMarkerService.clearTokenStatusMarkers(tokenId).catch(() => { })
 
     // Sem vínculo não há tracker: apaga o painel E o resumo (um resumo órfão
     // continuaria mentindo sobre um token que já não aponta para ficha nenhuma).
-    await tokenTrackerService.clearItems(tokenId).catch(() => {})
-    await tokenTrackerService.clearSummary(tokenId).catch(() => {})
+    await tokenTrackerService.clearItems(tokenId).catch(() => { })
+    await tokenTrackerService.clearSummary(tokenId).catch(() => { })
 
     await OBR.notification.show('Ficha desvinculada do token.')
   }
@@ -2392,8 +1332,9 @@ class OBRBridge {
    */
   public async updateTokenVisuals(tokenId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
+    if (isSheetReadOnlySession()) return
     if (state.statuses) {
-      await statusMarkerService.syncTokenStatusMarkers(tokenId, state.statuses).catch(() => {})
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, state.statuses).catch(() => { })
     }
   }
 
@@ -2405,6 +1346,7 @@ class OBRBridge {
    */
   public async updateTokensForCombatant(sheetId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
+    if (isSheetReadOnlySession()) return
 
     const items = await OBR.scene.items.getItems((item) => {
       const meta = item.metadata[COMPCON_METADATA_KEY] as any
@@ -2413,13 +1355,14 @@ class OBRBridge {
 
     if (items.length > 0 && state.statuses) {
       for (const item of items) {
-        await statusMarkerService.syncTokenStatusMarkers(item.id, state.statuses).catch(() => {})
+        await statusMarkerService.syncTokenStatusMarkers(item.id, state.statuses).catch(() => { })
       }
     }
   }
 
   /**
-   * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha)
+   * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha).
+   * Coalesce requisições em rajada para evitar chamadas de cena repetidas.
    */
   public async syncCombatantStatusMarkers(
     combatantId: string,
@@ -2427,18 +1370,50 @@ class OBRBridge {
     originId?: string
   ): Promise<void> {
     if (!this.isReady || !OBR.isAvailable) return
+    // Ficha aberta em modo leitura nesta janela: nada é escrito no token.
+    if (isSheetReadOnlySession()) {
+      console.log('[OBRBridge] Ficha em modo leitura: marcadores de token não sincronizados.')
+      return
+    }
+
+    this.pendingStatusSyncs.set(combatantId, { statuses, originId })
+    if (this.statusSyncTimeout !== null) {
+      clearTimeout(this.statusSyncTimeout)
+    }
+
+    await new Promise<void>((resolve) => {
+      this.statusSyncTimeout = setTimeout(async () => {
+        this.statusSyncTimeout = null
+        await this.flushPendingStatusSyncs()
+        resolve()
+      }, 50)
+    })
+  }
+
+  private async flushPendingStatusSyncs(): Promise<void> {
+    if (this.pendingStatusSyncs.size === 0) return
+    const entries = Array.from(this.pendingStatusSyncs.entries())
+    this.pendingStatusSyncs.clear()
+
     try {
-      const ids = [combatantId, originId].filter(Boolean) as string[]
       const items = await OBR.scene.items.getItems((item) => {
         const meta = item.metadata[COMPCON_METADATA_KEY] as any
-        if (!meta) return false
-        return ids.some(id => meta.sheetId === id || meta.mechId === id || meta.combatantId === id)
+        return !!(meta && meta.sheetId)
       })
-      for (const item of items) {
-        await statusMarkerService.syncTokenStatusMarkers(item.id, statuses).catch(() => {})
+
+      for (const [combatantId, { statuses, originId }] of entries) {
+        const ids = [combatantId, originId].filter(Boolean) as string[]
+        const matching = items.filter((item) => {
+          const meta = item.metadata[COMPCON_METADATA_KEY] as any
+          if (!meta) return false
+          return ids.some(id => meta.sheetId === id || meta.mechId === id || meta.combatantId === id)
+        })
+        for (const it of matching) {
+          await statusMarkerService.syncTokenStatusMarkers(it.id, statuses).catch(() => { })
+        }
       }
     } catch (e) {
-      console.warn('[OBRBridge] Erro ao sincronizar marcadores de status do combatente:', e)
+      console.warn('[OBRBridge] Erro ao sincronizar marcadores de status coalescidos:', e)
     }
   }
 
@@ -2449,18 +1424,18 @@ class OBRBridge {
   /**
    * Liga o serviço de trackers aos stores desta janela.
    *
-   * Os stores entram por import dinâmico: eles arrastam meio app (classes, content,
-   * i18n) e o bridge é carregado no boot de toda janela — inclusive o iframe de
-   * pré-aquecimento, que nem chega a chamar isto.
+   * Os stores entram por import dinâmico: eles arrastam dependências do app (classes, content,
+   * i18n) e o bridge inicializa no boot de toda janela persistente.
    */
   private async registerTokenTrackerStores(): Promise<void> {
     try {
-      const [{ PilotStore }, { NpcStore }, { useTrackerSyncStore }, { PilotSheetStore }] =
+      const [{ PilotStore }, { NpcStore }, { useTrackerSyncStore }, { PilotSheetStore }, { roomSyncedSheets }] =
         await Promise.all([
           import('@/features/pilot_management/store'),
           import('@/features/gm/store/npc_store'),
           import('@/stores/trackerSyncStore'),
           import('@/features/pilot_management/store/PilotSheetStore'),
+          import('@/services/tableSyncSocket'),
         ])
 
       tokenTrackerService.setStoreAccessors({
@@ -2474,6 +1449,8 @@ class OBRBridge {
         // O STORE (não a lista): é ele que sabe recarregar do armazenamento quando a
         // janela começa vazia (boot antes de o storage responder).
         sheetsStore: () => PilotSheetStore(),
+        // Fichas sincronizadas via WebSocket Go
+        syncedSheets: () => roomSyncedSheets.value,
       })
 
       // "A ficha desta janela": é ela que autoriza este cliente a gravar o resumo
@@ -2595,10 +1572,10 @@ class OBRBridge {
     if (!this.isReady || !OBR.isAvailable) return null
     try {
       const items = await OBR.scene.items.getItems()
-      const sheetId = c?.actor?.ID
-      const mechId = c?.actor?.ActiveMech?.ID
-      const combatantId = c?.id
-      const name = (c?.actor?.Name || '').trim().toLowerCase()
+      const sheetId = c?.actor?.ID || c?.actor?.id || c?.sheetId
+      const mechId = c?.actor?.ActiveMech?.ID || c?.actor?.ActiveMech?.id || c?.mechId
+      const combatantId = c?.id || c?.combatantId
+      const name = (c?.actor?.Name || c?.actor?.name || c?.name || '').trim().toLowerCase()
       const combatName = (c?.actor?.CombatController?.CombatName || '').trim().toLowerCase()
 
       // 1. Busca por vínculo explícito de IDs nos metadados
@@ -2693,8 +1670,6 @@ class OBRBridge {
         name,
         combatantId: combatant.id,
       })
-
-      await OBR.notification.show(`Token vinculado com sucesso a ${name}!`)
       return true
     } catch (e) {
       console.warn('[OBRBridge] Erro ao vincular token selecionado ao combatente:', e)
@@ -2712,7 +1687,7 @@ class OBRBridge {
     const cleanDetail = rollData.detail ? rollData.detail.replace(/<[^>]*>/g, '') : ''
     const detailPart = cleanDetail ? ` - ${cleanDetail}` : ''
     await OBR.notification.show(`${rollData.senderName}: ${rollData.title}${detailPart}${rollMsg}`)
-    await OBR.broadcast.sendMessage(COMPCON_BROADCAST_CHANNEL, JSON.parse(JSON.stringify(rollData)))
+    await this.sendBroadcastMessage(JSON.parse(JSON.stringify(rollData)))
   }
 
   /**
@@ -2758,16 +1733,20 @@ class OBRBridge {
   /**
    * Transmite o snapshot leve do tracker de iniciativa para os jogadores.
    * Sem dados de ficha: só cards de iniciativa, ativações e turno atual.
+   *
+   * O transporte é o servidor de sincronização: ele entrega o snapshot em tempo real
+   * para quem já está na sala e guarda o "encontro salvo" que vai no `INIT_SYNC` de
+   * quem abrir a janela depois. O broadcast da sala NÃO carrega mais o tracker.
    */
   public async sendTrackerSync(snapshot: SyncedTrackerSnapshot): Promise<void> {
-    await this.sendBroadcastMessage({
-      type: 'TRACKER_SYNC',
-      snapshot: JSON.parse(JSON.stringify(snapshot)),
-    })
+    tableSyncSocket.sendTrackerSync(JSON.parse(JSON.stringify(snapshot)))
   }
 
   /**
    * Pede ao Mestre um snapshot atualizado do tracker (usado por quem entra depois).
+   *
+   * Continua no broadcast da sala: o protocolo do servidor de sincronização não tem
+   * um tipo de "pedido de snapshot" (o estado salvo chega no `INIT_SYNC` da conexão).
    */
   public async sendTrackerSyncRequest(): Promise<void> {
     await this.sendBroadcastMessage({ type: 'TRACKER_SYNC_REQUEST' })
@@ -2775,40 +1754,12 @@ class OBRBridge {
 
   /**
    * Avisa os jogadores que o combate terminou e o tracker não está mais ativo.
+   * Também limpa o snapshot guardado no servidor de sincronização, senão quem entrar
+   * depois receberia o combate antigo pelo `INIT_SYNC`.
    */
-  public async sendTrackerSyncClear(): Promise<void> {
-    await this.sendBroadcastMessage({ type: 'TRACKER_SYNC_CLEAR' })
-  }
-
-  /**
-   * Lê o último snapshot do tracker gravado pelo Mestre no metadata da sala.
-   */
-  public async getRoomTrackerSync(): Promise<SyncedTrackerSnapshot | null> {
-    if (!this.isReady || !OBR.isAvailable) return null
-    try {
-      const metadata = await OBR.room.getMetadata()
-      const data = metadata[COMPCON_TRACKER_SYNC_KEY] as SyncedTrackerSnapshot | undefined
-      if (!data || typeof data !== 'object' || !Array.isArray((data as any).cards)) return null
-      return data
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao buscar o tracker da sala:', e)
-      return null
-    }
-  }
-
-  /**
-   * Grava (ou limpa, com `null`) o snapshot do tracker no metadata da sala, para que
-   * quem entrar depois veja a iniciativa sem depender do broadcast do Mestre.
-   */
-  public async saveRoomTrackerSync(snapshot: SyncedTrackerSnapshot | null): Promise<void> {
-    if (!this.isReady || !OBR.isAvailable) return
-    try {
-      await OBR.room.setMetadata({
-        [COMPCON_TRACKER_SYNC_KEY]: snapshot ? JSON.parse(JSON.stringify(snapshot)) : null,
-      })
-    } catch (e) {
-      console.warn('[OBRBridge] Erro ao salvar o tracker na sala:', e)
-    }
+  public async sendTrackerSyncClear(payload?: { encounterId?: string; reason?: string }): Promise<void> {
+    tableSyncSocket.sendTrackerClear()
+    tableSyncSocket.sendEndEncounter(payload)
   }
 
   /**
@@ -2821,33 +1772,20 @@ class OBRBridge {
   }
 
   /**
-   * Obtém o catálogo/roster leve de pilotos da sala
+   * Roster local de pilotos da mesa (`{ [id]: { id, updatedAt } }`).
+   *
+   * Não vem dos metadados do Owlbear: é o registro que ESTA janela mantém das
+   * fichas que publicou ou recebeu na sala atual (ver `services/tableRoster`).
    */
   public async getTablePilotRoster(): Promise<Record<string, any>> {
-    if (!this.isReady || !OBR.isAvailable) return this.cachedPilotRoster || {}
-    try {
-      const roomMeta = await OBR.room.getMetadata()
-      const roster = (roomMeta[COMPCON_PILOT_ROSTER_KEY] as Record<string, any>) || {}
-      this.cachedPilotRoster = { ...this.cachedPilotRoster, ...roster }
-      return this.cachedPilotRoster
-    } catch {
-      return this.cachedPilotRoster || {}
-    }
+    return tableRosterEntries('pilot')
   }
 
   /**
-   * Obtém o catálogo/roster leve de NPCs da sala
+   * Roster local de NPCs da mesa (`{ [id]: { id, updatedAt } }`).
    */
   public async getTableNpcRoster(): Promise<Record<string, any>> {
-    if (!this.isReady || !OBR.isAvailable) return this.cachedNpcRoster || {}
-    try {
-      const roomMeta = await OBR.room.getMetadata()
-      const roster = (roomMeta[COMPCON_NPC_ROSTER_KEY] as Record<string, any>) || {}
-      this.cachedNpcRoster = { ...this.cachedNpcRoster, ...roster }
-      return this.cachedNpcRoster
-    } catch {
-      return this.cachedNpcRoster || {}
-    }
+    return tableRosterEntries('npc')
   }
 
   /**
@@ -2873,6 +1811,7 @@ class OBRBridge {
             sheetId: meta.sheetId,
             mechId: meta.mechId,
             combatantId: meta.combatantId,
+            name: meta.name || item.name,
           },
         }
       })
@@ -2914,6 +1853,7 @@ class OBRBridge {
             sheetId: meta.sheetId,
             mechId: meta.mechId,
             combatantId: meta.combatantId,
+            name: meta.name || item.name,
           }
         }
         return {

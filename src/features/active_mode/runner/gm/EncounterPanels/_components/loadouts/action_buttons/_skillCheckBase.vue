@@ -100,7 +100,9 @@
     <slot />
   </v-row>
 
+  <!-- Ficha em modo leitura não rola: o botão sai da tela. -->
   <v-btn
+    v-if="!readOnlySession"
     flat
     tile
     class="mt-2"
@@ -135,6 +137,7 @@
     totalBonus,
     totalAccDiff,
   } from '@/classes/components/combat/SkillCheckRules'
+  import { isSheetReadOnlySession } from '@/services/sheetReadOnlySession'
 
   const props = withDefaults(
     defineProps<{
@@ -150,6 +153,9 @@
 
   const roll = ref(null as number | null)
   const rollResults = ref('')
+
+  /** Ficha de leitura (`?readonly=1`): sem botão de rolagem nem resultado novo. */
+  const readOnlySession = computed((): boolean => isSheetReadOnlySession())
 
   const applicableBonuses = computed(() => checkSources(props.controller, props.selectedHase))
 

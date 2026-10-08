@@ -171,6 +171,7 @@
   import { useDisplay } from 'vuetify'
   import { EncounterStore, PilotSheetStore } from '@/stores'
   import { useI18n } from 'vue-i18n'
+  import { usePilotJoinRequest } from '@/composables/usePilotJoinRequest'
   import QuickReferencePanel from './runner/gm/InfoPanels/QuickReferencePanel.vue'
   const { t } = useI18n()
   const router = useRouter()
@@ -232,6 +233,13 @@
     ],
     [
       {
+        id: 'tracker',
+        title: t('ow.combatTracker'),
+        subtitle: t('ow.combatTrackerSubtitle'),
+        icon: 'cc:encounter',
+        to: '/table-chat?tab=tracker',
+      },
+      {
         id: 'npcs',
         title: t('gm.titles.npcRoster'),
         subtitle: t('gm.subtitles.manageNonPlayerCombatUnits'),
@@ -261,9 +269,13 @@
       router.push(`/active-mode/gm-encounter-runner/${lastLocalEncounter.value.ID}`)
     }
   }
-  function loadLastLocalSheet() {
+  const { requestPilotJoin } = usePilotJoinRequest()
+  async function loadLastLocalSheet() {
     if (lastLocalSheet.value) {
-      router.push(`/active-mode/pilot-runner/${lastLocalSheet.value.ID}`)
+      const approved = await requestPilotJoin(lastLocalSheet.value)
+      if (approved) {
+        router.push(`/active-mode/pilot-runner/${lastLocalSheet.value.ID}`)
+      }
     }
   }
 </script>

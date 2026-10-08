@@ -174,7 +174,7 @@
                 <i>
                   {{ $t('ui.combat.fromOrigin', { name: activeEffect.Origin.Name }) }}
                   <span v-if="activeEffect.Origin.Source">
-                    ({{ activeEffect.Origin.Type }}, {{ activeEffect.Origin.Source }})
+                    ({{ originTypeLabel(activeEffect.Origin.Type) }}, {{ activeEffect.Origin.Source }})
                   </span>
                 </i>
               </div>
@@ -186,7 +186,7 @@
               >
                 {{
                   $t('ui.combat.originDestroyed', {
-                    type: activeEffect.Origin.Type || 'equipment',
+                    type: originTypeLabel(activeEffect.Origin.Type) || 'equipment',
                   })
                 }}
               </cc-alert>
@@ -195,7 +195,7 @@
                 v-else-if="isUsed"
                 color="panel-border"
               >
-                {{ $t('ui.combat.originUsed', { type: activeEffect.Origin.Type || 'equipment' }) }}
+                {{ $t('ui.combat.originUsed', { type: originTypeLabel(activeEffect.Origin.Type) || 'equipment' }) }}
               </cc-alert>
 
               <cc-alert
@@ -268,7 +268,7 @@
         v-else-if="isUsed"
         color="panel-border"
       >
-        {{ $t('ui.combat.originUsed', { type: activeEffect.Origin.Type || 'equipment' }) }}
+        {{ $t('ui.combat.originUsed', { type: originTypeLabel(activeEffect.Origin.Type) || 'equipment' }) }}
       </cc-alert>
       <menu-input
         v-if="getCombatant"
@@ -291,6 +291,16 @@
   import { ByTier } from '@/util/tierFormat'
   import MenuInput from './_activeeffect/_ae_menu_input.vue'
   import { ActivePeriod, type Frequency } from '@/classes/Frequency'
+  import { enumLabel } from '@/i18n/enumLabel'
+
+  function originTypeLabel(type?: string): string {
+    if (!type) return ''
+    const sys = enumLabel('systemType', type)
+    if (sys !== type) return sys
+    const wpn = enumLabel('weaponType', type)
+    if (wpn !== type) return wpn
+    return enumLabel('itemType', type)
+  }
 
   const props = withDefaults(
     defineProps<{

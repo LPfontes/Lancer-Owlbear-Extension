@@ -348,6 +348,15 @@ function persistEncounter() {
     }, 600)
   }
 
+/** Grava o encontro agora, sem esperar o debounce (usado antes de recarregar a janela). */
+function flushEncounter() {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+  }
+  void instance.value?.Save()
+}
+
 // Metadados de combatente (ordem, status, lado, reforço) para persistir também
 const combatantMeta = computed(() => {
     if (!instance.value) return [] as any[]
@@ -407,9 +416,16 @@ function handleUndoRedoKeydown(e: KeyboardEvent) {
     else doUndo()
 }
 
-  onMounted(() => window.addEventListener('keydown', handleUndoRedoKeydown))
+  onMounted(() => {
+    window.addEventListener('keydown', handleUndoRedoKeydown)
+    // Recarregar a página não desmonta os componentes: sem isto o save do debounce se perde.
+    window.addEventListener('pagehide', flushEncounter)
+    window.addEventListener('compcon-before-reload', flushEncounter)
+  })
   onBeforeUnmount(() => {
     window.removeEventListener('keydown', handleUndoRedoKeydown)
+    window.removeEventListener('pagehide', flushEncounter)
+    window.removeEventListener('compcon-before-reload', flushEncounter)
     if (saveTimeout) clearTimeout(saveTimeout)
   })
 
@@ -436,12 +452,13 @@ watch(instance, (newVal, oldVal) => {
     if (oldVal && !newVal) router.replace('/active-mode')
   })
 
-onMounted(() => {
+onMounted(async () => {
+  await EncounterStore().ensureContinuousEncounter()
   if (mobile.value) {
-      showLeft.value = false
-      showRight.value = false
+    showLeft.value = false
+    showRight.value = false
   }
-  })
+})
 
 function setEidolonHp() {
     const playerCount = Math.max(

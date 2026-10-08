@@ -934,6 +934,30 @@
       "d20": "1d20",
       "d20Plus": "1d20 +",
       "until": "Até",
+      "durations": {
+        "startTurnSelf": "o início do seu turno",
+        "startTurnTarget": "o início do turno do alvo",
+        "endTurnSelf": "o final do seu turno",
+        "endTurnTarget": "o final do turno do alvo",
+        "nextTurnEndSelf": "o final do seu próximo turno",
+        "nextTurnEndTarget": "o final do próximo turno do alvo",
+        "nextTurnStartSelf": "o início do seu próximo turno",
+        "nextTurnStartTarget": "o início do próximo turno do alvo",
+        "endOfEncounter": "o final do encontro"
+      },
+      "damageRoll": "Rolagem de Dano",
+      "criticalDamageRoll": "Rolagem Crítica de Dano",
+      "totalDamage": "Dano Total",
+      "applied": "Aplicou",
+      "gained": "Recebeu",
+      "appliedEffect": "Aplicou Efeito",
+      "gainedEffect": "Recebeu Efeito",
+      "targetedBy": "Alvejado por {effect} de {initiator}:",
+      "asAction": "como uma Ação de {action}",
+      "ap": "PF",
+      "irreducible": "Irredutível",
+      "reliable": "Confiável",
+      "incomingAttack": "Ataque recebido",
       "vsStat": "vs {stat}",
       "noTarget": "Nenhum Alvo Selecionado",
       "vs": "VS",
@@ -2037,6 +2061,19 @@
     }
   },
   "active": {
+    "handshake": {
+      "playerWaitingTitle": "Aguardando o Mestre",
+      "playerWaitingText": "Você solicitou entrada no combate. Aguarde a autorização do Mestre...",
+      "cancelRequest": "Cancelar",
+      "gmAuthTitle": "Autorizar Piloto",
+      "wantsToJoin": "deseja entrar no combate com o piloto:",
+      "approve": "Aprovar e Adicionar",
+      "deny": "Recusar"
+    },
+    "contextMenu": {
+      "bindToken": "Vincular Ficha COMP/CON",
+      "openSheet": "Abrir Ficha (Modo Ativo)"
+    },
     "tokenTrackers": {
       "tab": "Trackers do Token",
       "settingsTitle": "Trackers no mapa",
@@ -2291,10 +2328,12 @@
       "exitWithoutSaving": "Sair Sem Salvar"
     },
     "endRound": {
-      "endRound": "Encerrar Rodada",
-      "confirmEndRound": "Confirmar Fim da Rodada",
-      "endTurn": "Encerrar Turno",
-      "confirmEndTurn": "Confirmar Fim do Turno"
+      "endRound": "Finalizar Turno",
+      "confirmEndRound": "Confirmar Fim do Turno",
+      "endTurn": "Finalizar Turno",
+      "confirmEndTurn": "Confirmar Fim do Turno",
+      "finishTurn": "Finalizar Turno",
+      "confirmFinishTurn": "Confirmar Fim do Turno"
     },
     "actionChips": {
       "protocol": "Protocolo",
@@ -2353,7 +2392,10 @@
       "noSelected": "Nenhum equipamento selecionado."
     },
     "pilotRunner": {
-      "loading": "Carregando ficha do piloto…"
+      "loading": "Carregando ficha do piloto…",
+      "notFoundTitle": "Ficha não encontrada",
+      "notFoundHint": "Esta janela não tem a ficha e a mesa não publicou uma cópia dela. Abra a ficha na janela de quem a criou, ou peça ao jogador para entrar em combate.",
+      "readOnlyBanner": "Somente leitura — visão da ficha sem edição. Nada aqui é enviado à mesa nem salvo."
     },
     "gmOptions": {
       "exportState": "Exportar Estado do Encontro",
@@ -2492,6 +2534,31 @@
       "counters": "Contadores",
       "endActivation": "Terminar Ativação",
       "openSheet": "Abrir ficha"
+    },
+    "damageApply": {
+      "title": "Aplicar Dano",
+      "incoming": "Dano recebido",
+      "dice": "Rolar dados",
+      "type": "Tipo de dano",
+      "kinetic": "Cinético",
+      "energy": "Energia",
+      "explosive": "Explosivo",
+      "heat": "Calor",
+      "burn": "Queimadura",
+      "half": "Metade",
+      "ap": "Perfurante (AP)",
+      "irreducible": "Irredutível",
+      "burnStack": "Pilha de BURN",
+      "preview": "Prévia",
+      "lethal": "Este dano destrói o alvo.",
+      "burnNote": "Também empilha BURN {n} e aplica o dano de queimadura (ignora ARMOR).",
+      "apply": "Aplicar e publicar",
+      "condition": {
+        "resistance": "Resistência",
+        "immunity": "Imunidade",
+        "vulnerable": "Vulnerável",
+        "other": "Condição"
+      }
     },
     "damageMenu": {
       "takeDamage": "Sofrer Dano",
@@ -2863,6 +2930,9 @@
       "clearAnAdjacentAlliedCharacters": "Limpe a condição de um personagem aliado adjacente que não foi causada por um de seus próprios sistemas, talentos, etc."
     },
     "titles": {
+      "openPilotSheetReadOnly": "Abrir ficha do piloto em modo leitura",
+      "trackerSyncedFromTable": "ENCONTRO DA MESA — iniciativa publicada na sala",
+      "adoptRoomEncounter": "Substituir pelo encontro da sala",
       "addPilotFromRoster": "Adicionar Piloto da Lista",
       "noMechDataFound": "Nenhum Dado de Mecha Encontrado",
       "addFromShareCode": "Adicionar por Código de Compartilhamento",
@@ -4531,6 +4601,9 @@
     "activeMode": "Modo Ativo",
     "encountersGm": "Encontros (GM)",
     "npcs": "NPCs",
+    "chatAndActions": "Chat & Ações",
+    "combatTracker": "Combat Tracker",
+    "combatTrackerSubtitle": "Iniciativa, rodadas e controle do combate na mesa",
     "options": "Opções",
     "actions": "Ações",
     "characterAndPilot": "Personagem & Piloto",
@@ -4599,6 +4672,9 @@
     "expandWideMode": "Expandir para Modo Amplo (1120px)",
     "compactSideMode": "Modo Compacto / Lateral (520px)",
     "minimizeCompactBar": "Minimizar para barra compacta (48px)",
+    "reloadWindow": "Recarregar a Janela",
+    "reloadWindowConfirm": "Recarregar o iframe da extensão? O estado em memória é descartado; fichas, encontros e logbooks salvos continuam no armazenamento local.",
+    "reloadWindowAction": "Recarregar agora",
     "mainMenuTitle": "Menu Principal",
     "gmSection": "Mestre (GM)",
     "installLcpsFull": "Instalar LCPs (.lcp / .llp)",
@@ -4608,7 +4684,10 @@
     "encounterPrefix": "Encontro",
     "back": "Voltar",
     "centerOnScreen": "Centralizar na Tela",
-    "centerOnScreenDesc": "Centro do mapa"
+    "centerOnScreenDesc": "Centro do mapa",
+    "wsConnected": "Sincronização em Tempo Real Conectada",
+    "wsReconnecting": "Reconectando Sincronização da Mesa...",
+    "wsDisconnected": "Sincronização Offline (Modo Local)"
   },
   "hud": {
     "attack": "Ataque",

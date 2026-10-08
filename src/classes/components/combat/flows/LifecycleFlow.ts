@@ -135,9 +135,17 @@ const refillActivations = step<IEndRoundState>('refill-activations', s => {
     StatKey.ACTIVATIONS,
     s.cc.StatController.getMax(StatKey.ACTIVATIONS)
   )
+  if (s.cc.Counterpart) {
+    s.cc.Counterpart.ActionPoolController.ClearReactionUses()
+    s.cc.Counterpart.StatController.setCurrentStat(
+      StatKey.ACTIVATIONS,
+      s.cc.Counterpart.StatController.getMax(StatKey.ACTIVATIONS)
+    )
+  }
   s.cc.ClearUses(ActivePeriod.Round)
   s.cc.Counterpart?.ClearUses(ActivePeriod.Round)
   clearEquipmentUses(s.cc)
+  if (s.cc.Counterpart) clearEquipmentUses(s.cc.Counterpart)
 })
 
 function clearEquipmentUses(cc: CombatController): void {

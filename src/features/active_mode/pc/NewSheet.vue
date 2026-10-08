@@ -409,8 +409,12 @@ import { PilotGroup } from '@/features/pilot_management/store/PilotGroup'
   import MechCardLoadoutField from '@/features/pilot_management/PilotSheet/sections/hangar/components/MechCardLoadoutField.vue'
   import PilotListItemDetails from '@/features/pilot_management/Roster/components/_pilotListItemDetails.vue'
   import { PilotStore, PilotGroupStore, PilotSheetStore } from '@/stores'
+  import { tableSyncSocket } from '@/services/tableSyncSocket'
   import { useDisplay } from 'vuetify'
 import { useI18n } from 'vue-i18n'
+import { usePilotJoinRequest } from '@/composables/usePilotJoinRequest'
+
+const { requestPilotJoin } = usePilotJoinRequest()
 const { t } = useI18n()
 const router = useRouter()
 
@@ -483,8 +487,16 @@ async function createSheet(launch) {
     selectedPilot.value.ActiveMech = selectedMech.value
 
     await PilotSheetStore().AddPilotSheet(selectedPilot.value as Pilot, campaign.value)
-    if (launch) router.push(`pilot-runner/${PilotSheetStore().CurrentActiveID}`)
-    else router.push('sheet-manager')
+
+    if (launch) {
+      const sheet = PilotSheetStore().GetSheet(PilotSheetStore().CurrentActiveID)
+      if (sheet) {
+        const approved = await requestPilotJoin(sheet)
+        if (approved) router.push(`pilot-runner/${PilotSheetStore().CurrentActiveID}`)
+      }
+    } else {
+      router.push('sheet-manager')
+    }
 }
 function reset() {
     selectedPilot.value = null

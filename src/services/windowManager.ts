@@ -12,14 +12,13 @@ import {
   BAR_HEIGHT,
   BAR_LEFT,
   BAR_WIDTH,
-  LEFT_SIDE_THRESHOLD,
   OBR_POPOVER_ID,
   OBR_SAFE_MARGIN,
-  WINDOW_HEIGHT_DEFAULT,
-  WINDOW_HEIGHT_FIT_MIN,
-  WINDOW_HEIGHT_MAX,
   WINDOW_HEIGHT_MIN,
-  WINDOW_WIDTH,
+  clampSheetPosition,
+  pickViewportSize,
+  sheetWindowHeight,
+  sheetWindowWidth,
 } from './obrLayout'
 
 export interface WindowPosition {
@@ -37,14 +36,26 @@ class WindowManager {
   public isCompact = ref(true)
   public isFloating = ref(false) // false = Modo Nativo OBR.action (renderizado atrás dos menus do Owlbear); true = Popover flutuante
 
-  /** Altura da janela cheia (persistida em `cc_window_height`). */
-  public defaultHeight = WINDOW_HEIGHT_DEFAULT
+  /**
+   * Altura da janela cheia desta sessão, quando algum controle de resize pediu um
+   * tamanho específico. `null` = tamanho calculado do viewport real.
+   */
+  public heightOverride: number | null = null
   /** Barra compacta: altura/largura e o left especial vêm de `obrLayout`. */
   public minimizedHeight = BAR_HEIGHT
   public minimizedWidth = BAR_WIDTH
   public minimizedLeft = BAR_LEFT
 
-  public currentPosition = ref<WindowPosition>({ left: 1920, top: 16 })
+  /** Último viewport real lido (viewport do Owlbear → janela → monitor). */
+  private viewport = { width: 0, height: 0 }
+
+  /**
+   * Posição da janela. Sem storage e sem cálculo ainda, `hasPosition` é `false` e a
+   * primeira sincronização ancora a janela na direita — antes disto havia um
+   * `left: 1920` fixo, que num viewport menor empurrava a ficha para fora da tela.
+   */
+  public currentPosition = ref<WindowPosition>({ left: 0, top: OBR_SAFE_MARGIN.TOP_RIGHT })
+  private hasPosition = false
 
   constructor() {
     this.loadState()
@@ -74,18 +85,14 @@ class WindowManager {
                 left: Math.max(OBR_SAFE_MARGIN.LEFT, parsed.left),
                 top: Math.max(OBR_SAFE_MARGIN.TOP_RIGHT, parsed.top),
               }
+              this.hasPosition = true
             }
             this.isCompact.value = true
           }
 
-          const savedHeight = window.localStorage.getItem('cc_window_height')
-          if (savedHeight) {
-            const parsedH = parseInt(savedHeight, 10)
-            // Mesmos limites de `mainWindow.readSavedHeight` (mesma chave de storage).
-            if (!isNaN(parsedH) && parsedH >= WINDOW_HEIGHT_MIN) {
-              this.defaultHeight = Math.min(WINDOW_HEIGHT_MAX, parsedH)
-            }
-          }
+          // `cc_window_height` (altura arrastada) foi abandonado de propósito: a janela
+          // agora ocupa o espaço real da tela, e um número fixo salvo não acompanha a
+          // tela em que a ficha é aberta. A chave antiga é simplesmente ignorada.
         }
       }
     } catch {
@@ -133,8 +140,9 @@ class WindowManager {
     }
   }
 
+  /** Largura da janela cheia para o último viewport real lido. */
   public get currentWidth(): number {
-    return WINDOW_WIDTH
+    return sheetWindowWidth(this.viewport.width)
   }
 
   /**
@@ -154,24 +162,28 @@ class WindowManager {
    *
    * Recebe a altura em vez de ler `window.screen` porque o que limita a janela é o
    * **viewport do Owlbear** (`OBR.viewport`), que pode ser bem menor que o monitor —
-   * e é o mesmo valor usado em `clampPosition`.
+   * e é o mesmo valor usado em `clampPosition`. Não há mais altura fixa (800/900):
+   * a janela ocupa o espaço livre entre o topo e a dock.
    */
   public heightFor(screenH: number): number {
     if (this.sheetIsMinimized) return this.minimizedHeight
+
     const top = this.currentPosition.value.top || OBR_SAFE_MARGIN.TOP_RIGHT
-    const fits = screenH - top - OBR_SAFE_MARGIN.BOTTOM
-    return Math.min(this.defaultHeight, Math.max(WINDOW_HEIGHT_FIT_MIN, fits))
+    const fitsScreen = sheetWindowHeight(screenH, top)
+    if (this.heightOverride === null) return fitsScreen
+
+    // Ajuste manual de resize: nunca maior que o espaço real da tela.
+    return Math.min(Math.max(this.heightOverride, WINDOW_HEIGHT_MIN), fitsScreen)
   }
 
+  /**
+   * Ajuste manual da altura **desta sessão**.
+   *
+   * Não persiste: a janela volta a ocupar o espaço real da tela na próxima abertura,
+   * porque uma altura fixa salva não acompanha a tela em que a ficha é aberta.
+   */
   public async setHeight(newHeight: number) {
-    this.defaultHeight = Math.min(WINDOW_HEIGHT_MAX, Math.max(WINDOW_HEIGHT_MIN, newHeight))
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('cc_window_height', String(this.defaultHeight))
-      }
-    } catch {
-      // ignore
-    }
+    this.heightOverride = Math.max(WINDOW_HEIGHT_MIN, newHeight)
     await this.applyHeight()
   }
 
@@ -180,6 +192,9 @@ class WindowManager {
   /**
    * Garante que as coordenadas da janela nunca invadam a barra de ferramentas,
    * a barra superior de players/extensões ou a dock inferior de tokens do Owlbear Rodeo.
+   *
+   * A regra vive em `obrLayout.clampSheetPosition`, compartilhada com a criação do
+   * popover (`mainWindow.computeGeometry`).
    */
   public clampPosition(
     pos: WindowPosition,
@@ -188,16 +203,7 @@ class WindowManager {
     screenW: number,
     screenH: number
   ): WindowPosition {
-    const minLeft = OBR_SAFE_MARGIN.LEFT
-    const maxLeft = Math.max(minLeft, screenW - width - OBR_SAFE_MARGIN.RIGHT)
-    const left = Math.max(minLeft, Math.min(pos.left, maxLeft))
-
-    // Se estiver no lado esquerdo da tela (onde fica a barra de ferramentas e logo/jogadores), precisa de top >= 64
-    const minTop = left < LEFT_SIDE_THRESHOLD ? OBR_SAFE_MARGIN.TOP_LEFT : OBR_SAFE_MARGIN.TOP_RIGHT
-    const maxTop = Math.max(minTop, screenH - height - OBR_SAFE_MARGIN.BOTTOM)
-    const top = Math.max(minTop, Math.min(pos.top, maxTop))
-
-    return { left: Math.round(left), top: Math.round(top) }
+    return clampSheetPosition(pos, { width, height }, { width: screenW, height: screenH })
   }
 
   /**
@@ -244,11 +250,15 @@ class WindowManager {
     this.isSyncing = true
     this.isFloating.value = true
 
-    const rawPos = targetPos || this.currentPosition.value
+    const { screenW, screenH } = await this.getScreenDimensionsAsync()
     const minimized = this.sheetIsMinimized
     const width = minimized ? this.minimizedWidth : this.currentWidth
-    const { screenW, screenH } = await this.getScreenDimensionsAsync()
     const height = this.heightFor(screenH)
+    // Sem posição conhecida (primeira abertura), ancora na direita do viewport REAL em
+    // vez de partir de um `left` fixo.
+    const rawPos =
+      targetPos ??
+      (this.hasPosition ? this.currentPosition.value : this.anchoredPosition(screenW, width))
     const url = this.getTargetUrl(true)
 
     // A barra minimizada mora no left especial. Como o SDK não permite mover um
@@ -261,6 +271,7 @@ class WindowManager {
     // com a âncora da barra faria a janela expandida nascer na esquerda depois.
     if (!minimized) {
       this.currentPosition.value = clampedPos
+      this.hasPosition = true
       this.saveState()
     }
 
@@ -362,6 +373,8 @@ class WindowManager {
       return false
     }
   }
+
+
 
   /**
    * Minimiza temporariamente a janela durante uma rolagem de dados
@@ -475,9 +488,6 @@ class WindowManager {
   }
 
   private async applyHeight() {
-    const height = this.isMinimized.value ? this.minimizedHeight : this.defaultHeight
-    const width = this.isMinimized.value ? this.minimizedWidth : this.currentWidth
-
     // Uma janela oculta está em 0×0 de propósito. Redimensioná-la aqui (minimizar,
     // restaurar ou o minimize automático de rolagem) a traria de volta à tela sem
     // o usuário pedir — vale para o popover e para o action dock.
@@ -485,6 +495,12 @@ class WindowManager {
       console.log('[WindowManager] Janela da ficha está oculta; dimensões preservadas.')
       return
     }
+
+    const minimized = this.isMinimized.value
+    // O tamanho sai do viewport real: minimizar/restaurar também acompanha a tela.
+    const { screenH } = await this.getScreenDimensionsAsync()
+    const height = minimized ? this.minimizedHeight : this.heightFor(screenH)
+    const width = minimized ? this.minimizedWidth : this.currentWidth
 
     if (OBR.isAvailable) {
       const ready = await this.ensureReady()
@@ -510,8 +526,8 @@ class WindowManager {
 
   /**
    * Legado: o par "compacta/expandida" de larguras não existe mais (a largura da
-   * janela é única — `WINDOW_WIDTH` em `obrLayout`). Mantido apenas para não
-   * quebrar quem importa; não há chamadores no app.
+   * janela é única e vem de `sheetWindowWidth` em `obrLayout`). Mantido apenas para
+   * não quebrar quem importa; não há chamadores no app.
    */
   public async toggleCompact() {
     this.isCompact.value = !this.isCompact.value
@@ -536,34 +552,52 @@ class WindowManager {
   }
 
   /**
-   * Obtém as dimensões reais da tela/janela para cálculo preciso de bordas
+   * Obtém as dimensões reais da área útil da janela.
+   *
+   * Ordem: viewport do Owlbear → janela do navegador → monitor. Nada de 1920×1080
+   * fixo no meio do caminho (o antigo só era trocado se o viewport passasse de 500px,
+   * então num viewport estreito a geometria usava um tamanho inventado).
    */
   public async getScreenDimensionsAsync(): Promise<{ screenW: number; screenH: number }> {
-    let screenW = 1920
-    let screenH = 1080
+    const size = await this.readViewportSize()
+    this.viewport = { width: size.screenW, height: size.screenH }
+    return size
+  }
+
+  private async readViewportSize(): Promise<{ screenW: number; screenH: number }> {
+    const sources: Parameters<typeof pickViewportSize>[0] = {}
 
     if (OBR.isAvailable) {
       try {
-        const ready = await this.ensureReady()
-        if (ready) {
-          const [vpW, vpH] = await Promise.all([
-            OBR.viewport.getWidth().catch(() => 1920),
-            OBR.viewport.getHeight().catch(() => 1080),
+        if (await this.ensureReady()) {
+          const [obrW, obrH] = await Promise.all([
+            OBR.viewport.getWidth().catch(() => 0),
+            OBR.viewport.getHeight().catch(() => 0),
           ])
-          if (vpW && vpW > 500) screenW = vpW
-          if (vpH && vpH > 500) screenH = vpH
-          return { screenW, screenH }
+          sources.obr = { width: obrW, height: obrH }
         }
       } catch {
         // ignore
       }
     }
 
-    if (typeof window !== 'undefined' && window.screen) {
-      screenW = window.screen.availWidth || window.screen.width || 1920
-      screenH = window.screen.availHeight || window.screen.height || 1080
+    if (typeof window !== 'undefined') {
+      sources.inner = { width: window.innerWidth, height: window.innerHeight }
+      sources.screen = {
+        width: window.screen?.availWidth || window.screen?.width,
+        height: window.screen?.availHeight || window.screen?.height,
+      }
     }
-    return { screenW, screenH }
+
+    return pickViewportSize(sources)
+  }
+
+  /** Posição padrão para a primeira abertura: encostada na direita do viewport real. */
+  private anchoredPosition(screenW: number, width: number): WindowPosition {
+    return {
+      left: Math.max(OBR_SAFE_MARGIN.LEFT, screenW - width - OBR_SAFE_MARGIN.RIGHT),
+      top: OBR_SAFE_MARGIN.TOP_RIGHT,
+    }
   }
 
   /**

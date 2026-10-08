@@ -77,8 +77,9 @@ export function useTokenTrackerBridge(): void {
     const instance = activeEncounter()
     if (instance?.Combatants) {
       for (const combatant of instance.Combatants as any[]) {
+        const sc = (combatant?.actor?.ActiveMech ?? combatant?.actor)?.CombatController?.StatController
         parts.push(
-          `${combatant?.id ?? ''}=${statSignature(combatant?.actor?.CombatController?.StatController)}`
+          `${combatant?.id ?? ''}=${statSignature(sc)}`
         )
       }
     }

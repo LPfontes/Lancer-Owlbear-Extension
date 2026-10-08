@@ -30,6 +30,14 @@ npm run test:run       # Vitest single-run (dois projetos: domain e component)
 4. **Geometria da janela da ficha** — `src/services/obrLayout.ts` é a **fonte única** de margens,
    largura/altura da janela cheia e da barra compacta. `windowManager` (posiciona/redimensiona) e
    `mainWindow` (cria/oculta/reexibe o popover) importam de lá; não recrie cópias locais.
+5. **Janela única persistente** — Todo o assistente (fichas, NPCs, Hangar, Encontros, Chat e
+   Combat Tracker) roda no popover flutuante persistente `com.compcon.activemode.floating`
+   (`index.html`). O Chat e Tracker residem na rota interna `/table-chat` como aba padrão de navegação,
+   sem iframes secundários nem redimensionamento dinâmico. O `launcher.html` (`OBR.action`) é
+   um lançador efêmero que apenas restaura/abre a janela flutuante e executa `OBR.action.close()`.
+6. **Sincronização WebSocket (Go)** — `src/services/tableSyncSocket.ts` mantém conexão única por aba
+   com o servidor de sincronização em Go. Não existem modos `readOnly` no socket nem canais
+   `compcon_obr_local_tabs` de IPC entre iframes da mesma janela.
 
 > O antigo **cold storage em MongoDB Atlas** (`api/rooms/**`, `server/coldStorage.mjs`,
 > `src/services/roomColdStorage.ts`, `src/services/sheetColdSync.ts`, `src/io/apis/roomStorage.ts`)

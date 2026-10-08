@@ -3,10 +3,11 @@ import { watch, type WatchHandle } from 'vue'
 import { obrBridge } from '@/services/obrBridge'
 import { isGmClient, obrReady } from '@/services/obrRuntime'
 import { useTrackerSyncStore } from '@/stores/trackerSyncStore'
+import { roomSyncedTracker } from '@/services/tableSyncSocket'
 import {
   buildTrackerSnapshot,
-  fitSnapshotToBudget,
   sanitizeTrackerSnapshot,
+  shouldPublishTrackerSnapshot,
   trackerSnapshotSignature,
 } from '@/services/trackerSyncPayload'
 
@@ -31,9 +32,6 @@ import {
 /** Janela de coalescência: rajadas de mudanças viram um único broadcast. */
 const PUBLISH_DEBOUNCE_MS = 200
 
-/** Intervalo mínimo entre gravações do snapshot no metadata da sala. */
-const ROOM_SAVE_THROTTLE_MS = 1500
-
 /** Intervalo mínimo entre respostas do Mestre a pedidos de snapshot. */
 const REQUEST_RESPONSE_THROTTLE_MS = 2000
 
@@ -52,11 +50,11 @@ class TrackerSyncService {
   private listenersBound = false
   private publishTimer: ReturnType<typeof setTimeout> | null = null
   private lastPublishedSignature = ''
-  private lastRoomSaveAt = 0
   private lastRequestResponseAt = 0
   private pendingPublish: { instance: any; inTurnId: string | null } | null = null
   private source: (() => TrackerSyncSource | null) | null = null
   private readyWatcher: WatchHandle | null = null
+  private socketWatcher: WatchHandle | null = null
 
   /**
    * Registra de onde sai o estado atual do combate nesta janela. O serviço lê a fonte
@@ -83,6 +81,7 @@ class TrackerSyncService {
 
     void this.hydrate()
     this.watchBridgeReadiness()
+    this.watchSocketSnapshot()
   }
 
   /**
@@ -117,16 +116,15 @@ class TrackerSyncService {
   }
 
   /**
-   * Mestre: publica o encontro aberto agora. Sem encontro ativo, remove o snapshot que
-   * uma sessão anterior possa ter deixado no metadata da sala — só se houver algo lá,
-   * para não apagar o estado publicado por outra janela do próprio Mestre.
+   * Mestre: publica o encontro aberto agora. Sem encontro ativo, limpa o combate que
+   * uma sessão anterior deixou publicado no SERVIDOR de sincronização — só se houver
+   * algo lá, para não apagar o estado publicado por outra janela do próprio Mestre.
    */
   private async publishOrClearRoom(): Promise<void> {
     if (this.publishFromSource()) return
 
     try {
-      const existing = await obrBridge.getRoomTrackerSync()
-      if (existing) await this.clear()
+      if (sanitizeTrackerSnapshot(roomSyncedTracker.value)) await this.clear()
     } catch (error) {
       notifyError('Falha ao limpar tracker obsoleto da sala:', error)
     }
@@ -138,25 +136,37 @@ class TrackerSyncService {
    */
   public publishFromSource(): boolean {
     const current = this.source?.()
-    if (!current || !current.instance) return false
+    if (!current || !current.instance || current.instance.IsActive === false) return false
     this.publish(current.instance, current.inTurnId)
     return true
   }
 
   /**
-   * Lê o último snapshot gravado pelo Mestre no metadata da sala (entrada tardia).
-   * Passa pela mesma sanitização do broadcast: o metadata é dado de fora desta janela.
+   * Hidrata o tracker desta janela.
+   *
+   * A fonte é o **servidor de sincronização** (`roomSyncedTracker`, vindo do `INIT_SYNC`
+   * ou de um `TRACKER_SYNC` recebido): é ele que guarda o encontro salvo da mesa. O
+   * metadata da sala do Owlbear não é mais lido — o app não grava o tracker ali.
    */
   public async hydrate(): Promise<void> {
     try {
-      const stored = await obrBridge.getRoomTrackerSync()
-      const snapshot = sanitizeTrackerSnapshot(stored)
-      if (snapshot) {
-        useTrackerSyncStore().applySnapshot(snapshot)
-      }
+      const snapshot = sanitizeTrackerSnapshot(roomSyncedTracker.value)
+      if (snapshot) useTrackerSyncStore().applySnapshot(snapshot)
     } catch (error) {
       notifyError('Falha ao hidratar o tracker da sala:', error)
     }
+  }
+
+  /**
+   * Aplica o snapshot do servidor de sincronização quando ele chega depois do serviço
+   * já estar ligado (o `INIT_SYNC` costuma chegar antes de a aba do tracker montar, mas
+   * uma reconexão pode trazer um novo estado a qualquer momento).
+   */
+  private watchSocketSnapshot(): void {
+    this.socketWatcher = watch(roomSyncedTracker, snapshot => {
+      const clean = sanitizeTrackerSnapshot(snapshot)
+      if (clean) useTrackerSyncStore().applySnapshot(clean)
+    })
   }
 
   /**
@@ -175,6 +185,7 @@ class TrackerSyncService {
    */
   public publish(instance: any, inTurnId: string | null = null): void {
     if (!this.isGM()) return
+    if (!instance || instance.IsActive === false) return
     this.pendingPublish = { instance, inTurnId }
 
     if (this.publishTimer) clearTimeout(this.publishTimer)
@@ -201,12 +212,11 @@ class TrackerSyncService {
     this.lastPublishedSignature = ''
 
     useTrackerSyncStore().clear()
+    // Limpa o combate publicado: avisa o broadcast da sala E o servidor de sincronização
+    // (que é quem guarda o encontro salvo entregue no `INIT_SYNC`).
     await obrBridge
       .sendTrackerSyncClear()
       .catch(error => notifyError('Falha ao avisar fim de combate:', error))
-    await obrBridge
-      .saveRoomTrackerSync(null)
-      .catch(error => notifyError('Falha ao limpar o tracker da sala:', error))
   }
 
   private async flush(instance: any, inTurnId: string | null): Promise<void> {
@@ -216,6 +226,11 @@ class TrackerSyncService {
       await this.clear()
       return
     }
+
+    // Janela sem combatentes diante de um combate publicado na sala: NÃO publica. Ela está
+    // só desatualizada (acabou de abrir, ou não recebeu os pilotos ainda) e um tracker
+    // vazio apagava a iniciativa da mesa inteira.
+    if (!shouldPublishTrackerSnapshot(snapshot, roomSyncedTracker.value)) return
 
     const signature = trackerSnapshotSignature(snapshot)
     if (signature === this.lastPublishedSignature) return
@@ -227,16 +242,6 @@ class TrackerSyncService {
     await obrBridge
       .sendTrackerSync(snapshot)
       .catch(error => notifyError('Falha ao transmitir o tracker:', error))
-    this.scheduleRoomSave(snapshot)
-  }
-
-  private scheduleRoomSave(snapshot: SyncedTrackerSnapshot): void {
-    const now = Date.now()
-    if (now - this.lastRoomSaveAt < ROOM_SAVE_THROTTLE_MS) return
-    this.lastRoomSaveAt = now
-    void obrBridge
-      .saveRoomTrackerSync(fitSnapshotToBudget(snapshot))
-      .catch(error => notifyError('Falha ao gravar o tracker na sala:', error))
   }
 
   private onRemoteSnapshot = (event: Event): void => {
@@ -288,6 +293,8 @@ class TrackerSyncService {
       this.listenersBound = false
     }
     this.stopWatchingBridge()
+    this.socketWatcher?.()
+    this.socketWatcher = null
     if (this.publishTimer) {
       clearTimeout(this.publishTimer)
       this.publishTimer = null

@@ -6,9 +6,11 @@ import { EffectStatus } from '../effect_subtype/EffectStatus'
 class StatusEvent {
   public Status: Status
   public Duration?: string
+  public RawDuration?: string
 
   constructor(es: EffectStatus) {
     this.Status = es.Status
+    this.RawDuration = es.Duration
     if (es.Duration) this.Duration = EffectDurationText(es.Duration as EffectDuration)
   }
 
@@ -16,8 +18,10 @@ class StatusEvent {
     return {
       StatusName: this.Status.Name,
       Duration: this.Duration,
+      RawDuration: this.RawDuration,
     }
   }
 }
 
 export { StatusEvent }
+

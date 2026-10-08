@@ -1,5 +1,9 @@
 <template>
-  <end-round-dialog>
+  <end-round-dialog
+    label-key="active.endRound.finishTurn"
+    title-key="active.endRound.confirmFinishTurn"
+    icon="mdi-check-all"
+  >
     <template #default="{ isActive }">
       <v-card-text>
         <cc-alert
@@ -169,7 +173,7 @@
           :disabled="hasBurn && !burnHandled"
           @click="endTurn(isActive)"
         >
-          {{ $t('active.endRound.endTurn') }}
+          {{ $t('active.endRound.finishTurn') }}
         </cc-button>
         <div
           v-if="hasBurn && !burnHandled"
@@ -197,6 +201,9 @@
   import EndRoundActionChips from '../../_components/EndRoundActionChips.vue'
   import BurnCheckModal from '../../gm/EncounterPanels/_components/BurnCheckModal.vue'
   import { StatKey } from '@/classes/components/combat/stats/Stats'
+  import { ActivePeriod } from '@/classes/Frequency'
+  import { EncounterStore } from '@/stores'
+  import { useTableActionStore } from '@/stores/tableActionStore'
   import DOMPurify from 'dompurify'
   import { tokenMovementCapture } from '@/services/tokenMovementCapture'
 
@@ -253,10 +260,65 @@
   }
   async function endTurn(isActive) {
     isActive.value = false
-    // Encerra o TURNO da própria ficha — sem encontro (o pilot-runner não tem um). O
-    // `EndTurnFlow` cuida de burn, checagens, ativação e usos de turno; o movimento
-    // volta ao máximo no `Reset(ActivePeriod.Turn)` que ele mesmo roda.
+    // Encerra o TURNO da própria ficha. O `EndTurnFlow` cuida de burn, checagens,
+    // ativação e usos de turno; as ações voltam limpas e o movimento ao máximo.
     await props.sheet.EndTurn()
+
+    // Se a ficha faz parte de um encontro ativo na mesa, atualiza e sincroniza também
+    // o combatente correspondente no encontro compartilhado.
+    try {
+      const encStore = EncounterStore()
+      const enc = encStore.getActiveEncounter(encStore.CurrentActiveID)
+      if (enc) {
+        const p = props.sheet.Pilot
+        const encCombatant = enc.Combatants?.find(
+          (c: any) => c.type === 'pilot' && (c.actor?.ID === p?.ID || c.id === p?.ID)
+        )
+        if (encCombatant?.actor) {
+          const pilotCc = encCombatant.actor.CombatController
+          const mechCc = encCombatant.actor.ActiveMech?.CombatController
+
+          pilotCc?.EndTurn(enc)
+          mechCc?.EndTurn(enc)
+
+          pilotCc?.ResetCombatActions()
+          pilotCc?.ClearBoost()
+          if (pilotCc) {
+            pilotCc.StatController.setCurrentStat(StatKey.SPEED, pilotCc.StatController.getMax(StatKey.SPEED))
+            pilotCc.ClearUses(ActivePeriod.Turn)
+            pilotCc.ActionPoolController.ClearReactionUses()
+            pilotCc.CombatLogVersion++
+          }
+
+          mechCc?.ResetCombatActions()
+          mechCc?.ClearBoost()
+          if (mechCc) {
+            mechCc.StatController.setCurrentStat(StatKey.SPEED, mechCc.StatController.getMax(StatKey.SPEED))
+            mechCc.ClearUses(ActivePeriod.Turn)
+            mechCc.ActionPoolController.ClearReactionUses()
+            mechCc.CombatLogVersion++
+          }
+
+          void enc.Save?.()
+        }
+      }
+    } catch (e) {
+      console.warn('[PcEndRound] Erro ao sincronizar turno com o encontro ativo:', e)
+    }
+
+    // Registra a ação no chat da mesa
+    try {
+      const actorName = props.sheet.Pilot?.Callsign || props.sheet.Pilot?.Name || 'Piloto'
+      void useTableActionStore().postAction({
+        senderName: actorName,
+        category: 'full_action',
+        title: `Fim de Turno — ${actorName}`,
+        detail: `Turno encerrado. Ações e movimento renovados para a próxima ativação.`,
+      })
+    } catch {
+      // Ignora se useTableActionStore não estiver disponível
+    }
+
     // E o pedido sai para as outras janelas só para os tokens DESTA ficha: os badges
     // do mapa precisam voltar ao cheio mesmo sem o movimento ter sido gasto aqui.
     await tokenMovementCapture.resetRoundMovements({

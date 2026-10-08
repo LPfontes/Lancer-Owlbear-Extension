@@ -750,8 +750,11 @@
         </div>
       </div>
 
-      <!-- Bottom Controls: Damage Menu Button -->
-      <div class="hud-controls-row mt-3">
+      <!-- Bottom Controls: Damage Menu Button (o slot pode estar vazio na ficha de leitura) -->
+      <div
+        v-if="$slots.dmg"
+        class="hud-controls-row mt-3"
+      >
         <div class="w-100">
           <slot name="dmg" />
         </div>

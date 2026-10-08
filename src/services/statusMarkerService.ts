@@ -7,6 +7,7 @@ import {
   normalizeStatusId,
   parseCustomStatusMarkerId,
 } from './statusIcons'
+import { isSheetReadOnlySession } from './sheetReadOnlySession'
 
 export const STATUS_MARKER_METADATA_KEY = 'com.compcon.status_marker'
 export const STATUS_MARKER_ID_KEY = 'com.compcon.status_id'
@@ -29,6 +30,9 @@ export class StatusMarkerService {
    * Sincroniza os marcadores de status visuais anexados a um token no mapa
    */
   public async syncTokenStatusMarkers(tokenId: string, rawStatusIds: string[]): Promise<void> {
+    // Ficha em modo leitura nesta janela: nenhuma escrita de marcador no token.
+    if (isSheetReadOnlySession()) return
+
     const previous = this.syncQueues.get(tokenId) ?? Promise.resolve()
 
     const next = previous
@@ -409,6 +413,8 @@ export class StatusMarkerService {
    */
   public async clearTokenStatusMarkers(tokenId: string): Promise<void> {
     if (!OBR.isAvailable) return
+    // Ficha em modo leitura: não mexe nos marcadores do token.
+    if (isSheetReadOnlySession()) return
     try {
       const attachments = await OBR.scene.items.getItemAttachments([tokenId])
       const markers = attachments.filter(

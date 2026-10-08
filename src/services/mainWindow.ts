@@ -8,10 +8,10 @@ import {
   OBR_POPOVER_ID,
   OBR_SAFE_MARGIN,
   OBR_TOP_DEFAULT,
-  WINDOW_HEIGHT_DEFAULT,
-  WINDOW_HEIGHT_MAX,
-  WINDOW_HEIGHT_MIN,
-  WINDOW_WIDTH,
+  clampSheetPosition,
+  pickViewportSize,
+  sheetWindowHeight,
+  sheetWindowWidth,
 } from './obrLayout'
 
 /**
@@ -36,7 +36,7 @@ const SESSION_MINIMIZED_KEY = 'cc_sheet_window_minimized'
 const SESSION_AUTO_OPEN_KEY = 'cc_sheet_window_autopen'
 const SESSION_RESTORE_INTENT_KEY = 'cc_sheet_restore_intent'
 const SESSION_WINDOW_NAME_KEY = 'cc_sheet_window_name'
-const SHEET_WINDOW_HEIGHT_KEY = 'cc_window_height'
+// `cc_window_height` (altura arrastada) é legado: a janela usa o espaço real da tela.
 const SHEET_WINDOW_POS_KEY = 'cc_window_state'
 
 export const SHEET_WINDOW_HIDDEN_CLASS = 'sheet-window-hidden'
@@ -144,13 +144,8 @@ export function isSheetWindowHidden(): boolean {
   return safeSessionGet(SESSION_HIDDEN_KEY) === 'true'
 }
 
-function readSavedHeight(): number {
-  const parsed = parseInt(safeLocalGet(SHEET_WINDOW_HEIGHT_KEY) || '', 10)
-  if (!isNaN(parsed) && parsed >= WINDOW_HEIGHT_MIN) {
-    return Math.min(WINDOW_HEIGHT_MAX, parsed)
-  }
-  return WINDOW_HEIGHT_DEFAULT
-}
+// A altura arrastada (`cc_window_height`) foi abandonada: a janela ocupa o espaço real
+// da tela, calculado em `computeGeometry`. A chave antiga é simplesmente ignorada.
 
 function readSavedPosition(): { left: number; top: number } | null {
   try {
@@ -171,28 +166,36 @@ function readSavedPosition(): { left: number; top: number } | null {
   return null
 }
 
-/** Dimensões reais do viewport do Owlbear (com fallback para a tela). */
+/**
+ * Dimensões reais do viewport do Owlbear (com fallback para a janela e o monitor).
+ *
+ * Sem valor fixo no meio do caminho: o antigo 1920×1080 só era trocado se o viewport
+ * passasse de 500px, então num viewport estreito a criação usava um tamanho inventado.
+ */
 async function viewportSize(): Promise<{ screenW: number; screenH: number }> {
-  let screenW = 1920
-  let screenH = 1080
+  const sources: Parameters<typeof pickViewportSize>[0] = {}
+
   if (OBR.isAvailable && (await ensureObrReady())) {
     try {
-      const [vpW, vpH] = await Promise.all([
-        OBR.viewport.getWidth().catch(() => 1920),
-        OBR.viewport.getHeight().catch(() => 1080),
+      const [obrW, obrH] = await Promise.all([
+        OBR.viewport.getWidth().catch(() => 0),
+        OBR.viewport.getHeight().catch(() => 0),
       ])
-      if (vpW && vpW > 500) screenW = vpW
-      if (vpH && vpH > 500) screenH = vpH
-      return { screenW, screenH }
+      sources.obr = { width: obrW, height: obrH }
     } catch {
       // ignore
     }
   }
-  if (typeof window !== 'undefined' && window.screen) {
-    screenW = window.screen.availWidth || window.screen.width || 1920
-    screenH = window.screen.availHeight || window.screen.height || 1080
+
+  if (typeof window !== 'undefined') {
+    sources.inner = { width: window.innerWidth, height: window.innerHeight }
+    sources.screen = {
+      width: window.screen?.availWidth || window.screen?.width,
+      height: window.screen?.availHeight || window.screen?.height,
+    }
   }
-  return { screenW, screenH }
+
+  return pickViewportSize(sources)
 }
 
 async function computeGeometry(): Promise<{ left: number; top: number; width: number; height: number }> {
@@ -211,15 +214,28 @@ async function computeGeometry(): Promise<{ left: number; top: number; width: nu
     }
   }
 
-  // A janela precisa caber entre o topo e a dock inferior.
-  const fits = screenH - OBR_SAFE_MARGIN.TOP_RIGHT - OBR_SAFE_MARGIN.BOTTOM
-  const height = Math.min(readSavedHeight(), Math.max(WINDOW_HEIGHT_MIN, fits))
-  if (saved) return { ...saved, width: WINDOW_WIDTH, height }
+  // Tamanho proporcional ao viewport real: largura pela fração de `obrLayout` e altura
+  // ocupando o espaço livre entre o topo e a dock inferior.
+  const width = sheetWindowWidth(screenW)
+  const top = saved?.top ?? OBR_TOP_DEFAULT
+  const height = sheetWindowHeight(screenH, top)
+
+  if (saved) {
+    // A posição salva foi gravada com a largura antiga (fixa): reencaixa nas margens
+    // para a janela maior não passar da borda direita.
+    const clamped = clampSheetPosition(
+      { left: saved.left, top: saved.top },
+      { width, height },
+      { width: screenW, height: screenH }
+    )
+    return { ...clamped, width, height }
+  }
+
   // Sem posição salva: encosta na lateral direita, respeitando as barras do OBR.
   return {
-    left: Math.max(OBR_SAFE_MARGIN.LEFT, screenW - WINDOW_WIDTH - OBR_SAFE_MARGIN.RIGHT),
+    left: Math.max(OBR_SAFE_MARGIN.LEFT, screenW - width - OBR_SAFE_MARGIN.RIGHT),
     top: OBR_TOP_DEFAULT,
-    width: WINDOW_WIDTH,
+    width,
     height,
   }
 }

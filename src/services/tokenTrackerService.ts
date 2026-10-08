@@ -71,6 +71,7 @@ import {
   saveLocalPrefs,
 } from '@/services/tokenTrackerWatchlist'
 import { i18n } from '@/i18n'
+import { isSheetReadOnlySession } from '@/services/sheetReadOnlySession'
 
 /**
  * Serviço dos token trackers (plano §6.3, §7).
@@ -248,7 +249,30 @@ class TokenTrackerService {
     if (typeof window !== 'undefined') {
       const listener = (event: Event) => this.onStateChangedEvent(event)
       window.addEventListener(TOKEN_TRACKER_STATE_EVENT, listener)
-      this.unsubscribes.push(() => window.removeEventListener(TOKEN_TRACKER_STATE_EVENT, listener))
+
+      const onPilotSynced = (e: any) => {
+        const id = e?.detail?.pilotId || e?.detail?.characterId
+        if (id) void this.refreshTokensForSheet(id)
+        else void this.scheduleRefreshAll()
+      }
+      const onNpcSynced = (e: any) => {
+        const id = e?.detail?.npcId || e?.detail?.characterId
+        if (id) void this.refreshTokensForSheet(id)
+        else void this.scheduleRefreshAll()
+      }
+
+      window.addEventListener('compcon-pilot-synced', onPilotSynced)
+      window.addEventListener('compcon-npc-synced', onNpcSynced)
+      window.addEventListener('compcon-pilot-join-combat', onPilotSynced)
+      window.addEventListener('compcon-init-sync', onPilotSynced)
+
+      this.unsubscribes.push(
+        () => window.removeEventListener(TOKEN_TRACKER_STATE_EVENT, listener),
+        () => window.removeEventListener('compcon-pilot-synced', onPilotSynced),
+        () => window.removeEventListener('compcon-npc-synced', onNpcSynced),
+        () => window.removeEventListener('compcon-pilot-join-combat', onPilotSynced),
+        () => window.removeEventListener('compcon-init-sync', onPilotSynced)
+      )
     }
 
     if (await OBR.scene.isReady().catch(() => false)) {
@@ -437,7 +461,9 @@ class TokenTrackerService {
     if (force) {
       if (now - this.storesLoadAt < STORES_RETRY_COOLDOWN_MS) return
     } else if (this.storesLoadAttempted) {
-      return
+      if (!this.localSourcesAreEmpty() || now - this.storesLoadAt < STORES_RETRY_COOLDOWN_MS) {
+        return
+      }
     }
 
     this.storesLoadAttempted = true
@@ -505,10 +531,13 @@ class TokenTrackerService {
   /** Redesenha só os tokens que apontam para uma ficha (chamado quando ela muda). */
   public async refreshTokensForSheet(sheetId: string): Promise<void> {
     const tokens = await this.getBoundTokens()
+    const target = (sheetId || '').toLowerCase()
     for (const token of tokens) {
-      const binding = bindingFromMetadata(token.metadata[COMPCON_METADATA_KEY])
+      const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
       if (!binding) continue
-      if (binding.sheetId === sheetId || binding.mechId === sheetId) {
+      const bSheetId = (binding.sheetId || '').toLowerCase()
+      const bMechId = (binding.mechId || '').toLowerCase()
+      if (bSheetId === target || (bMechId && bMechId === target)) {
         await this.refreshToken(token.id)
       }
     }
@@ -597,6 +626,10 @@ class TokenTrackerService {
     const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
     if (!binding) return null
 
+    if (this.localSourcesAreEmpty()) {
+      await this.ensureLocalStoresLoaded(true)
+    }
+
     const state = await this.resolveActorState(binding)
     const localValues = readTrackerValuesFromStats(state.reader)
     const summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
@@ -669,6 +702,10 @@ class TokenTrackerService {
       await this.clearItems(tokenId)
       this.signatures.delete(tokenId)
       return
+    }
+
+    if (this.localSourcesAreEmpty()) {
+      await this.ensureLocalStoresLoaded(true)
     }
 
     const state = await this.resolveActorState(binding)
@@ -821,6 +858,9 @@ class TokenTrackerService {
 
   /** Aplica a diferença entre o que existe no token e o que deveria existir. */
   private async syncItems(tokenId: string, wanted: Item[]): Promise<void> {
+    // Ficha em modo leitura nesta janela: nenhum desenho de tracker no token.
+    if (isSheetReadOnlySession()) return
+
     const existing = await OBR.scene.local.getItemAttachments([tokenId]).catch(() => [] as Item[])
     const ours = existing.filter(isTokenTrackerItem)
     const desiredById = new Map(wanted.map(item => [item.id, item]))
@@ -923,7 +963,15 @@ class TokenTrackerService {
       }
     }
 
-    const local = this.readerFromLocalStores(binding)
+    let local = this.readerFromLocalStores(binding)
+    if (!local.reader) {
+      const fromStorage = await this.actorFromLocalStorage(binding)
+      if (fromStorage.reader) {
+        local = fromStorage
+        this.rememberReader(binding, local)
+      }
+    }
+
     return {
       reader: local.reader,
       owner: local.owner,
@@ -933,6 +981,154 @@ class TokenTrackerService {
       // Ficha do modo ativo / stores locais: é o estado FORA do combate. Se o
       // encontro ativo existir em outra janela, o resumo do token é mais confiável.
       rank: 1,
+    }
+  }
+
+  /**
+   * Busca a ficha diretamente no armazenamento local (IndexedDB) como salvaguarda
+   * quando os stores em memória desta janela ainda não foram populados.
+   */
+  private async actorFromLocalStorage(binding: TokenTrackerBinding): Promise<{
+    reader: TokenTrackerStatReader | null
+    owner: unknown
+    source: string
+  }> {
+    try {
+      const { GetItem, GetAll } = await import('@/io/Storage')
+      const targetId = (binding.sheetId || '').toLowerCase()
+      const targetMechId = (binding.mechId || '').toLowerCase()
+      const kind = sheetKindForBinding(binding)
+
+      // 1. Tenta buscar em 'pilots' (caso padrão para pilotos e mechas)
+      if (kind !== 'npc') {
+        let rawPilot: any = await GetItem('pilots', binding.sheetId).catch(() => null)
+        if (!rawPilot && targetMechId) {
+          rawPilot = await GetItem('pilots', binding.mechId!).catch(() => null)
+        }
+        if (!rawPilot) {
+          const allPilots = (await GetAll('pilots').catch(() => [])) as any[]
+          rawPilot = allPilots.find((p: any) => {
+            const pId = (p.id || p.ID || '').toLowerCase()
+            if (pId === targetId || (targetMechId && pId === targetMechId)) return true
+            if (Array.isArray(p.Mechs)) {
+              return p.Mechs.some((m: any) => {
+                const mId = (m.id || m.ID || '').toLowerCase()
+                return mId === targetId || (targetMechId && mId === targetMechId)
+              })
+            }
+            return false
+          })
+        }
+
+        if (rawPilot) {
+          const { Pilot } = await import('@/classes/pilot/Pilot')
+          const pilotInstance = Pilot.Deserialize(rawPilot)
+          if (pilotInstance) {
+            if (!pilotInstance.ActiveMech && pilotInstance.Mechs?.length) {
+              pilotInstance.ActiveMech = pilotInstance.Mechs[0]
+            }
+            if (typeof pilotInstance.SetStats === 'function') {
+              pilotInstance.SetStats()
+            }
+            if (pilotInstance.ActiveMech && typeof pilotInstance.ActiveMech.SetStats === 'function') {
+              pilotInstance.ActiveMech.SetStats()
+            }
+
+            const pilotStore = this.pilotStore()
+            if (pilotStore && Array.isArray(pilotStore.Pilots)) {
+              const existingIdx = pilotStore.Pilots.findIndex(
+                (p: any) => (p.ID || p.id || '').toLowerCase() === ((pilotInstance as any).ID || (pilotInstance as any).id || '').toLowerCase()
+              )
+              if (existingIdx !== -1) {
+                pilotStore.Pilots.splice(existingIdx, 1, pilotInstance)
+              } else {
+                pilotStore.Pilots.push(pilotInstance)
+              }
+            }
+
+            const resolved = statReaderForActor(pilotInstance, binding)
+            return {
+              reader: resolved.reader,
+              owner: resolved.owner,
+              source: `IndexedDB(pilots) → ${resolved.source}`,
+            }
+          }
+        }
+      }
+
+      // 2. Se não achou ou for NPC, tenta em 'npcs'
+      let rawNpc: any = await GetItem('npcs', binding.sheetId).catch(() => null)
+      if (!rawNpc) {
+        const allNpcs = (await GetAll('npcs').catch(() => [])) as any[]
+        rawNpc = allNpcs.find((n: any) => (n.id || n.ID || '').toLowerCase() === targetId)
+      }
+
+      if (rawNpc) {
+        let npcInstance: any = null
+        if (rawNpc.npcType === 'doodad') {
+          const { Doodad } = await import('@/classes/npc/doodad/Doodad')
+          npcInstance = Doodad.Deserialize(rawNpc)
+        } else if (rawNpc.npcType === 'eidolon') {
+          const { Eidolon } = await import('@/classes/npc/eidolon/Eidolon')
+          npcInstance = Eidolon.Deserialize(rawNpc)
+        } else {
+          const { Unit } = await import('@/classes/npc/unit/Unit')
+          npcInstance = Unit.Deserialize(rawNpc)
+        }
+
+        if (npcInstance) {
+          const npcStore = this.npcStore()
+          if (npcStore && Array.isArray(npcStore.Npcs)) {
+            const existingIdx = npcStore.Npcs.findIndex(
+              (n: any) => (n.ID || n.id || '').toLowerCase() === (npcInstance.ID || npcInstance.id || '').toLowerCase()
+            )
+            if (existingIdx !== -1) {
+              npcStore.Npcs.splice(existingIdx, 1, npcInstance)
+            } else {
+              npcStore.Npcs.push(npcInstance)
+            }
+          }
+
+          return {
+            reader: statReaderOf(npcInstance),
+            owner: npcInstance,
+            source: 'IndexedDB(npcs)',
+          }
+        }
+      }
+
+      // 3. Tenta em 'pilot_sheets' (fichas do modo ativo salvas)
+      const allSheets = (await GetAll('pilot_sheets').catch(() => [])) as any[]
+      const rawSheet = allSheets.find((s: any) => {
+        const sId = (s.id || s.ID || '').toLowerCase()
+        const actorId = (s.combatant?.actor?.id || s.combatant?.actor?.ID || '').toLowerCase()
+        return sId === targetId || actorId === targetId
+      })
+      if (rawSheet) {
+        const PilotSheet = (await import('@/features/pilot_management/store/PilotSheet')).default
+        const sheetInstance = PilotSheet.Deserialize(rawSheet)
+        if (sheetInstance) {
+          const resolved = statReaderForActor(sheetInstance.Pilot ?? sheetInstance.Combatant?.actor, binding)
+          return {
+            reader: resolved.reader,
+            owner: resolved.owner,
+            source: `IndexedDB(pilot_sheets) → ${resolved.source}`,
+          }
+        }
+      }
+
+      return {
+        reader: null,
+        owner: null,
+        source: 'não encontrado no IndexedDB (pilots, npcs, pilot_sheets)',
+      }
+    } catch (err) {
+      tokenTrackerWarn('stores', 'falha ao buscar ator no IndexedDB', err)
+      return {
+        reader: null,
+        owner: null,
+        source: `erro ao consultar IndexedDB: ${String(err)}`,
+      }
     }
   }
 
@@ -1141,8 +1337,13 @@ class TokenTrackerService {
           ? statReaderForActor(actor, binding)
           : { reader: statReaderOf(actor), owner: actor }
 
+      const targetId = (binding.sheetId || '').toLowerCase()
+      const targetMechId = (binding.mechId || '').toLowerCase()
+
       if (kind === 'npc') {
-        const npc = npcStore?.getNpcByID?.(binding.sheetId)
+        const npc =
+          npcStore?.Npcs?.find((n: any) => (n.ID || n.id || '').toLowerCase() === targetId) ||
+          npcStore?.getNpcByID?.(binding.sheetId)
         if (npc) {
           candidates.push({ ...readerFor(npc), source: `NpcStore(${npcCount} npcs) por sheetId` })
         }
@@ -1162,7 +1363,19 @@ class TokenTrackerService {
           })
         }
 
-        const pilot = pilotStore?.getPilotByID?.(binding.sheetId)
+        const pilot =
+          pilotStore?.Pilots?.find((p: any) => {
+            const pId = (p.ID || p.id || '').toLowerCase()
+            if (pId === targetId || (targetMechId && pId === targetMechId)) return true
+            if (Array.isArray(p.Mechs)) {
+              return p.Mechs.some((m: any) => {
+                const mId = (m.ID || m.id || '').toLowerCase()
+                return mId === targetId || (targetMechId && mId === targetMechId)
+              })
+            }
+            return false
+          }) || pilotStore?.getPilotByID?.(binding.sheetId)
+
         if (pilot) {
           const resolved = statReaderForActor(pilot, binding)
           candidates.push({
@@ -1175,9 +1388,35 @@ class TokenTrackerService {
         }
       }
 
-      const npc = npcStore?.getNpcByID?.(binding.sheetId)
+      const npc =
+        npcStore?.Npcs?.find((n: any) => (n.ID || n.id || '').toLowerCase() === targetId) ||
+        npcStore?.getNpcByID?.(binding.sheetId)
       if (npc) {
         candidates.push({ ...readerFor(npc), source: `NpcStore(${npcCount} npcs) por fallback` })
+      }
+
+      const synced = this.syncedSheets()
+      if (synced) {
+        const syncedMatch = Object.values(synced).find((s: any) => {
+          const cId = (s.characterId || s.data?.id || s.data?.ID || '').toLowerCase()
+          if (cId === targetId || (targetMechId && cId === targetMechId)) return true
+          if (Array.isArray(s.data?.Mechs)) {
+            return s.data.Mechs.some((m: any) => {
+              const mId = (m.ID || m.id || '').toLowerCase()
+              return mId === targetId || (targetMechId && mId === targetMechId)
+            })
+          }
+          return false
+        })
+        if (syncedMatch?.data) {
+          const resolved = statReaderForActor(syncedMatch.data, binding)
+          if (resolved.reader) {
+            candidates.push({
+              ...readerFor(syncedMatch.data),
+              source: `roomSyncedSheets → ${resolved.source} [${kindLabel}]`,
+            })
+          }
+        }
       }
 
       if (!candidates.length) {
@@ -1357,6 +1596,8 @@ class TokenTrackerService {
     activeSheet?: () => any
     /** O store de fichas, dono do `LoadPilotSheets()`. */
     sheetsStore?: () => any
+    /** Fichas sincronizadas via WebSocket Go da sala. */
+    syncedSheets?: () => Record<string, any>
   }): void {
     this.stores = accessors
   }
@@ -1368,7 +1609,16 @@ class TokenTrackerService {
     sheets?: () => any[]
     activeSheet?: () => any
     sheetsStore?: () => any
+    syncedSheets?: () => Record<string, any>
   } | null = null
+
+  private syncedSheets(): Record<string, any> | null {
+    try {
+      return this.stores?.syncedSheets?.() ?? null
+    } catch {
+      return null
+    }
+  }
 
   /** Ids da ficha desta janela (o jogador escreve resumo só da própria). */
   public setOwnSheetIdsResolver(resolver: () => string[]): void {

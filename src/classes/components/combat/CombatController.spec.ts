@@ -364,3 +364,52 @@ describe('the combat log recorder', () => {
     expect((fresh.CombatLog.Events[1].payload as any).text).toBe('second')
   })
 })
+
+/**
+ * Regressão: a Zona de Perigo é um marcador DERIVADO do calor, e a lista de marcadores
+ * do token só era reenviada quando um status de verdade (ou a cobertura) mudava — então
+ * o badge de Zona de Perigo só aparecia/sumia depois de outro status ser acionado.
+ */
+describe('CombatController marcadores derivados de stats', () => {
+  function watchStatusMarkers() {
+    const events: string[][] = []
+    const handler = (e: Event) => events.push((e as CustomEvent).detail?.statuses ?? [])
+
+    window.addEventListener('compcon-combatant-statuses-changed', handler)
+    return {
+      events,
+      last: () => events[events.length - 1],
+      stop: () => window.removeEventListener('compcon-combatant-statuses-changed', handler),
+    }
+  }
+
+  it('emite o marcador de Zona de Perigo quando o calor cruza a metade', () => {
+    const markers = watchStatusMarkers()
+    try {
+      const cap = cc().StatController.getMax(StatKey.HEATCAP)
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, 0, { silent: true })
+
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, Math.ceil(cap / 2), { silent: true })
+      expect(markers.last()).toContain('dangerzone')
+
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, 0, { silent: true })
+      expect(markers.last()).not.toContain('dangerzone')
+    } finally {
+      markers.stop()
+    }
+  })
+
+  it('não reemite enquanto o calor muda sem cruzar o limiar', () => {
+    const markers = watchStatusMarkers()
+    try {
+      // A primeira escrita só estabelece o estado conhecido do marcador.
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, 0, { silent: true })
+      const afterFirstWrite = markers.events.length
+
+      cc().StatController.setCurrentStat(StatKey.HP, stat(StatKey.HP) - 1, { silent: true })
+      expect(markers.events.length).toBe(afterFirstWrite)
+    } finally {
+      markers.stop()
+    }
+  })
+})

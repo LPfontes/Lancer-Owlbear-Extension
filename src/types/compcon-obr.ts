@@ -76,3 +76,46 @@ export interface TokenSheetBinding {
   statuses?: MechStatus[]
 }
 
+export interface PilotJoinRequestPayload {
+  type: 'PILOT_JOIN_REQUEST'
+  requestId: string
+  pilotId: string
+  sheetId: string
+  callsign: string
+  name: string
+  mechName: string
+  pilotData: any
+  playerId: string
+  playerName: string
+  timestamp: number
+}
+
+export interface PilotJoinResponsePayload {
+  type: 'PILOT_JOIN_RESPONSE'
+  requestId: string
+  pilotId: string
+  sheetId: string
+  targetPlayerId: string
+  approved: boolean
+  reason?: string
+}
+
+export interface PilotJoinCancelPayload {
+  type: 'PILOT_JOIN_CANCEL'
+  requestId: string
+  pilotId: string
+  playerId: string
+}
+
+export interface PilotJoinRequestMetadata {
+  requestId: string
+  playerId: string
+  playerName: string
+  pilotId: string
+  sheetId: string
+  callsign: string
+  name: string
+  mechName: string
+  timestamp: number
+  status: 'PENDING' | 'APPROVED' | 'DENIED'
+}

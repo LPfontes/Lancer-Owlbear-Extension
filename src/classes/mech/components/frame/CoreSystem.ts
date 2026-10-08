@@ -20,6 +20,7 @@ import {
 } from '@/classes/components/feature/active_effects/ActiveEffect'
 import { localize } from '@/i18n/localize'
 import { keyPrefixes } from '@/i18n/contentKeys'
+import { ByTier } from '@/util/tierFormat'
 
 interface ICoreData {
   name: string
@@ -83,10 +84,13 @@ class CoreSystem {
   private _special_equipment: string[]
   private _tags: ITagData[]
 
-  public constructor(data: ICoreData) {
+  public constructor(data: ICoreData, parentId?: string) {
     this._name = data.name
     this._description = data.description || ''
     this._lkey = keyPrefixes.get(data as object)
+    if (!this._lkey && parentId) {
+      this._lkey = `${parentId}.core_system`
+    }
     this._activeName = data.active_name
     this._activeEffect = data.active_effect
     this.Activation = data.activation
@@ -118,17 +122,6 @@ class CoreSystem {
     this.PassiveSynergies = data.passive_synergies
       ? data.passive_synergies.map(x => new Synergy(x, 'Frame CORE System (Passive)'))
       : []
-    this.Actions = this.getActions()
-    this.Deployables = data.deployables ? data.deployables.map(x => new Deployable(x)) : []
-    if (data.deployables) {
-      this.Actions = this.Actions.concat(
-        data.deployables.map(d => Action.CreateDeployAction(d, this._name, this._lkey))
-      )
-    }
-    this.Counters = data.counters ? data.counters : []
-    this._integrated = data.integrated ? data.integrated : []
-    this._special_equipment = data.special_equipment || []
-    this._tags = data.tags
     this.ActivateAction = new Action(
       {
         id: `core_active_activate`,
@@ -140,6 +133,27 @@ class CoreSystem {
       },
       'Frame CORE System'
     )
+    Object.defineProperty(this.ActivateAction, 'Detail', {
+      get: () => this.ActiveEffect,
+      configurable: true,
+    })
+    this.ActivateAction.getDetail = (tier?: number) => ByTier(this.ActiveEffect, tier)
+    Object.defineProperty(this.ActivateAction, 'Terse', {
+      get: () => this.ActiveName,
+      configurable: true,
+    })
+
+    this.Actions = this.getActions()
+    this.Deployables = data.deployables ? data.deployables.map(x => new Deployable(x)) : []
+    if (data.deployables) {
+      this.Actions = this.Actions.concat(
+        data.deployables.map(d => Action.CreateDeployAction(d, this._name, this._lkey))
+      )
+    }
+    this.Counters = data.counters ? data.counters : []
+    this._integrated = data.integrated ? data.integrated : []
+    this._special_equipment = data.special_equipment || []
+    this._tags = data.tags
     this.Duration = (data.duration as Duration) || Duration.Mission
     this.Use = data.use ? (data.use as Duration) : Duration.Mission
 

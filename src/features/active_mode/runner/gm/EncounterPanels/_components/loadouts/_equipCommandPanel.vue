@@ -5,22 +5,50 @@
     align="center"
   >
     <v-col
-      v-if="canDealDamage"
+      v-if="canDealDamage && item.ItemType === 'PilotWeapon'"
       cols="auto"
     >
-      <weapon-attack-hud-modal
-        :item="item"
-        :controller="controller"
+      <pilot-fight-button
+        :action="fightAction"
+        :preset-weapon="asPilotWeapon"
       />
     </v-col>
     <v-col
-      v-if="canDealDamage"
+      v-if="canDealDamage && isFeature && !isSuperheavy"
+      cols="auto"
+    >
+      <npc-skirmish-button
+        :action="skirmishAction"
+        :preset-weapon="asNpcWeapon"
+      />
+    </v-col>
+    <v-col
+      v-if="canDealDamage && isFeature"
       cols="auto"
       class="ml-1"
     >
-      <weapon-damage-hud-modal
-        :item="item"
-        :controller="controller"
+      <npc-barrage-button
+        :action="barrageAction"
+        :preset-weapon="asNpcWeapon"
+      />
+    </v-col>
+    <v-col
+      v-if="!isFeature && canDealDamage && canSkirmish"
+      cols="auto"
+    >
+      <mech-skirmish-button
+        :action="skirmishAction"
+        :preset-weapon="asMechWeapon"
+      />
+    </v-col>
+    <v-col
+      v-if="!isFeature && canDealDamage && canBarrage"
+      cols="auto"
+      :class="{ 'ml-1': canSkirmish }"
+    >
+      <mech-barrage-button
+        :action="barrageAction"
+        :preset-weapon="asMechWeapon"
       />
     </v-col>
     <v-col
@@ -258,10 +286,8 @@
   import { itemRef } from '@/classes/components/combat/log/refs'
   import { computed } from 'vue'
   import { useDisplay } from 'vuetify'
-  import WeaponAttackHudModal from './action_buttons/WeaponAttackHudModal.vue'
-  import WeaponDamageHudModal from './action_buttons/WeaponDamageHudModal.vue'
   import MechSkirmishButton from './action_buttons/mechSkirmishButton.vue'
-  import { CompendiumStore } from '@/stores'
+  import { CompendiumStore } from '@/features/compendium/store'
   import MechBarrageButton from './action_buttons/mechBarrageButton.vue'
   import NpcSkirmishButton from './action_buttons/npcSkirmishButton.vue'
   import NpcBarrageButton from './action_buttons/npcBarrageButton.vue'

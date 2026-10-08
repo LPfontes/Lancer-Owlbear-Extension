@@ -3,7 +3,9 @@ import { combatantCombatVersion, containerCombatVersions } from './combatVersion
 import { Encounter } from '@/classes/encounter/Encounter'
 import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
 import { StatKey } from '@/classes/components/combat/stats/Stats'
+import { CompendiumStore } from '@/features/compendium/store'
 import { makeMech, makePilot } from '@/__tests__/factories'
+import type { MechWeapon } from '@/classes/mech/components/equipment/MechWeapon'
 
 function fakeCombatant(overrides: Record<string, any> = {}): any {
   return {
@@ -121,5 +123,40 @@ describe('combatantCombatVersion em um encontro real', () => {
 
     mech.StatController.MaxStats[StatKey.HP] = 12
     expect(combatantCombatVersion(combatant)).not.toBe(afterDamage)
+  })
+
+  /**
+   * Regressão: `Destroyed` e `CorePower` são campos simples, sem `CombatLogVersion`
+   * próprio. Fora do sinal de versão, destruir uma arma ou gastar o núcleo não
+   * disparava autosave nem o delta enviado à mesa.
+   */
+  it('detecta arma destruída e poder de núcleo gasto', () => {
+    const pilot = makePilot({ name: 'p', callsign: 'P' })
+    makeMech(pilot)
+    const encounter = new Encounter()
+    const instance = new EncounterInstance(undefined, encounter, [pilot])
+    const combatant = instance.Combatants[0] as any
+    const mech = combatant.actor.ActiveMech
+
+    const beforeCore = combatantCombatVersion(combatant)
+    mech.CombatController.SetCore(true)
+    const afterCore = combatantCombatVersion(combatant)
+    expect(afterCore).not.toBe(beforeCore)
+
+    const mount = mech.MechLoadoutController.ActiveLoadout.EquippableMounts.find(
+      (m: any) => m.Slots.length
+    )
+    mount.Slots[0].EquipWeapon(
+      CompendiumStore().instantiate(
+        'MechWeapons',
+        CompendiumStore().MechWeapons.find(w => !w.IsHidden)!.ID
+      ) as MechWeapon,
+      false
+    )
+    const afterEquip = combatantCombatVersion(combatant)
+    expect(afterEquip).not.toBe(afterCore)
+
+    mount.Slots[0].Weapon.Destroyed = true
+    expect(combatantCombatVersion(combatant)).not.toBe(afterEquip)
   })
 })

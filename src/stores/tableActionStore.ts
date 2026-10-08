@@ -1,17 +1,123 @@
 import { defineStore } from 'pinia'
+import { toRaw } from 'vue'
 import type { TableActionItem, ActionCategory, DiceRollDetail } from '@/types/table-actions'
 import { obrBridge } from '@/services/obrBridge'
 import localforage from 'localforage'
-import { openTableChatWindow, closeTableChatWindow, toggleTableChatWindow, isChatWindowOpen } from '@/services/tableChatWindow'
 import OBR from '@owlbear-rodeo/sdk'
 import Tag, { type ITagData } from '@/classes/Tag'
 import { CompendiumStore } from '@/features/compendium/store'
 
 const LOCAL_STORAGE_KEY = 'compcon_table_actions_history'
-const tableActionsStorage = localforage.createInstance({
+export const tableActionsStorage = localforage.createInstance({
   name: 'COMPCON Persistent',
   storeName: 'table_actions',
+  driver: [localforage.INDEXEDDB, localforage.LOCALSTORAGE],
 })
+
+let memoryActionBackup: TableActionItem[] = []
+
+/**
+ * Verifica se o LocalStorage nativo do navegador está utilizável.
+ */
+function localStorageWorks(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return false
+    const probe = '__cc_action_probe__'
+    window.localStorage.setItem(probe, '1')
+    const ok = window.localStorage.getItem(probe) === '1'
+    window.localStorage.removeItem(probe)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Carrega o histórico de ações com tolerância total a falhas:
+ * 1. Tenta IndexedDB via localforage
+ * 2. Fallback para LocalStorage nativo
+ * 3. Fallback para memória da sessão
+ */
+async function loadPersistedActions(): Promise<TableActionItem[]> {
+  // 1. IndexedDB via localforage
+  try {
+    const data = await tableActionsStorage.getItem<TableActionItem[]>(LOCAL_STORAGE_KEY)
+    if (Array.isArray(data) && data.length > 0) {
+      return data.map(toPlainAction)
+    }
+  } catch (err) {
+    console.warn('[TableActionStore] IndexedDB indisponível ou inacessível; acionando fallback.', err)
+  }
+
+  // 2. Fallback: LocalStorage nativo
+  if (localStorageWorks()) {
+    try {
+      const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(toPlainAction)
+        }
+      }
+    } catch (err) {
+      console.warn('[TableActionStore] LocalStorage falhou na leitura:', err)
+    }
+  }
+
+  // 3. Fallback: Memória volátil
+  return memoryActionBackup
+}
+
+/**
+ * Salva o histórico de ações garantindo persistência mesmo se IndexedDB falhar.
+ */
+async function savePersistedActions(actions: TableActionItem[]): Promise<void> {
+  const plain = actions.slice(-150).map(toPlainAction)
+  memoryActionBackup = plain
+
+  let persisted = false
+
+  // 1. Tenta IndexedDB via localforage
+  try {
+    await tableActionsStorage.setItem(LOCAL_STORAGE_KEY, plain)
+    persisted = true
+  } catch (err) {
+    console.warn('[TableActionStore] IndexedDB falhou na escrita; acionando fallback para LocalStorage.', err)
+  }
+
+  // 2. Fallback: LocalStorage nativo (últimas 60 ações para caber com folga na cota de 5MB)
+  if (!persisted && localStorageWorks()) {
+    try {
+      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(plain.slice(-60)))
+      persisted = true
+    } catch (err) {
+      console.warn('[TableActionStore] LocalStorage também falhou na escrita:', err)
+    }
+  }
+
+  if (!persisted) {
+    console.info('[TableActionStore] Histórico operando em memória volátil (dados serão perdidos no reload).')
+  }
+}
+
+/**
+ * Limpa o histórico de ações em todas as camadas de armazenamento.
+ */
+async function removePersistedActions(): Promise<void> {
+  memoryActionBackup = []
+  try {
+    await tableActionsStorage.removeItem(LOCAL_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+  if (localStorageWorks()) {
+    try {
+      window.localStorage.removeItem(LOCAL_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }
+}
 
 let saveRoomDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -26,6 +132,58 @@ function tagLabel(tag: ITagData): string {
     return tag.id
   }
   return tag.id
+}
+
+/**
+ * Converte qualquer objeto de ação ou Proxy reativo do Vue em um objeto JavaScript
+ * puro e serializável, garantindo que o algoritmo de Structured Clone do IndexedDB
+ * (localforage) não lance DataCloneError.
+ */
+function toPlainAction(action: any): TableActionItem {
+  if (!action || typeof action !== 'object') {
+    return {
+      id: `act_${Date.now()}`,
+      timestamp: Date.now(),
+      senderName: '',
+      category: 'chat',
+      title: '',
+    }
+  }
+
+  try {
+    const raw = toRaw(action)
+    return JSON.parse(JSON.stringify(raw))
+  } catch {
+    const raw = toRaw(action) || {}
+    let plainRoll: any = undefined
+    if (raw.roll) {
+      try {
+        plainRoll = JSON.parse(JSON.stringify(toRaw(raw.roll)))
+      } catch {
+        plainRoll = {
+          total: Number(raw.roll.total || 0),
+          notation: typeof raw.roll.notation === 'string' ? raw.roll.notation : undefined,
+          dice: Array.isArray(raw.roll.dice) ? raw.roll.dice.map((d: any) => ({
+            result: Number(d?.result || 0),
+            sides: Number(d?.sides || 6),
+          })) : undefined,
+        }
+      }
+    }
+
+    return {
+      id: String(raw.id || `act_${Date.now()}`),
+      timestamp: Number(raw.timestamp || Date.now()),
+      senderName: String(raw.senderName || ''),
+      actorType: raw.actorType,
+      category: raw.category || 'chat',
+      title: String(raw.title || ''),
+      detail: typeof raw.detail === 'string' ? raw.detail : (raw.detail ? String(raw.detail) : undefined),
+      targetName: typeof raw.targetName === 'string' ? raw.targetName : undefined,
+      roll: plainRoll,
+      tags: Array.isArray(raw.tags) ? raw.tags.map((t: any) => String(t?.name || t?.title || t || '')) : undefined,
+    }
+  }
 }
 
 export const useTableActionStore = defineStore('tableActions', {
@@ -98,9 +256,9 @@ export const useTableActionStore = defineStore('tableActions', {
       if (this.hasInitialized) return
       this.hasInitialized = true
 
-      // 1. Carrega histórico persistente do armazenamento local
+      // 1. Carrega histórico persistente com salvaguarda multi-camada (IndexedDB -> LocalStorage -> Memória)
       try {
-        const local = (await tableActionsStorage.getItem(LOCAL_STORAGE_KEY)) as TableActionItem[]
+        const local = await loadPersistedActions()
         if (Array.isArray(local) && local.length > 0) {
           this.actions = local
         }
@@ -166,12 +324,10 @@ export const useTableActionStore = defineStore('tableActions', {
     openDrawer() {
       this.isDrawerOpen = true
       this.unreadCount = 0
-      void openTableChatWindow()
     },
 
     closeDrawer() {
       this.isDrawerOpen = false
-      void closeTableChatWindow()
     },
 
     toggleDrawer() {
@@ -179,7 +335,6 @@ export const useTableActionStore = defineStore('tableActions', {
       if (this.isDrawerOpen) {
         this.unreadCount = 0
       }
-      void toggleTableChatWindow()
     },
 
     receiveIncomingAction(action: TableActionItem) {
@@ -187,16 +342,20 @@ export const useTableActionStore = defineStore('tableActions', {
       const exists = this.actions.some(a => a.id === action.id)
       if (exists) return
 
-      this.actions.push(action)
+      const plainAction = toPlainAction(action)
+      this.actions.push(plainAction)
       if (this.actions.length > 200) {
         this.actions.shift()
       }
 
-      if (!isChatWindowOpen.value && !this.isDrawerOpen) {
+      const isChatActive = typeof window !== 'undefined' && window.location.hash.includes('/table-chat')
+      if (!isChatActive && !this.isDrawerOpen) {
         this.unreadCount++
+      } else {
+        this.unreadCount = 0
       }
 
-      this.persistLocal()
+      void this.persistLocal()
     },
 
     mergeActions(incoming: TableActionItem[]) {
@@ -204,7 +363,7 @@ export const useTableActionStore = defineStore('tableActions', {
 
       if (incoming.length === 0 && this.actions.length > 0) {
         this.actions = []
-        this.persistLocal()
+        void this.persistLocal()
         return
       }
 
@@ -213,7 +372,7 @@ export const useTableActionStore = defineStore('tableActions', {
 
       for (const item of incoming) {
         if (item && item.id && !currentIds.has(item.id)) {
-          this.actions.push(item)
+          this.actions.push(toPlainAction(item))
           currentIds.add(item.id)
           hasNew = true
         }
@@ -224,23 +383,23 @@ export const useTableActionStore = defineStore('tableActions', {
         if (this.actions.length > 200) {
           this.actions = this.actions.slice(-200)
         }
-        this.persistLocal()
+        void this.persistLocal()
       }
     },
 
     async postAction(actionData: Omit<TableActionItem, 'id' | 'timestamp'>): Promise<TableActionItem> {
-      const newAction: TableActionItem = {
+      const newAction: TableActionItem = toPlainAction({
         ...actionData,
         id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         timestamp: Date.now(),
-      }
+      })
 
       this.actions.push(newAction)
       if (this.actions.length > 200) {
         this.actions.shift()
       }
 
-      this.persistLocal()
+      await this.persistLocal()
 
       // 1. Envia instantaneamente via broadcast
       await obrBridge.broadcastTableAction(newAction)
@@ -293,9 +452,9 @@ export const useTableActionStore = defineStore('tableActions', {
 
     async persistLocal() {
       try {
-        await tableActionsStorage.setItem(LOCAL_STORAGE_KEY, this.actions.slice(-150))
+        await savePersistedActions(this.actions)
       } catch (e) {
-        console.warn('[TableActionStore] Falha ao salvar no localforage:', e)
+        console.warn('[TableActionStore] Falha ao persistir ações:', e)
       }
     },
 
@@ -304,14 +463,14 @@ export const useTableActionStore = defineStore('tableActions', {
         clearTimeout(saveRoomDebounceTimer)
       }
       saveRoomDebounceTimer = setTimeout(() => {
-        void obrBridge.saveRoomTableActions(this.actions)
+        void obrBridge.saveRoomTableActions(this.actions.map(toPlainAction))
       }, 1500)
     },
 
     async clearHistory() {
       this.actions = []
       this.unreadCount = 0
-      await tableActionsStorage.removeItem(LOCAL_STORAGE_KEY)
+      await removePersistedActions()
       await obrBridge.saveRoomTableActions([])
     },
   },

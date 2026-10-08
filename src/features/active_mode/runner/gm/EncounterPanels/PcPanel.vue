@@ -18,7 +18,7 @@
 
   <v-row
     dense
-    class="mt-n1"
+    class="mt-n1 view-switcher-row"
   >
     <v-col
       v-if="mech"

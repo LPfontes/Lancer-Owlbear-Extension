@@ -13,6 +13,8 @@ import { deployToCombatant } from '@/classes/components/feature/deployable/Deplo
 import { buildStream } from '@/classes/components/combat/log/stream'
 import { actorRef } from '@/classes/components/combat/log/refs'
 import type { ILogStream } from '@/classes/components/combat/log/events'
+import { StatKey } from '@/classes/components/combat/stats/Stats'
+import { ActivePeriod } from '@/classes/Frequency'
 
 type PilotSheetData = {
   id: string
@@ -80,14 +82,27 @@ class PilotSheet implements ISaveable, ICloudSyncable {
     return this.Combatant.actor.ID
   }
 
-  public static FromPilot(pilot: Pilot, campaign?: string) {
+  /**
+   * Monta o container de uma ficha a partir de um piloto.
+   *
+   * `preserveCombatState` existe para a VISÃO de leitura: sem ele o `SetStats()` +
+   * `ResetForEncounter()` abaixo zeram PV/calor/estrutura (é o estado inicial de um
+   * encontro novo), e quem só quer olhar a ficha veria os máximos em vez do estado real.
+   */
+  public static FromPilot(
+    pilot: Pilot,
+    campaign?: string,
+    options: { preserveCombatState?: boolean } = {}
+  ) {
     const combatPilot = Pilot.Deserialize(JSON.parse(JSON.stringify(Pilot.Serialize(pilot))))
-    combatPilot.SetStats()
-    combatPilot.FeatureController.BonusController.applyToStats(
-      combatPilot.CombatController.StatController
-    )
-    combatPilot.CombatController.ResetForEncounter()
-    combatPilot.CombatController.Record('encounter.start', { name: combatPilot.Callsign })
+    if (!options.preserveCombatState) {
+      combatPilot.SetStats()
+      combatPilot.FeatureController.BonusController.applyToStats(
+        combatPilot.CombatController.StatController
+      )
+      combatPilot.CombatController.ResetForEncounter()
+      combatPilot.CombatController.Record('encounter.start', { name: combatPilot.Callsign })
+    }
     const data = {
       id: crypto.randomUUID(),
       combatant: {
@@ -175,8 +190,29 @@ class PilotSheet implements ISaveable, ICloudSyncable {
    * via `Reset(ActivePeriod.Turn)` — o **movimento de volta ao máximo**.
    */
   public async EndTurn(): Promise<void> {
-    this.Combatant?.actor?.CombatController?.EndTurn()
-    this.Pilot?.ActiveMech?.CombatController?.EndTurn()
+    const pilotCc = this.Combatant?.actor?.CombatController
+    const mechCc = this.Pilot?.ActiveMech?.CombatController
+
+    pilotCc?.EndTurn()
+    mechCc?.EndTurn()
+
+    pilotCc?.ResetCombatActions()
+    pilotCc?.ClearBoost()
+    if (pilotCc) {
+      pilotCc.StatController.setCurrentStat(StatKey.SPEED, pilotCc.StatController.getMax(StatKey.SPEED))
+      pilotCc.ClearUses(ActivePeriod.Turn)
+      pilotCc.ActionPoolController.ClearReactionUses()
+      pilotCc.CombatLogVersion++
+    }
+
+    mechCc?.ResetCombatActions()
+    mechCc?.ClearBoost()
+    if (mechCc) {
+      mechCc.StatController.setCurrentStat(StatKey.SPEED, mechCc.StatController.getMax(StatKey.SPEED))
+      mechCc.ClearUses(ActivePeriod.Turn)
+      mechCc.ActionPoolController.ClearReactionUses()
+      mechCc.CombatLogVersion++
+    }
 
     if (this.Autosave) {
       this.Save()

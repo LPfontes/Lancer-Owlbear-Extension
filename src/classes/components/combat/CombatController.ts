@@ -1150,6 +1150,27 @@ class CombatController implements ICounterContainer, IStatContainer {
     )
   }
 
+  /** Último estado conhecido do marcador derivado de Zona de Perigo. */
+  private _lastDangerZoneMarker: boolean | undefined
+
+  /**
+   * Reavalia os marcadores **derivados de stats** e avisa quem desenha o token quando
+   * eles mudam.
+   *
+   * A Zona de Perigo não é um `Status` de verdade: ela é calculada do calor por
+   * `IsInDangerZone` e entra na lista em `StatusController.MarkerStatusIds`. Como a
+   * lista só era reenviada por `NotifyStatusChange` (chamado ao adicionar/remover status
+   * e ao mudar a cobertura), o marcador de Zona de Perigo ficava parado até outro status
+   * ser acionado. Chamado a cada escrita de stat (`StatController.bumpCombatVersion`),
+   * mas só emite na TRANSIÇÃO — fora isso é só uma comparação.
+   */
+  public NotifyDerivedMarkers(): void {
+    const inDangerZone = this.IsInDangerZone
+    if (inDangerZone === this._lastDangerZoneMarker) return
+    this._lastDangerZoneMarker = inDangerZone
+    this.StatusController.NotifyStatusChange()
+  }
+
   public SetCustomStatus(special: EffectSpecial, expires?: any): void {
     this.StatusController.SetCustomStatus(special, expires)
   }

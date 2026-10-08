@@ -50,7 +50,7 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
   public readonly ItemType: ItemType = ItemType.EncounterInstance
   public readonly DataType: string = 'savedata'
   public readonly StorageType: string = 'active_encounters'
-  public readonly Name: string = 'encounter_instance'
+  public Name: string = 'encounter_instance'
 
   public Combatants: CombatantData[] = []
   public Encounter!: Encounter
@@ -283,6 +283,9 @@ class EncounterInstance implements ISaveable, ICloudSyncable {
   }
 
   public EndEncounter(result = '', outcomes: Record<string, IOutcome> = {}): void {
+    this.IsActive = false
+    this.Autosave = false
+    this.SaveController?.cancel?.()
     for (const c of this.Combatants) if (outcomes[c.id]) commitOutcome(c, outcomes[c.id])
     for (const c of this.Combatants) {
       c.actor.CombatController.EndEncounter()

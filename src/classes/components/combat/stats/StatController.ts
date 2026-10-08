@@ -335,10 +335,15 @@ class StatController {
    * `CombatLogVersion` é o sinal reativo que o Modo Ativo usa para autosave e para
    * transmitir deltas à mesa; qualquer escrita de stat precisa incrementá-lo,
    * inclusive as silenciosas (que não entram no log, mas mudam o estado salvo).
+   *
+   * Também reavalia os marcadores DERIVADOS de stats (Zona de Perigo vem do calor, não
+   * de um status): sem isto eles só apareciam/sumiam quando OUTRO status mudava, porque
+   * é `NotifyStatusChange` que reenvia a lista de marcadores do token.
    */
   private bumpCombatVersion(): void {
     const parent = this.Parent as any
     if (typeof parent?.CombatLogVersion === 'number') parent.CombatLogVersion++
+    parent?.NotifyDerivedMarkers?.()
   }
 
   public bumpCurrentStat(stat: string, by: number, opts: IStatWriteOpts = {}): void {

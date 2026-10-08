@@ -28,9 +28,20 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       await this.LoadSheetId()
       this.SheetsLoaded = true
     },
-    async AddPilotSheet(pilot: Pilot, campaign?: string): Promise<void> {
-      const newSheet = PilotSheet.FromPilot(pilot, campaign)
-      newSheet.Combatant.actor.CombatController.Reset()
+    /**
+     * Cria o container de ficha a partir de um piloto e o torna ativo.
+     *
+     * `options.preserveCombatState` é para fichas que vêm da SALA (cópia viva do
+     * combate): sem ele o container nasce zerado — PV cheio, calor 0 — e a janela
+     * mostraria um estado que ninguém tem.
+     */
+    async AddPilotSheet(
+      pilot: Pilot,
+      campaign?: string,
+      options: { preserveCombatState?: boolean } = {}
+    ): Promise<void> {
+      const newSheet = PilotSheet.FromPilot(pilot, campaign, options)
+      if (!options.preserveCombatState) newSheet.Combatant.actor.CombatController.Reset()
       this.PilotSheets.push(newSheet)
       await SetItem('pilot_sheets', PilotSheet.Serialize(newSheet))
       await this.SetActiveSheet(newSheet.ID)
