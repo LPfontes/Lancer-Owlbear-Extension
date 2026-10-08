@@ -12,7 +12,7 @@
             class="font-weight-bold text-black px-2 rounded-0 flex-shrink-0"
             style="height: 22px;"
           >
-            RODADA {{ encounterInstance.Round }}
+            RODADA {{ displayedRound }}
           </v-chip>
           <div class="text-subtitle-2 font-weight-bold text-truncate text-white" :title="encounterInstance.Name">
             {{ encounterInstance.Name }}
@@ -120,9 +120,29 @@
       </div>
     </div>
 
-    <!-- Visão do jogador: tracker sincronizado pelo Mestre (somente leitura).
-         O Mestre só cai aqui no modo prévia "ver como jogador". -->
-    <SyncedTrackerFeed v-else-if="!effectiveIsGM" :active-filter="currentActiveFilter" />
+    <!-- Visão sincronizada: do jogador sempre; do Mestre quando esta janela não tem o
+         encontro local, mas a mesa tem um combate publicado (o encontro salvo chega pelo
+         TableSyncSocket no `INIT_SYNC` e é hidratado pelo `trackerSyncService`). -->
+    <template v-else-if="usesSyncedTracker">
+      <div
+        v-if="effectiveIsGM"
+        class="bg-info text-black px-3 py-1 text-caption font-weight-bold flex-shrink-0 d-flex align-center justify-space-between ga-2"
+      >
+        <span>{{ $t('active.titles.trackerSyncedFromTable') }}</span>
+        <v-btn
+          size="x-small"
+          variant="flat"
+          color="accent"
+          class="rounded-0 text-black"
+          prepend-icon="mdi-account-arrow-right-outline"
+          :loading="adoptingRoomEncounter"
+          @click="adoptRoomEncounter(true)"
+        >
+          {{ $t('active.titles.adoptRoomEncounter') }}
+        </v-btn>
+      </div>
+      <SyncedTrackerFeed :active-filter="currentActiveFilter" />
+    </template>
 
     <!-- Banner de Alerta quando em Modo Prévia de Jogador -->
     <div
@@ -343,6 +363,34 @@
             </template>
           </v-tooltip>
 
+          <!-- Abrir Ficha do Piloto em modo leitura -->
+          <v-tooltip
+            v-if="effectiveIsGM && isPilotCombatant(c)"
+            :text="$t('active.titles.openPilotSheetReadOnly')"
+            location="top"
+          >
+            <template #activator="{ props: tipProps }">
+              <v-btn
+                v-bind="tipProps"
+                size="small"
+                variant="tonal"
+                color="accent"
+                icon="mdi-book-open-variant"
+                class="rounded-0 ml-1"
+                style="height: 32px; width: 32px;"
+                @click.stop="openPilotSheetReadOnly(c)"
+              />
+            </template>
+          </v-tooltip>
+
+          <!-- Aplicar dano (regras de LANCER) na ficha sincronizada — só o Mestre -->
+          <damage-application-dialog
+            v-if="effectiveIsGM"
+            class="ml-1"
+            :combatant="c"
+            @applied="onDamageApplied"
+          />
+
           <!-- Ajuste rápido de ativação (+ / -) -->
           <div class="d-flex align-center ga-0.5">
             <v-tooltip text="Restaurar 1 ativação" location="top">
@@ -528,89 +576,8 @@
           <v-btn icon="mdi-close" variant="text" size="small" density="compact" @click="addCombatantDialog = false" />
         </div>
 
-        <!-- Abas: Pilotos vs NPCs -->
-        <v-tabs v-model="addCombatantTab" color="accent" density="compact" class="border-b border-grey-darken-3 flex-shrink-0 mb-3">
-          <v-tab value="pilots" class="font-weight-bold text-caption">
-            <v-icon icon="cc:pilot" size="16" start />
-            Pilotos da Mesa ({{ tablePilotsList.length }})
-          </v-tab>
-          <v-tab value="npcs" class="font-weight-bold text-caption">
-            <v-icon icon="cc:npc" size="16" start />
-            NPCs do Catálogo ({{ npcsList.length }})
-          </v-tab>
-        </v-tabs>
-
-        <!-- ABA 1: PILOTOS -->
-        <div v-if="addCombatantTab === 'pilots'" class="d-flex flex-column flex-grow-1 overflow-hidden">
-          <v-text-field
-            v-model="pilotSearchQuery"
-            placeholder="Buscar piloto ou mech..."
-            prepend-inner-icon="mdi-magnify"
-            variant="outlined"
-            density="compact"
-            color="accent"
-            hide-details
-            clearable
-            class="mb-2 flex-shrink-0 rounded-0"
-          />
-
-          <div class="flex-grow-1 overflow-y-auto d-flex flex-column ga-1 pr-1" style="max-height: 340px;">
-            <div
-              v-for="pilot in filteredPilotsList"
-              :key="pilot.ID"
-              class="d-flex align-center justify-space-between pa-2 bg-grey-darken-3 border border-grey-darken-2"
-            >
-              <div class="d-flex align-center ga-2 text-truncate">
-                <v-avatar size="32" rounded="0" class="border border-grey-darken-2 bg-black flex-shrink-0">
-                  <v-img v-if="pilot.Portrait" :src="pilot.Portrait" cover />
-                  <v-icon v-else icon="cc:pilot" size="18" color="accent" />
-                </v-avatar>
-                <div class="text-truncate">
-                  <div class="font-weight-bold text-body-2 text-white text-truncate">
-                    {{ pilot.Callsign || pilot.Name }}
-                  </div>
-                  <div class="text-caption text-grey-lighten-1 text-truncate" style="font-size: 0.7rem !important;">
-                    {{ pilot.ActiveMech?.Name || (pilot.Mechs?.[0]?.Name) || 'Sem Mech' }}
-                    <template v-if="pilot.ActiveMech?.Frame?.Name || pilot.Mechs?.[0]?.Frame?.Name">
-                      &bull; {{ pilot.ActiveMech?.Frame?.Name || pilot.Mechs?.[0]?.Frame?.Name }}
-                    </template>
-                  </div>
-                </div>
-              </div>
-
-              <div class="flex-shrink-0 ml-2">
-                <v-chip
-                  v-if="isPilotInCombat(pilot)"
-                  size="x-small"
-                  color="grey-darken-1"
-                  variant="flat"
-                  class="font-weight-bold text-grey-lighten-2"
-                >
-                  No Combate
-                </v-chip>
-                <v-btn
-                  v-else
-                  size="x-small"
-                  color="accent"
-                  variant="flat"
-                  class="font-weight-bold text-black rounded-0"
-                  prepend-icon="mdi-plus"
-                  @click="addPilotToEncounter(pilot)"
-                >
-                  Adicionar
-                </v-btn>
-              </div>
-            </div>
-
-            <div v-if="filteredPilotsList.length === 0" class="text-center py-6 text-grey">
-              <v-icon icon="mdi-alert-circle-outline" size="24" class="mb-1" />
-              <div class="text-caption">Nenhum piloto encontrado.</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ABA 2: NPCs -->
-        <div v-if="addCombatantTab === 'npcs'" class="d-flex flex-column flex-grow-1 overflow-hidden">
+        <!-- ABA: NPCs -->
+        <div class="d-flex flex-column flex-grow-1 overflow-hidden">
           <div class="d-flex align-center ga-2 mb-2 flex-shrink-0">
             <v-text-field
               v-model="npcSearchQuery"
@@ -750,7 +717,7 @@
           Avançar Rodada?
         </div>
         <div class="text-body-2 text-grey-lighten-1 my-3">
-          Deseja encerrar a <b>Rodada {{ encounterInstance?.Round }}</b> e iniciar a <b>Rodada {{ (encounterInstance?.Round || 1) + 1 }}</b>?
+          Deseja encerrar a <b>Rodada {{ displayedRound }}</b> e iniciar a <b>Rodada {{ displayedRound + 1 }}</b>?
           <div class="text-caption text-grey mt-2">
             Todas as ativações dos combatentes serão restauradas para a nova rodada.
           </div>
@@ -977,15 +944,26 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { CampaignStore, EncounterStore, PilotStore, NpcStore } from '@/stores'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { obrBridge } from '@/services/obrBridge'
 import { isGmClient } from '@/services/obrRuntime'
 import { trackerSyncService } from '@/services/trackerSync'
 import { useTrackerSyncStore } from '@/stores/trackerSyncStore'
-import { openMainWindow } from '@/services/mainWindow'
 import { StatKey } from '@/classes/components/combat/stats/Stats'
+import { ActivePeriod } from '@/classes/Frequency'
 import SyncedTrackerFeed from './SyncedTrackerFeed.vue'
+import { roomSyncedSheets, roomSyncedTracker } from '@/services/tableSyncSocket'
+import { tokenMovementCapture } from '@/services/tokenMovementCapture'
+import DamageApplicationDialog from './DamageApplicationDialog.vue'
+import {
+  buildTrackerSnapshot,
+  displayedTrackerRound,
+  roomEncounterDiffers,
+  trackerSnapshotSignature,
+} from '@/services/trackerSyncPayload'
+import { Pilot } from '@/classes/pilot/Pilot'
 
 const props = withDefaults(
   defineProps<{
@@ -1000,6 +978,8 @@ const emit = defineEmits<{
   (e: 'update:sideFilters', filters: { label: string; value: string; count: number }[]): void
   (e: 'update:activeFilter', filter: 'all' | 'enemy' | 'ally' | 'neutral' | 'pending'): void
 }>()
+
+const router = useRouter()
 
 // NpcClassController/Tier/Class are declared on the concrete NPC subclasses
 // (Unit, Eidolon) but not on the Npc base type used by these lists, so these
@@ -1055,11 +1035,8 @@ const isCreatingEncounter = ref(false)
 
 // Adicionar Combatente
 const addCombatantDialog = ref(false)
-const addCombatantTab = ref<'pilots' | 'npcs'>('pilots')
-const pilotSearchQuery = ref('')
 const npcSearchQuery = ref('')
 const npcSelectedSide = ref<'enemy' | 'ally' | 'neutral'>('enemy')
-const tablePilotRoster = ref<Record<string, any>>({})
 
 // Remover Combatente
 const confirmRemoveDialog = ref(false)
@@ -1093,6 +1070,7 @@ const encounterInstance = computed(() => {
 
 // Combatentes Visíveis
 const visibleCombatants = computed(() => {
+  forceRefreshKey.value
   const list = (encounterInstance.value?.Combatants || []) as any[]
   if (!effectiveIsGM.value) {
     return list.filter(c => !c.hiddenFromPlayers && !c.reinforcement)
@@ -1100,16 +1078,155 @@ const visibleCombatants = computed(() => {
   return list
 })
 
-const totalCombatantsCount = computed(() => visibleCombatants.value.length)
+/** A sala publicou um combate (tracker sincronizado) nesta janela? */
+const hasSyncedTracker = computed(() => trackerSyncStore.cards.length > 0)
+
+/** Enquanto o Mestre assume o combate da sala. */
+const adoptingRoomEncounter = ref(false)
+
+/**
+ * Troca o encontro local pelo combate publicado na SALA.
+ *
+ * Reconstrói os combatentes a partir das fichas sincronizadas (pilotos e NPCs), a rodada
+ * e o turno do snapshot — depois disso o tracker é o editor normal, com ativar turno,
+ * +/−, adicionar e remover combatente. Sem isso o Mestre só conseguia assistir.
+ *
+ * Devolve `true` quando houve troca. `force` ignora as checagens (botão manual).
+ *
+ * `lastSwap` guarda o par (sala, local) já tentado: sem ele, um card cuja ficha ainda não
+ * chegou nunca convergiria e cada troca (que muda o encontro local) dispararia outra.
+ */
+async function adoptRoomEncounter(force = false): Promise<boolean> {
+  const snapshot = roomSyncedTracker.value
+  if (!snapshot) return false
+
+  const roomSig = trackerSnapshotSignature(snapshot)
+  const localSig = trackerSnapshotSignature(
+    buildTrackerSnapshot(encounterInstance.value, activeTurnId.value)
+  )
+
+  if (!force && lastSwap.room === roomSig && lastSwap.local === localSig) return false
+
+  if (!force && !roomEncounterDiffers(encounterInstance.value, activeTurnId.value, snapshot)) {
+    lastSwap = { room: roomSig, local: localSig }
+    return false
+  }
+
+  if (adoptingRoomEncounter.value) return false
+  adoptingRoomEncounter.value = true
+  try {
+    const adopted = await encounterStore.adoptRoomEncounter(snapshot, roomSyncedSheets.value)
+    if (!adopted) return false
+
+    // O turno também é da sala: sem isto a projeção local continuaria diferente da
+    // publicada (e a troca ficaria se repetindo).
+    const inTurn = String((snapshot as any).inTurnId || '')
+    activeTurnId.value =
+      inTurn && adopted.Combatants.some((c: any) => c.id === inTurn) ? inTurn : null
+
+    await encounterStore.SetActiveEncounter(adopted.ID)
+    forceRefreshKey.value++
+    return true
+  } catch (e) {
+    console.warn('[CombatTrackerTab] Falha ao substituir o encontro pelo da sala:', e)
+    return false
+  } finally {
+    adoptingRoomEncounter.value = false
+    lastSwap = {
+      room: roomSig,
+      local: trackerSnapshotSignature(
+        buildTrackerSnapshot(encounterInstance.value, activeTurnId.value)
+      ),
+    }
+  }
+}
+
+/** Par (assinatura da sala, assinatura local) da última troca tentada. */
+let lastSwap = { room: '', local: '' }
+
+/**
+ * Dano aplicado pelo Mestre no tracker: o serviço já publicou os patches na ficha
+ * sincronizada; aqui só registramos a ação no log da mesa e redesenhamos a lista.
+ */
+function onDamageApplied(report: any) {
+  forceRefreshKey.value++
+
+  const target = encounterInstance.value?.Combatants?.find(
+    (c: any) => c.id === report?.characterId || c.actor?.ID === report?.characterId
+  )
+  const label = target?.actor?.Callsign || target?.actor?.Name || report?.characterId || ''
+
+  void tableActionStore.postAction({
+    senderName: 'Combat Tracker',
+    category: 'full_action',
+    title: `Dano — ${label}`,
+    detail:
+      `${report?.incoming ?? 0} (${report?.type ?? ''}) → ${report?.final ?? 0}` +
+      (report?.armorReduced ? ` · ARMOR −${report.armorReduced}` : '') +
+      (report?.burn ? ` · BURN ${report.burn}` : '') +
+      (report?.destroyed ? ' · DESTRUÍDO' : ''),
+  })
+}
+
+/**
+ * Troca AUTOMÁTICA: sempre que a sala publicar um combate diferente do que esta janela
+ * tem, o local é substituído pelo da sala (a mesa é a fonte da verdade).
+ *
+ * Só para o Mestre — o jogador continua só visualizando a iniciativa. A checagem de
+ * assinatura mantém isso idempotente, então o eco da própria publicação não vira
+ * ping-pong de saves.
+ */
+watch(
+  [roomSyncedTracker, () => effectiveIsGM.value, () => encounterInstance.value],
+  () => {
+    if (!effectiveIsGM.value) return
+    void adoptRoomEncounter()
+  },
+  { immediate: true }
+)
+
+/**
+ * Esta janela mostra o tracker SINCRONIZADO em vez do encontro local?
+ *
+ * Jogador sempre (ele não tem o encontro). O Mestre cai aqui quando a janela não tem o
+ * encontro ativo localmente mas a mesa tem um combate publicado — sem isso ele via
+ * "Nenhum Combate Ativo" mesmo com a iniciativa rodando na sala.
+ */
+const usesSyncedTracker = computed(
+  () => !effectiveIsGM.value || (!encounterInstance.value && hasSyncedTracker.value)
+)
+
+/**
+ * Rodada exibida no cabeçalho.
+ *
+ * Na visão sincronizada a verdade é a SALA (`trackerSyncStore.round`, alimentado pelo
+ * `TableSyncSocket`), não o encontro local — senão o tracker continuava anunciando a
+ * rodada antiga depois de a mesa avançar.
+ */
+const displayedRound = computed(() => {
+  forceRefreshKey.value
+  return displayedTrackerRound(
+    usesSyncedTracker.value,
+    trackerSyncStore.round,
+    encounterInstance.value?.Round
+  )
+})
+
+const totalCombatantsCount = computed(() => {
+  forceRefreshKey.value
+  return visibleCombatants.value.length
+})
 
 const activatedCount = computed(() => {
+  forceRefreshKey.value
   return visibleCombatants.value.filter(c => getActivations(c).current <= 0).length
 })
 
 const sideFilters = computed(() => {
-  // Jogador: os contadores vêm do tracker sincronizado pelo Mestre (ele não tem o
-  // encontro ativo localmente, então a lista local estaria vazia).
-  if (!effectiveIsGM.value) {
+  forceRefreshKey.value
+  // Visão sincronizada: os contadores vêm do tracker publicado na sala (esta janela
+  // pode não ter o encontro ativo localmente).
+  if (usesSyncedTracker.value) {
     const cards = trackerSyncStore.cards
     return [
       { label: 'Todos', value: 'all', count: cards.length },
@@ -1137,6 +1254,7 @@ watch(
 )
 
 const filteredCombatants = computed(() => {
+  forceRefreshKey.value
   let list = [...visibleCombatants.value]
 
   // Ordena: Em turno primeiro, depois com ativações pendentes, depois concluídos
@@ -1155,23 +1273,7 @@ const filteredCombatants = computed(() => {
   return list.filter(c => c.side === currentActiveFilter.value)
 })
 
-// Lista de Pilotos da Mesa para o Diálogo de Adição
-const tablePilotsList = computed(() => {
-  const allPilots = (pilotStore.Pilots || []).filter((p: any) => !p?.SaveController?.IsDeleted)
-  return allPilots
-})
-
-const filteredPilotsList = computed(() => {
-  const q = pilotSearchQuery.value?.trim().toLowerCase()
-  if (!q) return tablePilotsList.value
-  return tablePilotsList.value.filter((p: any) => {
-    const callsign = (p.Callsign || '').toLowerCase()
-    const name = (p.Name || '').toLowerCase()
-    const mech = (p.ActiveMech?.Name || p.Mechs?.[0]?.Name || '').toLowerCase()
-    const frame = (p.ActiveMech?.Frame?.Name || p.Mechs?.[0]?.Frame?.Name || '').toLowerCase()
-    return callsign.includes(q) || name.includes(q) || mech.includes(q) || frame.includes(q)
-  })
-})
+// ...
 
 // Lista de NPCs para o Diálogo de Adição
 const npcsList = computed(() => {
@@ -1190,7 +1292,7 @@ const filteredNpcsList = computed(() => {
 
 function isPilotInCombat(pilot: any): boolean {
   if (!encounterInstance.value?.Combatants) return false
-  const pId = (pilot.ID || pilot.id)?.toLowerCase()
+  const pId = (pilot.ID || pilot.id || pilot.characterId)?.toLowerCase()
   return encounterInstance.value.Combatants.some(
     (c: any) => (c.id?.toLowerCase() === pId || c.actor?.ID?.toLowerCase() === pId)
   )
@@ -1221,11 +1323,20 @@ function getSideLabel(side: string): string {
 }
 
 function getActivations(c: any): { current: number; max: number } {
-  const stats = c.actor?.CombatController?.StatController?.CurrentStats
-  const maxStats = c.actor?.CombatController?.StatController?.MaxStats
+  forceRefreshKey.value
+  const mechStats = c.actor?.ActiveMech?.CombatController?.StatController?.CurrentStats
+  const pilotStats = c.actor?.CombatController?.StatController?.CurrentStats
+  const mechMax = c.actor?.ActiveMech?.CombatController?.StatController?.MaxStats
+  const pilotMax = c.actor?.CombatController?.StatController?.MaxStats
+
+  const current = mechStats?.activations !== undefined
+    ? Number(mechStats.activations)
+    : Number(pilotStats?.activations ?? 0)
+  const max = Number(mechMax?.activations || pilotMax?.activations || 1)
+
   return {
-    current: stats?.activations ?? 0,
-    max: maxStats?.activations || 1,
+    current: Math.max(0, current),
+    max: Math.max(1, max),
   }
 }
 
@@ -1240,6 +1351,10 @@ function isNpcCombatant(c: any): boolean {
   return ['unit', 'doodad', 'eidolon'].includes(c?.type)
 }
 
+function isPilotCombatant(c: any): boolean {
+  return c?.type === 'pilot'
+}
+
 function resolveNpcSheet(c: any): { type: string; id: string } | null {
   const type = NPC_SHEET_TYPE[c?.type]
   const id = c?.actor?.OriginId || c?.actor?.ID
@@ -1249,35 +1364,32 @@ function resolveNpcSheet(c: any): { type: string; id: string } | null {
   return { type, id }
 }
 
+/**
+ * Abre a ficha do piloto na janela principal em MODO LEITURA (`?readonly=1`).
+ *
+ * O mestre olha a ficha do jogador sem anunciar entrada em combate, sem mandar deltas e
+ * sem criar/ativar ficha nesta janela — a visão usa a cópia que a janela principal já
+ * recebeu da sala. O caminho é o mesmo do NPC: reaproveita o iframe já montado e avisa as
+ * janelas locais por broadcast, sem publicar nada para os jogadores.
+ *
+ * O id usado é o `actor.ID`, NÃO o `OriginId`: em `PilotInstance` o `OriginId` é o piloto
+ * de origem (usado para buscar conteúdo) e o `ID` é a ficha viva — é o `ID` que a sala
+ * guarda e que o runner usa para resolver o piloto.
+ */
+async function openPilotSheetReadOnly(c: any) {
+  const pilotId = c?.actor?.ID || c?.actor?.OriginId || c?.id
+  if (!pilotId) return
+
+  tableActionStore.closeDrawer()
+  router.push(`/active-mode/pilot-runner/${pilotId}?readonly=1`).catch(() => {})
+}
+
 async function openNpcSheet(c: any) {
   const target = resolveNpcSheet(c)
   if (!target) return
 
-  // O iframe da direita lê o encontro no IndexedDB — ele não vê nada da memória
-  // desta janela. `EncounterInstance.Save()` é throttle de 1,5s, fire-and-forget e
-  // não avisa ninguém, então gravamos tudo agora (sem throttle) e notificamos as
-  // outras janelas ANTES de navegar: sem isso a ficha abria em
-  // "Carregando instância do encontro…" com a cópia velha do encontro.
-  await encounterStore.SaveActiveEncounterData().catch(() => {})
-
-  // O roster da outra janela também só é lido no boot dela: se o NPC foi
-  // criado/importado/recebido depois, ela não o conhece. Enviar o NPC pelo canal
-  // local resolve isso sem publicar a ficha para os jogadores (localOnly).
-  const rosterNpc = npcStore.getNpcByID(target.id)
-  if (rosterNpc) void obrBridge.broadcastSingleNpc(rosterNpc, true)
-
-  // Abre a ficha ativa do NPC na janela principal (iframe da direita), reutilizando
-  // o iframe já montado — nunca recriando a janela (isso descartava o estado).
-  void openMainWindow({ restoreIfHidden: true, targetRoute: `/active-mode/npc-runner/${target.id}` })
-  // local-only: abre só na janela principal do mestre, sem afetar os jogadores
-  void obrBridge.sendBroadcastMessage(
-    {
-      type: 'OPEN_SHEET_REQUESTED',
-      sheetType: 'npc',
-      sheetId: target.id,
-    },
-    true
-  )
+  tableActionStore.closeDrawer()
+  router.push(`/active-mode/npc-runner/${target.id}`).catch(() => {})
 }
 
 // Grava o encontro localmente (active_encounters)
@@ -1291,13 +1403,38 @@ function startCombatantTurn(c: any) {
   activeTurnId.value = c.id
   try {
     c.actor?.CombatController?.StartTurn()
+    c.actor?.ActiveMech?.CombatController?.StartTurn()
+
+    // Ao iniciar o turno, renova as ações e velocidade para estarem prontas
+    c.actor?.CombatController?.ResetCombatActions()
+    c.actor?.ActiveMech?.CombatController?.ResetCombatActions()
+    c.actor?.CombatController?.ClearBoost()
+    c.actor?.ActiveMech?.CombatController?.ClearBoost()
+    if (c.actor?.CombatController) {
+      c.actor.CombatController.StatController.setCurrentStat(
+        StatKey.SPEED,
+        c.actor.CombatController.StatController.getMax(StatKey.SPEED)
+      )
+      c.actor.CombatController.CombatLogVersion++
+    }
+    if (c.actor?.ActiveMech?.CombatController) {
+      c.actor.ActiveMech.CombatController.StatController.setCurrentStat(
+        StatKey.SPEED,
+        c.actor.ActiveMech.CombatController.StatController.getMax(StatKey.SPEED)
+      )
+      c.actor.ActiveMech.CombatController.CombatLogVersion++
+    }
+
     const current = getActivations(c).current
     if (current > 0) {
       c.actor?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, current - 1)
+      c.actor?.ActiveMech?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, current - 1)
     }
   } catch (e) {
     console.warn('[CombatTracker] Erro ao iniciar turno:', e)
   }
+
+  forceRefreshKey.value++
 
   void tableActionStore.postAction({
     senderName: c.actor?.Name || 'Combat Tracker',
@@ -1317,9 +1454,35 @@ function finishCombatantTurn(c: any) {
   }
   try {
     c.actor?.CombatController?.EndTurn(encounterInstance.value)
+    c.actor?.ActiveMech?.CombatController?.EndTurn(encounterInstance.value)
+
+    c.actor?.CombatController?.ResetCombatActions()
+    c.actor?.ActiveMech?.CombatController?.ResetCombatActions()
+    c.actor?.CombatController?.ClearBoost()
+    c.actor?.ActiveMech?.CombatController?.ClearBoost()
+    if (c.actor?.CombatController) {
+      c.actor.CombatController.StatController.setCurrentStat(
+        StatKey.SPEED,
+        c.actor.CombatController.StatController.getMax(StatKey.SPEED)
+      )
+      c.actor.CombatController.ClearUses(ActivePeriod.Turn)
+      c.actor.CombatController.ActionPoolController.ClearReactionUses()
+      c.actor.CombatController.CombatLogVersion++
+    }
+    if (c.actor?.ActiveMech?.CombatController) {
+      c.actor.ActiveMech.CombatController.StatController.setCurrentStat(
+        StatKey.SPEED,
+        c.actor.ActiveMech.CombatController.StatController.getMax(StatKey.SPEED)
+      )
+      c.actor.ActiveMech.CombatController.ClearUses(ActivePeriod.Turn)
+      c.actor.ActiveMech.CombatController.ActionPoolController.ClearReactionUses()
+      c.actor.ActiveMech.CombatController.CombatLogVersion++
+    }
   } catch (e) {
     console.warn('[CombatTracker] Erro ao encerrar turno:', e)
   }
+
+  forceRefreshKey.value++
 
   void tableActionStore.postAction({
     senderName: c.actor?.Name || 'Combat Tracker',
@@ -1338,6 +1501,8 @@ function adjustActivation(c: any, delta: number) {
   const max = getActivations(c).max
   const next = Math.max(0, Math.min(max, current + delta))
   c.actor?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, next)
+  c.actor?.ActiveMech?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, next)
+  forceRefreshKey.value++
   if (encounterInstance.value) {
     persistEncounter()
   }
@@ -1348,8 +1513,28 @@ function resetRoundActivations() {
   for (const c of encounterInstance.value.Combatants) {
     const max = getActivations(c).max
     c.actor?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, max)
+    c.actor?.ActiveMech?.CombatController?.StatController?.setCurrentStat(StatKey.ACTIVATIONS, max)
+    c.actor?.CombatController?.ResetCombatActions()
+    c.actor?.ActiveMech?.CombatController?.ResetCombatActions()
+    c.actor?.CombatController?.ClearBoost()
+    c.actor?.ActiveMech?.CombatController?.ClearBoost()
+    if (c.actor?.CombatController) {
+      c.actor.CombatController.StatController.setCurrentStat(
+        StatKey.SPEED,
+        c.actor.CombatController.StatController.getMax(StatKey.SPEED)
+      )
+      c.actor.CombatController.CombatLogVersion++
+    }
+    if (c.actor?.ActiveMech?.CombatController) {
+      c.actor.ActiveMech.CombatController.StatController.setCurrentStat(
+        StatKey.SPEED,
+        c.actor.ActiveMech.CombatController.StatController.getMax(StatKey.SPEED)
+      )
+      c.actor.ActiveMech.CombatController.CombatLogVersion++
+    }
   }
   activeTurnId.value = null
+  forceRefreshKey.value++
   if (encounterInstance.value) {
     persistEncounter()
   }
@@ -1366,6 +1551,15 @@ async function advanceRound() {
   }
   resetRoundActivations()
 
+  // Reseta os movimentos no mapa do Owlbear para todos os tokens
+  try {
+    await tokenMovementCapture.resetRoundMovements()
+  } catch (e) {
+    console.warn('[CombatTracker] Erro ao resetar movimentos dos tokens:', e)
+  }
+
+  forceRefreshKey.value++
+
   void tableActionStore.postAction({
     senderName: 'Combat Tracker',
     category: 'full_action',
@@ -1376,6 +1570,8 @@ async function advanceRound() {
   if (encounterInstance.value) {
     persistEncounter()
   }
+
+  trackerSyncService.publishFromSource()
 }
 
 function toggleCombatantVisibility(c: any) {
@@ -1415,6 +1611,7 @@ async function confirmCreateNewEncounter() {
     // O encontro nasce VAZIO: nenhum piloto entra sozinho na iniciativa. Quem entra,
     // entra pelo diálogo "Adicionar" (ou pelos menus do runner).
     const instance = new EncounterInstance(undefined, baseEncounter, [], [])
+    instance.IsActive = true
 
     instance.Combatants.forEach((c: any) => {
       c.actor?.CombatController?.ResetForEncounter()
@@ -1434,6 +1631,7 @@ async function confirmCreateNewEncounter() {
 
     newEncounterDialog.value = false
     forceRefreshKey.value++
+    trackerSyncService.publishFromSource()
   } catch (err) {
     console.error('[CombatTracker] Erro ao criar novo encontro:', err)
   } finally {
@@ -1445,10 +1643,6 @@ async function confirmCreateNewEncounter() {
 async function openAddCombatantModal() {
   await pilotStore.LoadPilots().catch(() => {})
   await npcStore.LoadNpcs().catch(() => {})
-  try {
-    tablePilotRoster.value = await obrBridge.getTablePilotRoster()
-  } catch (_) {}
-  pilotSearchQuery.value = ''
   npcSearchQuery.value = ''
   addCombatantDialog.value = true
 }
@@ -1461,7 +1655,14 @@ async function addPilotToEncounter(pilotItem: any) {
     const { Pilot } = await import('@/classes/pilot/Pilot')
     const { makeCombatant } = await import('@/classes/encounter/Encounter')
 
-    const pc = Pilot.Deserialize(JSON.parse(JSON.stringify(Pilot.Serialize(pilotItem))))
+    let rawData: any
+    if (typeof pilotItem.Serialize === 'function') {
+      rawData = pilotItem.Serialize()
+    } else {
+      rawData = pilotItem.data || pilotItem
+    }
+
+    const pc = Pilot.Deserialize(JSON.parse(JSON.stringify(rawData)))
     if (!pc.ActiveMech && pc.Mechs?.length) {
       pc.ActiveMech = pc.Mechs[0]
     }
@@ -1483,8 +1684,11 @@ async function addPilotToEncounter(pilotItem: any) {
       mechStatus: undefined,
     })
 
-    encounterInstance.value.Combatants.push(combatant)
-    await encounterInstance.value.Save?.().catch(() => {})
+    if (encounterInstance.value) {
+      encounterInstance.value.IsActive = true
+      encounterInstance.value.Combatants.push(combatant)
+      await encounterInstance.value.Save?.().catch(() => {})
+    }
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -1494,6 +1698,7 @@ async function addPilotToEncounter(pilotItem: any) {
     })
 
     forceRefreshKey.value++
+    trackerSyncService.publishFromSource()
   } catch (err) {
     console.error('[CombatTracker] Erro ao adicionar piloto:', err)
   }
@@ -1527,6 +1732,7 @@ async function addNpcToEncounter(npcItem: any) {
       side: npcSelectedSide.value,
     })
 
+    encounterInstance.value.IsActive = true
     encounterInstance.value.Combatants.push(combatant)
     await encounterInstance.value.Save?.().catch(() => {})
 
@@ -1538,6 +1744,7 @@ async function addNpcToEncounter(npcItem: any) {
     })
 
     forceRefreshKey.value++
+    trackerSyncService.publishFromSource()
   } catch (err) {
     console.error('[CombatTracker] Erro ao adicionar NPC:', err)
   }
@@ -1587,8 +1794,10 @@ async function confirmEndEncounter() {
   const encId = current.ID || (current as any)._id
 
   try {
+    current.Autosave = false
+    current.IsActive = false
+    current.SaveController?.cancel?.()
     current.EndEncounter()
-    await current.Save?.().catch(() => {})
   } catch (e) {
     console.warn('[CombatTracker] Erro ao finalizar combate:', e)
   }
@@ -1598,13 +1807,13 @@ async function confirmEndEncounter() {
   encounterStore.ActiveEncounters = (encounterStore.ActiveEncounters || []).filter(
     (x: any) => (x.ID || x.id || x._id) !== encId
   )
-  encounterStore.CurrentActiveID = ''
-  encounterStore.SaveActiveEncounterData?.()
+  await encounterStore.SetActiveEncounter('').catch(() => {})
+  await encounterStore.SaveActiveEncounterData?.().catch(() => {})
 
   activeTurnId.value = null
 
   // O combate acabou: os jogadores não devem continuar vendo a iniciativa antiga.
-  void trackerSyncService.clear()
+  await trackerSyncService.clear()
 
   void tableActionStore.postAction({
     senderName: 'Combat Tracker',
@@ -1814,8 +2023,9 @@ loadJsonFile.value = null
  * dado de ficha ficam fora do payload de propósito — o tracker sincronizado é público.
  */
 const trackerPublishKey = computed(() => {
+  forceRefreshKey.value
   const instance = encounterInstance.value
-  if (!instance) return ''
+  if (!instance || instance.IsActive === false) return ''
 
   const parts: string[] = [
     String(instance.ID || ''),
@@ -1882,7 +2092,7 @@ onMounted(async () => {
   // Liga a sincronização do tracker: o Mestre publica o estado do encontro, o jogador
   // hidrata da sala. O serviço lê o estado desta janela pela fonte registrada aqui.
   trackerSyncService.setSource(() =>
-    encounterInstance.value
+    encounterInstance.value && encounterInstance.value.IsActive !== false
       ? { instance: encounterInstance.value, inTurnId: activeTurnId.value }
       : null
   )
