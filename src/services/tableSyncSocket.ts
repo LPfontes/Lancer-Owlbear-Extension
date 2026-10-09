@@ -94,7 +94,7 @@ class TableSyncSocket {
     if (this.customWsUrl) return this.customWsUrl
 
     // 1. Variável de ambiente do Vite
-    const envUrl = (import.meta as any).env?.VITE_SYNC_SERVER_URL
+    const envUrl = import.meta.env.VITE_SYNC_SERVER_URL
     if (envUrl) return envUrl
 
     // 2. Se rodando no navegador, constrói URL relativa ou fallback para localhost:8080
