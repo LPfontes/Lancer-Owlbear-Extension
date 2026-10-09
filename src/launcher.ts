@@ -7,10 +7,7 @@ export const OBR_POPOVER_ID = 'com.compcon.activemode.floating'
 
 function prewarm() {
   try {
-    fetch('/content/pt/lancer-data.json', { cache: 'force-cache' }).catch(() => {})
-    fetch('/content/pt/lancer-srd.json', { cache: 'force-cache' }).catch(() => {})
     fetch('/index.html', { cache: 'force-cache' }).catch(() => {})
-    fetch('/src/main.ts').catch(() => {})
   } catch {
     // ignore
   }
