@@ -90,24 +90,25 @@ class TableSyncSocket {
     this.connect()
   }
 
+  private static readonly DEFAULT_PROD_WS_URL = 'wss://lancer-owlbear.vttserver.com.br/ws'
+
   private resolveWsUrl(): string {
     if (this.customWsUrl) return this.customWsUrl
 
-    // 1. Variável de ambiente do Vite
+    // 1. Variável de ambiente do Vite se especificada
     const envUrl = import.meta.env.VITE_SYNC_SERVER_URL
     if (envUrl) return envUrl
 
-    // 2. Se rodando no navegador, constrói URL relativa ou fallback para localhost:8080
+    // 2. Se rodando localmente (dev)
     if (typeof window !== 'undefined') {
       const loc = window.location
       if (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1') {
         return `ws://localhost:8080/ws`
       }
-      const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
-      return `${proto}//${loc.host}/ws`
     }
 
-    return 'ws://localhost:8080/ws'
+    // 3. Produção padrão hardcoded
+    return TableSyncSocket.DEFAULT_PROD_WS_URL
   }
 
   public connect(): void {
@@ -918,7 +919,10 @@ class TableSyncSocket {
   public async postEndEncounterHttp(payload?: EndEncounterPayload): Promise<boolean> {
     const httpBase = this.customWsUrl
       ? this.customWsUrl.replace(/^ws(s?):/, 'http$1:').replace(/\/ws$/, '')
-      : (import.meta.env.VITE_SYNC_SERVER_URL as string)?.replace(/^ws(s?):/, 'http$1:').replace(/\/ws$/, '') || 'http://localhost:8080'
+      : (import.meta.env.VITE_SYNC_SERVER_URL as string)?.replace(/^ws(s?):/, 'http$1:').replace(/\/ws$/, '') ||
+        (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? 'http://localhost:8080'
+          : 'https://lancer-owlbear.vttserver.com.br')
     const url = `${httpBase}/api/rooms/end-encounter`
     try {
       const res = await fetch(url, {
