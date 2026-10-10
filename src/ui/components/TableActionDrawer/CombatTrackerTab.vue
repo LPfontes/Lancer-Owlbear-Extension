@@ -233,6 +233,19 @@
                   <v-icon icon="mdi-eye-off" size="10" class="mr-0.5" />
                   Oculto
                 </v-chip>
+                <v-chip
+                  v-if="c.actor?.CombatController?.Braced || c.actor?.ActiveMech?.CombatController?.Braced"
+                  size="x-small"
+                  density="compact"
+                  variant="flat"
+                  color="teal-darken-2"
+                  class="font-weight-bold px-1 text-uppercase text-caption ml-1 text-white"
+                  style="font-size: 9px; height: 16px;"
+                  title="Suportando: +1 Dificuldade contra ataques e apenas 1 ação rápida no próximo turno"
+                >
+                  <v-icon icon="mdi-shield-lock" size="10" class="mr-0.5" />
+                  Suportando
+                </v-chip>
               </div>
 
               <div class="text-caption text-grey-lighten-1 text-truncate" style="font-size: 0.7rem !important; line-height: 1.1;">
@@ -544,7 +557,6 @@
           density="compact"
           color="accent"
           class="mb-2 rounded-0"
-          autofocus
         />
 
         <div class="d-flex align-center justify-end ga-2 pt-2 border-t border-grey-darken-3">
@@ -943,7 +955,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { CampaignStore, EncounterStore, PilotStore, NpcStore } from '@/stores'
 import { useTableActionStore } from '@/stores/tableActionStore'
@@ -1044,6 +1056,7 @@ const combatantToRemove = ref<any>(null)
 
 // Encerrar Combate
 const confirmEndEncounterDialog = ref(false)
+const isEndingCombat = ref(false)
 
 // Permissões e Modo Prévia
 // Fails closed: o papel só é liberado quando o SDK confirma. Lê o espelho reativo do
@@ -1097,8 +1110,9 @@ const adoptingRoomEncounter = ref(false)
  * chegou nunca convergiria e cada troca (que muda o encontro local) dispararia outra.
  */
 async function adoptRoomEncounter(force = false): Promise<boolean> {
+  if (isEndingCombat.value && !force) return false
   const snapshot = roomSyncedTracker.value
-  if (!snapshot) return false
+  if (!snapshot || !Array.isArray(snapshot.cards) || snapshot.cards.length === 0) return false
 
   const roomSig = trackerSnapshotSignature(snapshot)
   const localSig = trackerSnapshotSignature(
@@ -1630,8 +1644,9 @@ async function confirmCreateNewEncounter() {
     })
 
     newEncounterDialog.value = false
+    roomSyncedTracker.value = null
     forceRefreshKey.value++
-    trackerSyncService.publishFromSource()
+    trackerSyncService.publishFromSource(true)
   } catch (err) {
     console.error('[CombatTracker] Erro ao criar novo encontro:', err)
   } finally {
@@ -1793,6 +1808,7 @@ async function confirmEndEncounter() {
   const encName = current.Name || 'Combate'
   const encId = current.ID || (current as any)._id
 
+  isEndingCombat.value = true
   try {
     current.Autosave = false
     current.IsActive = false
@@ -1802,27 +1818,36 @@ async function confirmEndEncounter() {
     console.warn('[CombatTracker] Erro ao finalizar combate:', e)
   }
 
-  // Remove da lista de instâncias ativas no store e storage
-  await encounterStore.RemoveEncounterInstance(current).catch(() => {})
-  encounterStore.ActiveEncounters = (encounterStore.ActiveEncounters || []).filter(
-    (x: any) => (x.ID || x.id || x._id) !== encId
-  )
-  await encounterStore.SetActiveEncounter('').catch(() => {})
-  await encounterStore.SaveActiveEncounterData?.().catch(() => {})
+  try {
+    // 1. Limpa o tracker sincronizado e avisa a sala imediatamente ANTES de alterar o store local
+    lastSwap = { room: '', local: '' }
+    roomSyncedTracker.value = null
+    await trackerSyncService.clear().catch(() => {})
 
-  activeTurnId.value = null
+    // 2. Remove da lista de instâncias ativas no store e storage
+    await encounterStore.RemoveEncounterInstance(current).catch(() => {})
+    encounterStore.ActiveEncounters = (encounterStore.ActiveEncounters || []).filter(
+      (x: any) => (x.ID || x.id || x._id) !== encId
+    )
+    await encounterStore.SetActiveEncounter('').catch(() => {})
+    await encounterStore.SaveActiveEncounterData?.().catch(() => {})
 
-  // O combate acabou: os jogadores não devem continuar vendo a iniciativa antiga.
-  await trackerSyncService.clear()
+    activeTurnId.value = null
 
-  void tableActionStore.postAction({
-    senderName: 'Combat Tracker',
-    category: 'full_action',
-    title: `Combate Encerrado: ${encName}`,
-    detail: `O combate foi finalizado pelo Mestre. O tracker está livre.`,
-  })
+    void tableActionStore.postAction({
+      senderName: 'Combat Tracker',
+      category: 'full_action',
+      title: `Combate Encerrado: ${encName}`,
+      detail: `O combate foi finalizado pelo Mestre. O tracker está livre.`,
+    })
 
-  forceRefreshKey.value++
+    forceRefreshKey.value++
+    await nextTick()
+  } finally {
+    setTimeout(() => {
+      isEndingCombat.value = false
+    }, 500)
+  }
 }
 
 // VINCULAR E FOCAR TOKEN NO OWLBEAR
@@ -1903,6 +1928,7 @@ async function resumeEncounter(enc: any) {
   const encId = enc.ID || enc.id || enc._id
   syncingEncounterId.value = encId
   try {
+    enc.IsActive = true
     await encounterStore.AssignActiveEncounter(enc)
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -1911,7 +1937,9 @@ async function resumeEncounter(enc: any) {
       detail: `O encontro foi aberto na Rodada ${enc.Round || enc.round || 1}.`,
     })
     selectEncounterDialog.value = false
+    roomSyncedTracker.value = null
     forceRefreshKey.value++
+    trackerSyncService.publishFromSource(true)
   } finally {
     syncingEncounterId.value = null
   }
@@ -1929,6 +1957,7 @@ async function launchEncounter(enc: any) {
     // Sem inclusão automática: o encontro preparado traz os próprios combatentes e
     // os pilotos da mesa entram na iniciativa só quando o mestre adicionar.
     const instance = new EncounterInstance(undefined, encObj, [], [])
+    instance.IsActive = true
     instance.Combatants.forEach((c: any) => {
       c.actor?.CombatController?.ResetForEncounter()
       c.actor?.CombatController?.StartEncounter()
@@ -1944,7 +1973,9 @@ async function launchEncounter(enc: any) {
       detail: `O encontro foi iniciado. Rodada 1.`,
     })
     selectEncounterDialog.value = false
+    roomSyncedTracker.value = null
     forceRefreshKey.value++
+    trackerSyncService.publishFromSource(true)
   } catch (e) {
     console.error('[CombatTracker] Erro ao iniciar encontro preparado:', e)
   } finally {
@@ -1991,14 +2022,19 @@ async function loadEncounterFromJson() {
       instance = result.instance
       importedNpcs = result.importedNpcs ?? 0
     }
+    if (instance) {
+      instance.IsActive = true
+    }
 
     loadFromJsonDialog.value = false
     loadJsonInput.value = ''
-loadJsonFile.value = null
-      loadJsonError.value = ''
-      const fileInput = document.getElementById('jsonFileInput') as HTMLInputElement | null
-      if (fileInput) fileInput.value = ''
-      forceRefreshKey.value++
+    loadJsonFile.value = null
+    loadJsonError.value = ''
+    const fileInput = document.getElementById('jsonFileInput') as HTMLInputElement | null
+    if (fileInput) fileInput.value = ''
+    roomSyncedTracker.value = null
+    forceRefreshKey.value++
+    trackerSyncService.publishFromSource(true)
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
@@ -2055,6 +2091,7 @@ const trackerPublishKey = computed(() => {
 watch(
   trackerPublishKey,
   () => {
+    if (isEndingCombat.value) return
     trackerSyncService.publishFromSource()
   },
   { immediate: true }

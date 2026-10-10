@@ -39,4 +39,6 @@ Thumbs.db
 # Go sync-server
 server/sync-server/sync-server*
 server/sync-server/data/
-server/sync-server/test_data/
+server/sync-server/test_data/
+
+scratch/

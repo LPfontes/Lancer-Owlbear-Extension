@@ -4,6 +4,7 @@
       justify="space-between"
       align="center"
       class="my-2"
+      style="padding-top: 50px;"
     >
       <v-col><v-divider /></v-col>
       <v-col cols="auto" class="text-center">
@@ -266,7 +267,7 @@
 
   function loadLastLocalEncounter() {
     if (lastLocalEncounter.value) {
-      router.push(`/active-mode/gm-encounter-runner/${lastLocalEncounter.value.ID}`)
+      router.push('/table-chat?tab=tracker')
     }
   }
   const { requestPilotJoin } = usePilotJoinRequest()

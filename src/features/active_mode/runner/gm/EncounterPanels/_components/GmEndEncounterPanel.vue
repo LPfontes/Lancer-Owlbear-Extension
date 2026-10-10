@@ -23,6 +23,10 @@
   async function end(result: string, outcomes: Record<string, IOutcome>) {
     props.encounterInstance.EndEncounter(result, outcomes)
     bypassLeaveGuard()
+    try {
+      const { trackerSyncService } = await import('@/services/trackerSync')
+      await trackerSyncService.clear()
+    } catch (_) {}
     await EncounterStore().ArchiveEncounterInstance(props.encounterInstance, '', result)
   }
 </script>

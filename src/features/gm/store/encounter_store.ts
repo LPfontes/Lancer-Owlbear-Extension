@@ -511,6 +511,7 @@ export const EncounterStore = defineStore('encounter', {
         await SetValue('current_active_encounter_id', '')
         try {
           const { tableSyncSocket } = await import('@/services/tableSyncSocket')
+          tableSyncSocket.sendTrackerClear()
           tableSyncSocket.sendEndEncounter({ encounterId: payload.ID, reason: result })
         } catch (e) {
           logger.warn('Failed to sendEndEncounter on archive active encounter: ' + String(e), this)

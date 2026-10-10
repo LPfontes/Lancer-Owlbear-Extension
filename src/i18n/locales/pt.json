@@ -4769,6 +4769,8 @@
     "modifiers": "Modificadores",
     "accNet": "Precisão",
     "diffNet": "Dificuldade",
-    "finish": "Concluir"
+    "finish": "Concluir",
+    "finishImprovisedAttack": "Concluir Ataque Improvisado",
+    "improvisedAttackCompleted": "Ataque Improvisado Concluído!"
   }
 }

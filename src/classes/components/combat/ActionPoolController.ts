@@ -190,6 +190,7 @@ class ActionPoolController {
       case 'dismount':
       case 'disengage':
       case 'improvised_attack':
+      case 'improvised_attack_npc':
       case 'jockey_action':
         return this.CombatActions.Full && this.CombatActions.Quick1 && this.CombatActions.Quick2
       case 'eject':
@@ -212,7 +213,10 @@ class ActionPoolController {
   }
 
   public ResetCombatActions(): void {
-    this.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }
+    const isBracedTurn = this._parent.Braced && this._parent.BracedPenaltyActive
+    this.CombatActions = isBracedTurn
+      ? { ...BRACED_COMBAT_ACTIONS }
+      : { ...DEFAULT_COMBAT_ACTIONS }
     this._parent.CombatLogVersion++
   }
 

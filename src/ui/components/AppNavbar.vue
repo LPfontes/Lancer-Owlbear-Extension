@@ -215,29 +215,31 @@
       <div v-if="!mobile" class="d-flex align-center ga-2 mr-2">
         <v-chip
           v-if="activePilotSheet"
-          color="accent"
-          variant="outlined"
+          :color="isOnActivePilotSheet ? 'accent' : 'warning'"
+          :variant="isOnActivePilotSheet ? 'outlined' : 'flat'"
           size="small"
           class="cursor-pointer font-weight-bold resume-chip"
-          prepend-icon="mdi-restart"
+          :prepend-icon="isOnActivePilotSheet ? 'mdi-account' : 'mdi-play-circle-outline'"
+          :title="isOnActivePilotSheet ? 'Ficha Ativa' : 'Voltar para a Ficha Ativa (Em combate)'"
           @click="resumePilot"
         >
-          <span class="text-truncate" style="max-width: 120px;">
-            {{ activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name }}
+          <span class="text-truncate" style="max-width: 140px;">
+            {{ isOnActivePilotSheet ? (activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name) : `Retomar: ${activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name}` }}
           </span>
         </v-chip>
 
         <v-chip
           v-if="activeEncounter"
-          color="primary"
-          variant="outlined"
+          :color="isOnActiveEncounter ? 'primary' : 'warning'"
+          :variant="isOnActiveEncounter ? 'outlined' : 'flat'"
           size="small"
           class="cursor-pointer font-weight-bold resume-chip"
           prepend-icon="cc:encounter"
+          :title="isOnActiveEncounter ? 'Encontro Ativo' : 'Voltar para o Encontro Ativo'"
           @click="resumeEncounter"
         >
-          <span class="text-truncate" style="max-width: 120px;">
-            {{ activeEncounter.Encounter.Name }}
+          <span class="text-truncate" style="max-width: 140px;">
+            {{ isOnActiveEncounter ? activeEncounter.Encounter.Name : `Retomar: ${activeEncounter.Encounter.Name}` }}
           </span>
         </v-chip>
       </div>
@@ -347,6 +349,26 @@
     </div>
 
     <v-list density="comfortable" nav class="pa-2">
+      <!-- Ficha Ativa no Drawer Mobile -->
+      <v-list-item
+        v-if="activePilotSheet"
+        prepend-icon="mdi-card-account-details-star"
+        :title="activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name"
+        subtitle="Ficha Ativa (Retomar)"
+        class="my-1 rounded-0 bg-accent text-black font-weight-bold"
+        @click="drawer = false; resumePilot()"
+      />
+
+      <!-- Encontro Ativo no Drawer Mobile -->
+      <v-list-item
+        v-if="activeEncounter"
+        prepend-icon="cc:encounter"
+        :title="activeEncounter.Encounter.Name"
+        subtitle="Encontro Ativo (Retomar)"
+        class="my-1 rounded-0 bg-primary text-white font-weight-bold"
+        @click="drawer = false; resumeEncounter()"
+      />
+
       <v-list-item
         to="/active-mode"
         prepend-icon="mdi-home"
@@ -635,6 +657,20 @@ const activeEncounter = computed(() => {
   return EncounterStore().getActiveEncounter(EncounterStore().CurrentActiveID)
 })
 
+const isOnActivePilotSheet = computed(() => {
+  if (!activePilotSheet.value) return false
+  const path = route.path || ''
+  return path.startsWith('/active-mode/pilot-runner') &&
+    (!route.params.id || route.params.id === activePilotSheet.value.ID) &&
+    String(route.query.readonly ?? '') !== '1'
+})
+
+const isOnActiveEncounter = computed(() => {
+  if (!activeEncounter.value) return false
+  const path = route.path || ''
+  return path === '/table-chat' && route.query.tab === 'tracker'
+})
+
 function isRouteActive(targetPath: string, exact: boolean = false): boolean {
   if (exact) {
     return route.path === targetPath || route.path === targetPath + '/'
@@ -652,14 +688,13 @@ function goBack() {
 
 async function resumePilot() {
   if (activePilotSheet.value) {
-    const approved = await requestPilotJoin(activePilotSheet.value)
-    if (approved) router.push(`/active-mode/pilot-runner/${activePilotSheet.value.ID}`)
+    router.push(`/active-mode/pilot-runner/${activePilotSheet.value.ID}`)
   }
 }
 
 function resumeEncounter() {
   if (activeEncounter.value) {
-    router.push(`/active-mode/gm-encounter-runner/${activeEncounter.value.ID}`)
+    router.push('/table-chat?tab=tracker')
   }
 }
 

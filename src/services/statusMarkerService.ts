@@ -6,6 +6,7 @@ import {
   customStatusMarkerId,
   normalizeStatusId,
   parseCustomStatusMarkerId,
+  parseBurnMarkerId,
 } from './statusIcons'
 import { isSheetReadOnlySession } from './sheetReadOnlySession'
 
@@ -66,12 +67,17 @@ export class StatusMarkerService {
       const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 150
 
       // 2. Filtra e normaliza a lista de status desejada.
-      // Os status PERSONALIZADOS (prefixo `custom:`) passam intactos: o nome é
-      // livre e não existe em STATUS_DEFINITIONS.
+      // - Os status PERSONALIZADOS (prefixo `custom:`) passam intactos.
+      // - Os status de QUEIMADURA com quantidade (prefixo `burn:`) passam intactos.
+      // - Os demais são normalizados pelo catálogo.
       const normalizedStatusIds = Array.from(
         new Set(
           rawStatusIds
-            .map(id => (parseCustomStatusMarkerId(id) ? id.trim() : normalizeStatusId(id)))
+            .map(id => {
+              if (parseCustomStatusMarkerId(id)) return id.trim()
+              if (parseBurnMarkerId(id)) return id.trim()
+              return normalizeStatusId(id)
+            })
             .filter((id): id is string => id !== null)
         )
       )
@@ -87,21 +93,23 @@ export class StatusMarkerService {
       )
 
       // 4. Remove marcadores que não estão mais ativos, que possuem URL legada
-      // (data: URL ou não HTTP) ou que estão DUPLICADOS. O sync já é serializado
-      // por token, mas marcadores duplicados podem ter sobrado de corridas
-      // anteriores: dois itens com o mesmo `status_id` ficam empilhados na mesma
-      // posição e um badge cobre o outro.
+      // (data: URL ou não HTTP) ou que estão DUPLICADOS. Itens do tipo TEXT
+      // (como os rótulos de status custom e de queimadura) não possuem imagem e
+      // são deduplicados separadamente pelo sufixo `_label`.
       const seenStatusIds = new Set<string>()
       const markersToRemove = existingMarkers.filter(item => {
         const markerStatusId = item.metadata?.[STATUS_MARKER_ID_KEY] as string
+        const isLabel = item.metadata?.[STATUS_MARKER_LABEL_KEY] === true
+        const isText = (item as any).type === 'TEXT' || isLabel
         const img = (item as any).image
         const urlStr = img?.url ? String(img.url) : ''
-        const isLegacyOrDataUrl = !urlStr.startsWith('http') || urlStr.startsWith('data:')
+        const isLegacyOrDataUrl = !isText && (!urlStr.startsWith('http') || urlStr.startsWith('data:'))
         if (!markerStatusId || !normalizedStatusIds.includes(markerStatusId) || isLegacyOrDataUrl) {
           return true
         }
-        if (seenStatusIds.has(markerStatusId)) return true
-        seenStatusIds.add(markerStatusId)
+        const seenKey = isLabel ? `${markerStatusId}_label` : markerStatusId
+        if (seenStatusIds.has(seenKey)) return true
+        seenStatusIds.add(seenKey)
         return false
       })
 
@@ -158,6 +166,27 @@ export class StatusMarkerService {
               scaleFactor,
               dpi,
               existingMarkers,
+              itemsToUpdatePositions,
+            })
+          )
+          continue
+        }
+
+        // Status de Queimadura (QMD com quantidade): badge 'burn.svg' + número ao lado
+        const burnInfo = parseBurnMarkerId(statusId)
+        if (burnInfo) {
+          itemsToAdd.push(
+            ...this.ensureBurnStatusMarker({
+              tokenId,
+              amount: burnInfo.amount,
+              statusId,
+              posX,
+              posY,
+              targetSize,
+              scaleFactor,
+              dpi,
+              existingMarkers,
+              itemsToUpdatePositions,
             })
           )
           continue
@@ -257,8 +286,9 @@ export class StatusMarkerService {
     scaleFactor: number
     dpi: number
     existingMarkers: Item[]
+    itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[]
   }): Item[] {
-    const { tokenId, name, posX, posY, targetSize, scaleFactor, dpi, existingMarkers } = ctx
+    const { tokenId, name, posX, posY, targetSize, scaleFactor, dpi, existingMarkers, itemsToUpdatePositions } = ctx
 
     const markerId = customStatusMarkerId(name)
     const suffix = name
@@ -285,19 +315,33 @@ export class StatusMarkerService {
     // O rótulo é uma caixa de largura fixa centrada no item: para o texto começar
     // logo à direita do badge, o centro fica em badge + margem + metade da caixa.
     const labelWidth = 120
-    const gap = 6
     const labelX = posX + targetSize / 2
 
     const existingBadge = existingMarkers.find(
-      m => m.metadata[STATUS_MARKER_ID_KEY] === markerId && !m.metadata[STATUS_MARKER_LABEL_KEY]
+      m => m.metadata?.[STATUS_MARKER_ID_KEY] === markerId && !m.metadata?.[STATUS_MARKER_LABEL_KEY]
     )
     const existingLabel = existingMarkers.find(
-      m => m.metadata[STATUS_MARKER_ID_KEY] === markerId && m.metadata[STATUS_MARKER_LABEL_KEY]
+      m => m.metadata?.[STATUS_MARKER_ID_KEY] === markerId && m.metadata?.[STATUS_MARKER_LABEL_KEY]
     )
 
+    if (existingBadge) {
+      if (
+        Math.abs(existingBadge.position.x - posX) > 1 ||
+        Math.abs(existingBadge.position.y - posY) > 1
+      ) {
+        itemsToUpdatePositions.push({ id: existingBadge.id, position: { x: posX, y: posY } })
+      }
+    }
+    if (existingLabel) {
+      if (
+        Math.abs(existingLabel.position.x - labelX) > 1 ||
+        Math.abs(existingLabel.position.y - (posY - 10)) > 1
+      ) {
+        itemsToUpdatePositions.push({ id: existingLabel.id, position: { x: labelX, y: posY - 10 } })
+      }
+    }
+
     if (existingBadge && existingLabel) {
-      // Ambos já existem: nada a criar. O reposicionamento é responsabilidade do
-      // sync (o rótulo acompanha o badge), então não devolvemos item aqui.
       return []
     }
 
@@ -348,6 +392,146 @@ export class StatusMarkerService {
         .attachedTo(tokenId)
         .locked(true)
         .disableHit(true)
+        .metadata(labelMeta)
+        .build()
+
+      created.push(label)
+      existingMarkers.push(label)
+    }
+
+    return created
+  }
+
+  /**
+   * Garante os itens visuais do Status de Queimadura (QMD) com quantidade no token.
+   *
+   * Desenha o badge circular oficial com o ícone `cc:burn` e, imediatamente ao lado,
+   * um rótulo de texto com o número da Queimadura atual (ex: 3).
+   */
+  private ensureBurnStatusMarker(ctx: {
+    tokenId: string
+    amount: number
+    statusId: string
+    posX: number
+    posY: number
+    targetSize: number
+    scaleFactor: number
+    dpi: number
+    existingMarkers: Item[]
+    itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[]
+  }): Item[] {
+    const {
+      tokenId,
+      amount,
+      statusId,
+      posX,
+      posY,
+      targetSize,
+      scaleFactor,
+      dpi,
+      existingMarkers,
+      itemsToUpdatePositions,
+    } = ctx
+
+    const badgeItemId = `cc_st_${tokenId.substring(0, 6)}_burn_${amount}`
+    const labelItemId = `${badgeItemId}_label`
+    const fontSize = Math.max(13, Math.min(22, Math.round(targetSize * 0.55)))
+
+    const badgeMeta = {
+      [STATUS_MARKER_METADATA_KEY]: true,
+      [STATUS_MARKER_ID_KEY]: statusId,
+      [STATUS_MARKER_PARENT_KEY]: tokenId,
+    }
+    const labelMeta = {
+      [STATUS_MARKER_METADATA_KEY]: true,
+      [STATUS_MARKER_ID_KEY]: statusId,
+      [STATUS_MARKER_PARENT_KEY]: tokenId,
+      [STATUS_MARKER_LABEL_KEY]: true,
+    }
+
+    // Posição do texto com o número da queimadura:
+    // Logo à direita do badge circular, alinhado verticalmente com o centro
+    const labelX = posX + targetSize / 2 + 3
+    const labelY = posY - Math.round(fontSize * 0.55)
+
+    const existingBadge = existingMarkers.find(
+      m => m.metadata?.[STATUS_MARKER_ID_KEY] === statusId && !m.metadata?.[STATUS_MARKER_LABEL_KEY]
+    )
+    const existingLabel = existingMarkers.find(
+      m => m.metadata?.[STATUS_MARKER_ID_KEY] === statusId && m.metadata?.[STATUS_MARKER_LABEL_KEY]
+    )
+
+    if (existingBadge) {
+      if (
+        Math.abs(existingBadge.position.x - posX) > 1 ||
+        Math.abs(existingBadge.position.y - posY) > 1
+      ) {
+        itemsToUpdatePositions.push({ id: existingBadge.id, position: { x: posX, y: posY } })
+      }
+    }
+
+    if (existingLabel) {
+      if (
+        Math.abs(existingLabel.position.x - labelX) > 1 ||
+        Math.abs(existingLabel.position.y - labelY) > 1
+      ) {
+        itemsToUpdatePositions.push({ id: existingLabel.id, position: { x: labelX, y: labelY } })
+      }
+    }
+
+    if (existingBadge && existingLabel) {
+      return []
+    }
+
+    const created: Item[] = []
+
+    if (!existingBadge) {
+      const badgeUrl = getStatusBadgeUrl('burn')
+      const badge = buildImage(
+        { width: 100, height: 100, mime: 'image/svg+xml', url: badgeUrl },
+        { offset: { x: 50, y: 50 }, dpi }
+      )
+        .id(badgeItemId)
+        .name(`[Estado] Queimadura (${amount})`)
+        .position({ x: posX, y: posY })
+        .scale({ x: scaleFactor, y: scaleFactor })
+        .layer('ATTACHMENT')
+        .attachedTo(tokenId)
+        .locked(true)
+        .disableHit(true)
+        .disableAttachmentBehavior(['ROTATION'])
+        .metadata(badgeMeta)
+        .build()
+
+      created.push(badge)
+      existingMarkers.push(badge)
+    }
+
+    if (!existingLabel) {
+      const label = buildText()
+        .id(labelItemId)
+        .name(`[Estado] Queimadura (${amount})`)
+        .plainText(String(amount))
+        .width(40)
+        .height('AUTO')
+        .textType('PLAIN')
+        .fontSize(fontSize)
+        .fontWeight(800)
+        .textAlign('LEFT')
+        .textAlignVertical('TOP')
+        .fillColor('#FFB74D')
+        .fillOpacity(1)
+        .strokeColor('#000000')
+        .strokeOpacity(0.9)
+        .strokeWidth(2.5)
+        .lineHeight(1)
+        .padding(0)
+        .position({ x: labelX, y: labelY })
+        .layer('ATTACHMENT')
+        .attachedTo(tokenId)
+        .locked(true)
+        .disableHit(true)
+        .disableAttachmentBehavior(['ROTATION'])
         .metadata(labelMeta)
         .build()
 

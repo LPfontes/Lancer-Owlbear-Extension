@@ -1,6 +1,7 @@
 import { markRaw } from 'vue'
 import { Status } from '@/classes/Status'
-import { customStatusMarkerId } from '@/services/statusIcons'
+import { customStatusMarkerId, burnStatusMarkerId, parseBurnMarkerId } from '@/services/statusIcons'
+import { StatKey } from './stats/Stats'
 import { ruleFor, customRuleFor, kindsFor } from './StatusRules'
 import type { IStatusRule } from './StatusRules'
 import { normalizeActivation } from './ActionPoolController'
@@ -68,7 +69,11 @@ class StatusController {
   }
 
   public HasStatus(statusID: string): boolean {
-    return this._active.StatusController.Statuses.some(s => s.status.ID === statusID)
+    const needle = String(statusID || '').toLowerCase()
+    return this._active.StatusController.Statuses.some((s: any) => {
+      const id = s?.status?.ID || s?.status?.id || (typeof s?.status === 'string' ? s.status : null) || (typeof s === 'string' ? s : null)
+      return String(id || '').toLowerCase() === needle
+    })
   }
 
   public AddStatus(statusID: string, expires?: any, opts: { selfInflicted?: boolean } = {}): void {
@@ -96,9 +101,24 @@ class StatusController {
    * Os status PERSONALIZADOS vão no fim, com o prefixo `custom:`.
    */
   public MarkerStatusIds(controller: CombatController = this._active): string[] {
-    const list = controller.StatusController.Statuses.map(s => s.status.ID)
+    const list = controller.StatusController.Statuses.map((s: any) => {
+      return s?.status?.ID || s?.status?.id || (typeof s?.status === 'string' ? s.status : null) || (typeof s === 'string' ? s : null)
+    }).filter(Boolean) as string[]
 
     if (controller.IsInDangerZone && !list.includes('dangerzone')) list.push('dangerzone')
+    if (controller.Braced && !list.includes('braced')) list.push('braced')
+
+    // Queimadura (QMD): derivado do stat BURN da ficha. Se > 0, anexa 'burn:<valor>'.
+    // Remove qualquer entrada 'burn' crua ou marcador obsoleto com outra quantidade.
+    const burnVal = Number(controller.StatController?.getCurrent?.(StatKey.BURN)) || 0
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i] === 'burn' || parseBurnMarkerId(list[i]) !== null) {
+        list.splice(i, 1)
+      }
+    }
+    if (burnVal > 0) {
+      list.push(burnStatusMarkerId(burnVal))
+    }
 
     const coverId = COVER_STATUS_IDS[controller.Cover]
     if (coverId) {
@@ -125,15 +145,32 @@ class StatusController {
         const parent = (this._parent as any).Parent
         const parentId = parent?.ID
         if (parentId) {
+          const pilotId = parent?.Pilot?.ID || (parent?.ItemType === 'Pilot' ? parent?.ID : null)
+          const mechId = parent?.ActiveMech?.ID || (parent?.ItemType === 'Mech' ? parent?.ID : null)
+          const originId = parent?.OriginId || pilotId || mechId || parentId
           window.dispatchEvent(
             new CustomEvent('compcon-combatant-statuses-changed', {
               detail: {
                 combatantId: parentId,
-                originId: parent?.OriginId || parentId,
+                originId,
                 statuses: this.MarkerStatusIds(),
               },
             })
           )
+
+          const counterpart = (this._parent as any).Counterpart
+          const counterpartParent = counterpart?.Parent
+          if (counterpartParent?.ID && counterpartParent.ID !== parentId) {
+            window.dispatchEvent(
+              new CustomEvent('compcon-combatant-statuses-changed', {
+                detail: {
+                  combatantId: counterpartParent.ID,
+                  originId: counterpartParent.OriginId || parentId || counterpartParent.ID,
+                  statuses: this.MarkerStatusIds(),
+                },
+              })
+            )
+          }
         }
       } catch (_e) {}
     }
@@ -144,10 +181,16 @@ class StatusController {
     reason: 'expired' | 'removed' | 'cleared' | 'replaced' | 'consumed' = 'removed'
   ): void {
     const target = this._active.StatusController
-    const existingIndex = target.Statuses.findIndex(s => s.status.ID === statusID)
+    const needle = String(statusID || '').toLowerCase()
+    const existingIndex = target.Statuses.findIndex((s: any) => {
+      const id = s?.status?.ID || s?.status?.id || (typeof s?.status === 'string' ? s.status : null) || (typeof s === 'string' ? s : null)
+      return String(id || '').toLowerCase() === needle
+    })
     if (existingIndex === -1) return
     const [lost] = target.Statuses.splice(existingIndex, 1)
-    this._parent.Record('status.lose', { status: statusRef(lost.status), reason })
+    if (lost.status) {
+      this._parent.Record('status.lose', { status: statusRef(lost.status), reason })
+    }
     target.NotifyStatusChange()
     ruleFor(statusID)?.implies?.forEach(id => this.RemoveStatus(id, reason))
   }
@@ -156,7 +199,11 @@ class StatusController {
     if (!status) return
     const target = thisController ? this : this._active.StatusController
     const resolvedExpires = this._resolveExpiration(expires, this._active)
-    const existingIndex = target.Statuses.findIndex(s => s.status.ID === status.ID)
+    const targetId = String(status.ID || (status as any).id || '').toLowerCase()
+    const existingIndex = target.Statuses.findIndex((s: any) => {
+      const id = s?.status?.ID || s?.status?.id || (typeof s?.status === 'string' ? s.status : null) || (typeof s === 'string' ? s : null)
+      return String(id || '').toLowerCase() === targetId
+    })
     if (existingIndex === -1) {
       target.Statuses.push({ status, expires: resolvedExpires })
       this._parent.Record('status.gain', { status: statusRef(status) })
@@ -402,13 +449,21 @@ class StatusController {
 
   public Deserialize(data: any): void {
     this.Resistances = data?.resistances || []
+    const allStatuses = CompendiumStore().Statuses || []
     this.Statuses = (data?.statuses || [])
-      .map((s: any) => ({
-        status: CompendiumStore().Statuses.find(st => st.ID === s.status),
-        expires: markRaw(expiration.Deserialize(s.expires)),
-        selfInflicted: s.selfInflicted ?? false,
-      }))
-      .filter((s: any) => s.status != null)
+      .map((s: any) => {
+        const rawId = s?.status?.ID || s?.status?.id || (typeof s?.status === 'string' ? s.status : null) || (typeof s === 'string' ? s : null)
+        if (!rawId) return null
+        const needle = String(rawId).toLowerCase()
+        const found = allStatuses.find(st => st.ID.toLowerCase() === needle)
+        if (!found) return null
+        return {
+          status: found,
+          expires: markRaw(expiration.Deserialize(s?.expires)),
+          selfInflicted: s?.selfInflicted ?? false,
+        }
+      })
+      .filter((s: any) => s != null)
     this.CustomStatuses = (data?.customStatuses || []).map((s: any) => ({
       status: EffectSpecial.Deserialize(s.status),
       expires: markRaw(expiration.Deserialize(s.expires)),

@@ -42,7 +42,7 @@
       <v-layout style="height: 100%; flex: 1 1 auto; min-height: 0">
         <v-main
           tabindex="0"
-          style="overflow-y: auto"
+          style="overflow-y: auto; height: 100%; max-height: 100%; min-height: 0;"
         >
           <v-container
             fluid
@@ -161,9 +161,9 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+  import { ref, computed, watch, onMounted, onBeforeUnmount, inject } from 'vue'
   import { useDisplay } from 'vuetify'
-  import { useRoute, onBeforeRouteLeave } from 'vue-router'
+  import { useRoute, onBeforeRouteLeave, matchedRouteKey } from 'vue-router'
   import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import PilotSheet from '@/features/pilot_management/store/PilotSheet'
   import { PilotStore } from '@/features/pilot_management/store'
@@ -608,8 +608,9 @@ const panelMap: Record<string, any> = {
         cc.CombatLogVersion++
       }
       if (Array.isArray(roomMech.statuses)) {
-        cc.Statuses = [ ...roomMech.statuses ]
+        cc.StatusController.Deserialize({ statuses: roomMech.statuses })
         cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange()
       }
     }
 
@@ -636,8 +637,9 @@ const panelMap: Record<string, any> = {
           localCc.CombatLogVersion++
         }
         if (Array.isArray(roomMech.statuses)) {
-          localCc.Statuses = [ ...roomMech.statuses ]
+          localCc.StatusController.Deserialize({ statuses: roomMech.statuses })
           localCc.CombatLogVersion++
+          localCc.StatusController.NotifyStatusChange()
         }
       }
     }
@@ -884,7 +886,15 @@ const panelMap: Record<string, any> = {
     else if (key === 'overshield') lastDispatchedOvershield = Number(patch.value)
     else if (key === 'speed') lastDispatchedSpeed = Number(patch.value)
     else if (patchFieldTarget(patch.field) === 'combatActions') lastDispatchedActions = JSON.stringify(patch.value)
-    else if (patchFieldTarget(patch.field) === 'statuses') lastDispatchedStatuses = JSON.stringify(patch.value)
+    else if (patchFieldTarget(patch.field) === 'statuses') {
+      lastDispatchedStatuses = JSON.stringify(patch.value)
+      const cc = p.ActiveMech?.CombatController ?? p.CombatController
+      if (cc && Array.isArray(patch.value)) {
+        cc.StatusController.Deserialize({ statuses: patch.value })
+        cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange()
+      }
+    }
   }
 
   function onRemoteFullSheet(e: Event) {
@@ -944,21 +954,27 @@ function handleLeave(choice: 'save' | 'exit' | 'cancel') {
     resolveLeaveDialog = null
 }
 
-onBeforeRouteLeave(async () => {
-    if (consumeLeaveGuardBypass()) return true
-    // Modo leitura: nada foi editado, então não há o que salvar nem o que confirmar.
-    if (readOnly.value) return true
-    const choice = await openLeaveDialog()
-  if (choice === 'save') {
-      // Persiste o container realmente editado (encontro compartilhado ou ficha),
-      // descarregando antes o que ainda estiver no timer.
-      flushCombatSync()
-      return true
-  } else if (choice === 'exit') {
-      return true
+  // onBeforeRouteLeave só pode ser registrado se o componente for filho direto de <router-view>.
+  // Quando montado diretamente em App.vue (como camada persistente da janela única),
+  // matchedRouteKey não possui registro ativo, o que gerava o aviso "[Vue Router warn]: No active route record was found".
+  const hasActiveRouteRecord = inject(matchedRouteKey, null as any)?.value
+  if (hasActiveRouteRecord) {
+    onBeforeRouteLeave(async () => {
+      if (consumeLeaveGuardBypass()) return true
+      // Modo leitura: nada foi editado, então não há o que salvar nem o que confirmar.
+      if (readOnly.value) return true
+      const choice = await openLeaveDialog()
+      if (choice === 'save') {
+        // Persiste o container realmente editado (encontro compartilhado ou ficha),
+        // descarregando antes o que ainda estiver no timer.
+        flushCombatSync()
+        return true
+      } else if (choice === 'exit') {
+        return true
+      }
+      return false
+    })
   }
-    return false
-  })
 </script>
 
 <style scoped>

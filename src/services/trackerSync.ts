@@ -134,10 +134,17 @@ class TrackerSyncService {
    * Publica o estado atual lido da fonte registrada. Devolve `false` quando não há
    * encontro ativo nesta janela (nada a publicar).
    */
-  public publishFromSource(): boolean {
+  public publishFromSource(immediate = false): boolean {
     const current = this.source?.()
-    if (!current || !current.instance || current.instance.IsActive === false) return false
-    this.publish(current.instance, current.inTurnId)
+    if (!current || !current.instance || current.instance.IsActive === false) {
+      if (this.publishTimer) {
+        clearTimeout(this.publishTimer)
+        this.publishTimer = null
+      }
+      this.pendingPublish = null
+      return false
+    }
+    this.publish(current.instance, current.inTurnId, immediate)
     return true
   }
 
@@ -183,12 +190,23 @@ class TrackerSyncService {
    * Publica o estado atual do encontro. Só o Mestre publica; chamadas de jogadores
    * são ignoradas. Mudanças em rajada são coalescidas em um único broadcast.
    */
-  public publish(instance: any, inTurnId: string | null = null): void {
+  public publish(instance: any, inTurnId: string | null = null, immediate = false): void {
     if (!this.isGM()) return
     if (!instance || instance.IsActive === false) return
     this.pendingPublish = { instance, inTurnId }
 
-    if (this.publishTimer) clearTimeout(this.publishTimer)
+    if (this.publishTimer) {
+      clearTimeout(this.publishTimer)
+      this.publishTimer = null
+    }
+
+    if (immediate) {
+      const pending = this.pendingPublish
+      this.pendingPublish = null
+      if (pending) void this.flush(pending.instance, pending.inTurnId)
+      return
+    }
+
     this.publishTimer = setTimeout(() => {
       this.publishTimer = null
       const pending = this.pendingPublish
@@ -220,10 +238,10 @@ class TrackerSyncService {
   }
 
   private async flush(instance: any, inTurnId: string | null): Promise<void> {
+    if (!this.isGM() || !instance || instance.IsActive === false) return
     const snapshot = buildTrackerSnapshot(instance, inTurnId)
 
-    if (!snapshot) {
-      await this.clear()
+    if (!snapshot || !Array.isArray(snapshot.cards)) {
       return
     }
 

@@ -88,6 +88,14 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
 	L-2.08,797.91z`,
   },
   {
+    id: 'braced',
+    aliases: ['braced', 'suportando', 'suportar'],
+    label: 'Suportando',
+    color: '#0D47A1', // Azul Marinho
+    accentColor: '#2196F3', // Azul
+    path: `M0.5,782.5L-7.682,786.136V791.591C-7.682,796.636,-4.191,801.355,0.5,802.5C5.191,801.355,8.682,796.636,8.682,791.591V786.136L0.5,782.5Z`,
+  },
+  {
     id: 'hidden',
     aliases: ['hidden', 'oculto'],
     label: 'Oculto',
@@ -148,6 +156,14 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
 	c0-1.31,0.62-2.54,1.67-3.33V785C-6.17,783.62-5.05,782.5-3.67,782.5L-3.67,782.5z M2.17,788.33l6.67-1.67L3,790.83l4.17,1.67h-5
 	l1.67,2.5l-3.33-1.67v-5.83l3.33-2.5L2.17,788.33z M-4.5,795.98c-1,0.35-1.67,1.3-1.67,2.35c0,1.38,1.12,2.5,2.5,2.5
 	c1.38,0,2.5-1.12,2.5-2.5c0-1.06-0.67-2-1.67-2.35v-7.65H-4.5V795.98z`,
+  },
+  {
+    id: 'burn',
+    aliases: ['burn', 'queimadura', 'burning', 'queimando', 'qmd'],
+    label: 'Queimadura',
+    color: '#E65100', // Laranja Fogo Queimado
+    accentColor: '#FF9100',
+    path: `M1.4,782.5c0,0-0.9,1.8-0.9,4.49c0,1.79,0.9,1.79,1.8,3.59c0.54,1.07,0.9,2.65,1.8,2.7c1.85,0.09,0.9-3.59,0.9-3.59 s2.69,2.7,2.69,8.09c0,1.95-1.59,3.35-3.32,4.24c0.34-0.49,0.58-1.01,0.63-1.55c0.23-2.33-5.39-5.39-5.39-5.39s-3.59,3.47-3.59,5.39 c0,0.77,0.43,1.47,1.06,2.04c-1.9-0.71-3.75-2.1-3.75-4.73c0-3.6,2.08-3.68,2.7-6.29c0.34-1.46,0-1.8,0.9-3.59 C-2.23,786.17,1.4,782.5,1.4,782.5L1.4,782.5z`,
   },
   {
     id: 'engaged',
@@ -249,6 +265,30 @@ export function parseCustomStatusMarkerId(markerId: string): string | null {
   if (!markerId.startsWith(CUSTOM_STATUS_PREFIX)) return null
   const name = markerId.slice(CUSTOM_STATUS_PREFIX.length).trim()
   return name.length ? name : null
+}
+
+/**
+ * Prefixo dos marcadores de QUEIMADURA com quantidade (ex: burn:3).
+ */
+export const BURN_STATUS_PREFIX = 'burn:'
+
+/**
+ * Monta o identificador de marcador de queimadura com a quantidade atual (ex: 'burn:3').
+ */
+export function burnStatusMarkerId(amount: number): string {
+  return `${BURN_STATUS_PREFIX}${Math.max(0, Math.round(amount))}`
+}
+
+/**
+ * Extrai a quantidade de queimadura de um identificador de marcador (ex: 'burn:3' -> { amount: 3 }).
+ * Devolve `null` se o identificador não for de queimadura com quantidade.
+ */
+export function parseBurnMarkerId(markerId: string): { amount: number } | null {
+  if (!markerId || typeof markerId !== 'string') return null
+  if (!markerId.startsWith(BURN_STATUS_PREFIX)) return null
+  const numStr = markerId.slice(BURN_STATUS_PREFIX.length).trim()
+  const amount = parseInt(numStr, 10)
+  return isNaN(amount) ? null : { amount }
 }
 
 const CUSTOM_STATUS_BADGE = {

@@ -138,6 +138,11 @@
                   :action="getBaseAction(action)"
                   @activate="activate($event)"
                 />
+                <mech-improvised-attack-button
+                  v-else-if="action === 'act_improvised_attack'"
+                  :action="getBaseAction(action)"
+                  @activate="activate($event)"
+                />
                 <basic-action-button
                   v-else
                   :action="getBaseAction(action)"
@@ -246,6 +251,7 @@
   import OverchargeButton from './loadouts/action_buttons/overchargeButton.vue'
   import MechFullTechButton from './loadouts/action_buttons/mechFullTechButton.vue'
   import SearchActionButton from './loadouts/action_buttons/searchActionButton.vue'
+  import MechImprovisedAttackButton from './loadouts/action_buttons/MechImprovisedAttackButton.vue'
 
   const { owner } = useEncounterContext()
 

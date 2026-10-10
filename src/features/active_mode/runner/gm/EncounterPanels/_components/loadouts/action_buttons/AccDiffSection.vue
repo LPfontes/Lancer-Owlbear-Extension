@@ -93,6 +93,13 @@
           :label="$t('hud.heavyCoverMod')"
           color="error"
         />
+        <v-checkbox
+          v-model="diffMods.bracedTarget"
+          density="compact"
+          hide-details
+          label="Alvo Suportando (+1 Dif)"
+          color="teal"
+        />
       </v-col>
     </v-row>
   </div>
@@ -121,6 +128,7 @@
     engaged: boolean
     lightCover: boolean
     heavyCover: boolean
+    bracedTarget: boolean
   }
 
   interface TalentModifier {
@@ -147,6 +155,7 @@
     engaged: false,
     lightCover: false,
     heavyCover: false,
+    bracedTarget: false,
   })
 
   const manualAdjust = ref(0)
@@ -174,6 +183,7 @@
     if (diffMods.engaged) diff += 1
     if (diffMods.lightCover) diff += 1
     if (diffMods.heavyCover) diff += 2
+    if (diffMods.bracedTarget) diff += 1
 
     acc += manualAdjust.value > 0 ? manualAdjust.value : 0
     diff += manualAdjust.value < 0 ? Math.abs(manualAdjust.value) : 0

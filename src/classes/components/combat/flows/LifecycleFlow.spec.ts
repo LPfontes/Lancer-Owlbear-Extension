@@ -119,10 +119,16 @@ describe('EndRoundFlow', () => {
     expect(cc().CanActivate('quick')).toBe(true)
   })
 
-  it('clears brace on EndTurn', () => {
+  it('clears brace on EndTurn when penalized turn ends', () => {
     cc().Brace()
     expect(cc().Braced).toBe(true)
 
+    // O fim do turno onde o Suportar foi gasto mantém o Suportar ativo para o próximo turno
+    cc().EndTurn()
+    expect(cc().Braced).toBe(true)
+
+    // O próximo turno (sob efeito da restrição) é encerrado -> Suportar é limpo
+    cc().LastBraceTransitionTime = Date.now() - 2000
     cc().EndTurn()
     expect(cc().Braced).toBe(false)
   })

@@ -9,7 +9,6 @@ const Home = () => import('./landing.vue')
 const CreateSheet = () => import('./pc/NewSheet.vue')
 const SheetManager = () => import('./pc/SheetManager.vue')
 const EncounterTelemetry = () => import('./gm/EncounterTelemetry.vue')
-const GMEncounterRunner = () => import('./runner/gm/GMEncounterRunner.vue')
 const NpcRunner = () => import('./runner/npc/NpcRunner.vue')
 const PilotLogbooks = () =>
   import('@/features/pilot_management/_components/logbook/PilotLogbookView.vue')
@@ -81,9 +80,7 @@ const routes = [
       },
       {
         path: 'gm-encounter-runner/:id?',
-        name: 'active-gm-encounter-runner',
-        component: GMEncounterRunner,
-        props: true,
+        redirect: '/table-chat?tab=tracker',
       },
       {
         path: 'npc-runner/:id?',

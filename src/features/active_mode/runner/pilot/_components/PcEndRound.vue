@@ -101,8 +101,7 @@
           </div>
 
           <div
-            v-for="(b, index) in braced"
-            :key="`braced-${index}`"
+            v-if="braced"
             class="my-1 mx-4 px-2 text-text bg-panel"
           >
             <i18n-t

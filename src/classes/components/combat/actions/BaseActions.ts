@@ -437,6 +437,26 @@ const BASE_ACTIONS: Record<string, IBaseActionRule> = {
       return true
     },
   },
+  act_improvised_attack: {
+    activation: 'full',
+    melee: true,
+    run: cc => {
+      cc.SetCombatAction('full', false)
+      cc.MarkActionUsed('act_improvised_attack')
+      cc.DropAttackRevealedStatuses()
+      return true
+    },
+  },
+  act_improvised_attack_npc: {
+    activation: 'full',
+    melee: true,
+    run: cc => {
+      cc.SetCombatAction('full', false)
+      cc.MarkActionUsed('act_improvised_attack_npc')
+      cc.DropAttackRevealedStatuses()
+      return true
+    },
+  },
 }
 
 const ACTION_ID_ALIASES: Record<string, string> = {

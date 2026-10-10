@@ -5,14 +5,35 @@
     <TokenLinkDialog />
     <PlayerJoinWaitDialog />
     <GmJoinAuthorizationDialog />
-    <v-main id="main-content" v-show="!windowManager.isMinimized.value">
-      <router-view :key="route.fullPath" />
+    <v-main id="main-content" v-show="!windowManager.isMinimized.value" class="main-content-layout">
+      <div class="main-viewport-wrapper">
+        <!-- Camada Base Persistente da Ficha Ativa do Piloto -->
+        <div
+          v-if="hasActiveRunner"
+          class="persistent-runner-base"
+          :class="{ 'is-behind-overlay': isOverlayActive }"
+        >
+          <PilotRunner
+            v-if="activePilotSheetId"
+            :id="activePilotSheetId"
+            :key="activePilotSheetId"
+          />
+        </div>
+
+        <!-- Camada Superior (Overlay) para as demais abas (desenhadas em cima da ficha ativa) -->
+        <div
+          v-if="isOverlayActive"
+          class="overlay-tab-layer"
+        >
+          <router-view :key="route.fullPath" />
+        </div>
+      </div>
     </v-main>
   </v-app>
 </template>
 
 <script setup lang="ts">
-import { provide, onMounted, onUnmounted, computed } from 'vue'
+import { provide, onMounted, onUnmounted, computed, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { GetValue } from '@/io/Storage'
@@ -38,6 +59,10 @@ import {
   type CompendiumDataProvider,
   type UserDataProvider,
 } from '@/ui/providers'
+
+const PilotRunner = defineAsyncComponent(
+  () => import('@/features/active_mode/runner/pilot/PilotRunner.vue')
+)
 
 const theme = useTheme()
 const userStore = UserStore()
@@ -99,6 +124,25 @@ import { PilotStore } from '@/features/pilot_management/store'
 import { tableSyncSocket } from '@/services/tableSyncSocket'
 
 const router = useRouter()
+
+const activePilotSheetId = computed(() => PilotSheetStore().CurrentActiveID)
+const hasActiveRunner = computed(() => !!activePilotSheetId.value)
+
+const isOverlayActive = computed(() => {
+  if (!hasActiveRunner.value) return true
+
+  if (activePilotSheetId.value) {
+    const path = route.path || ''
+    const isPilotRunnerPath = path.startsWith('/active-mode/pilot-runner')
+    const isMatchingId = !route.params.id || route.params.id === activePilotSheetId.value
+    const isReadOnly = String(route.query.readonly ?? '') === '1'
+    if (isPilotRunnerPath && isMatchingId && !isReadOnly) {
+      return false
+    }
+  }
+
+  return true
+})
 
 /**
  * Navegação sem reload: a mesma janela persistente troca de ficha atendendo ao
@@ -217,6 +261,12 @@ async function handleOpenSheetRequested(event: Event) {
 
 
 onMounted(async () => {
+  const pilotSheetStore = PilotSheetStore()
+  if (!pilotSheetStore.SheetsLoaded) {
+    void pilotSheetStore.LoadPilotSheets()
+  }
+
+
   window.addEventListener('compcon-open-sheet-requested', handleOpenSheetRequested)
   window.addEventListener('compcon-navigate', handleNavigateRequested)
   window.addEventListener('message', handleNavigateMessage)
@@ -266,6 +316,55 @@ document.documentElement.setAttribute('data-font', 'inter')
 </script>
 
 <style>
+.main-content-layout {
+  position: relative !important;
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-viewport-wrapper {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.persistent-runner-base {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.persistent-runner-base.is-behind-overlay {
+  pointer-events: none;
+  user-select: none;
+}
+
+.overlay-tab-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  background: rgb(var(--v-theme-background));
+  overflow-y: auto;
+}
+
 body {
   margin: 0;
   overflow-x: hidden;

@@ -56,7 +56,7 @@
       <v-layout style="height: 100%; flex: 1 1 auto; min-height: 0">
         <v-main
           tabindex="0"
-          style="overflow-y: auto"
+          style="overflow-y: auto; height: 100%; max-height: 100%; min-height: 0;"
         >
           <v-container
             fluid

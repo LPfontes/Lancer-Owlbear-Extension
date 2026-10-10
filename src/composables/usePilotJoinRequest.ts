@@ -3,6 +3,10 @@ import { obrPlayerId } from '@/services/obrRuntime'
 import { obrBridge } from '@/services/obrBridge'
 import OBR from '@owlbear-rodeo/sdk'
 import type { PilotJoinRequestMetadata } from '@/types/compcon-obr'
+import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
+
+// Cache em memória de fichas já autorizadas nesta sessão pelo Mestre
+const sessionApprovedSheetIds = new Set<string>()
 
 export function usePilotJoinRequest() {
   const isWaiting = ref(false)
@@ -43,12 +47,27 @@ export function usePilotJoinRequest() {
       return true // GM bypasses authorization
     }
 
+    const sheetId = sheet.ID || sheet.id || sheet.PilotID
+    if (sheetId && sessionApprovedSheetIds.has(sheetId)) {
+      return true
+    }
+
+    try {
+      if (sheetId && PilotSheetStore().CurrentActiveID === sheetId) {
+        sessionApprovedSheetIds.add(sheetId)
+        return true
+      }
+    } catch (_e) {
+      // Store pode não estar pronto
+    }
+
     if (OBR.isReady) {
       const metadata = await OBR.room.getMetadata()
       const existing = metadata[getMetadataKey()] as PilotJoinRequestMetadata | undefined
-      if (existing && existing.status === 'APPROVED' && existing.sheetId === (sheet.ID || sheet.id)) {
+      if (existing && existing.status === 'APPROVED' && existing.sheetId === sheetId) {
         // Já foi aprovado previamente pelo Mestre e os metadados ainda estão lá.
         // Limpamos o metadado e entramos.
+        sessionApprovedSheetIds.add(sheetId)
         await OBR.room.setMetadata({ [getMetadataKey()]: undefined })
         return true
       }
@@ -96,6 +115,7 @@ export function usePilotJoinRequest() {
           if (isWaiting.value) finishRequest(false)
         } else if (myReq.requestId === currentRequestId.value) {
           if (myReq.status === 'APPROVED') {
+            if (sheetId) sessionApprovedSheetIds.add(sheetId)
             await OBR.room.setMetadata({ [getMetadataKey()]: undefined })
             finishRequest(true)
           } else if (myReq.status === 'DENIED') {

@@ -303,6 +303,7 @@
       pilots.value,
       placeholders.value
     )
+    instance.IsActive = true
     instance.Combatants.forEach(c => {
       c.actor.CombatController.ResetForEncounter()
       c.actor.CombatController.StartEncounter()
@@ -323,8 +324,8 @@
       console.warn('[NewEncounter] Erro ao registrar a ação de combate:', err)
     }
 
-    if (launch) router.push('gm-encounter-runner')
-    else router.push('manage-encounters')
+    if (launch) router.push('/table-chat?tab=tracker')
+    else router.push('/table-chat?tab=tracker')
   }
   async function loadEncounter() {
     if (!loadInput.value.trim()) {
@@ -334,13 +335,13 @@
     loadLoading.value = true
     loadError.value = ''
     try {
-      const { instance } = await loadEncounterFromJsonOrSharecode(loadInput.value.trim(), {
+      await loadEncounterFromJsonOrSharecode(loadInput.value.trim(), {
         pilots: pilots.value,
         placeholders: placeholders.value,
         navigate: false,
       })
-      // Navigate to the runner with the loaded encounter
-      router.push({ name: 'active-gm-encounter-runner', params: { id: instance.ID } })
+      // Navigate to the combat tracker
+      router.push('/table-chat?tab=tracker')
     } catch (err) {
       loadError.value = err instanceof Error ? err.message : 'Erro ao carregar encontro.'
     } finally {

@@ -141,6 +141,7 @@ export async function loadEncounterFromJsonOrSharecode(
   encounter.save()
 
   const instance = new EncounterInstance(undefined, encounter, pilots, placeholders)
+  instance.IsActive = true
   instance.Combatants.forEach(c => {
     // Um combatente de tipo conhecido mas com dados incompletos não pode derrubar a
     // importação inteira: sem o controller, seguimos com o ator que veio do arquivo.
@@ -158,7 +159,7 @@ export async function loadEncounterFromJsonOrSharecode(
 
   if (navigate) {
     const { default: router } = await import('@/router')
-    router.push('gm-encounter-runner')
+    router.push('/table-chat?tab=tracker')
   }
 
   return { instance, encounter, importedNpcs }
