@@ -1023,18 +1023,23 @@ class OBRBridge {
       const dims = fetched.ok && fetched.blob
         ? await this.getBlobDimensions(fetched.blob)
         : { width: 512, height: 512 }
+      console.log('[obrBridge] dims:', dims, 'fetched.ok:', fetched.ok, 'blob.type:', fetched.blob?.type)
       const mime = (fetched.ok && fetched.blob && fetched.blob.type) || this.inferMime(imageUrl)
 
       const rawSize = this.getSheetSize(sheet, type)
       const gridType = (await OBR.scene.grid.getType().catch(() => 'HEX_VERTICAL')) || 'HEX_VERTICAL'
-      const tokenSpaces = this.calculateTokenGridSpaces(rawSize, gridType)
-      const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 150
+      const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 50
       const name = this.resolveSheetName(sheet, type)
 
       const w = dims.width || 512
       const h = dims.height || 512
-      // Escala uniforme para o token ocupar `tokenSpaces` células de grid na largura.
-      const s = (tokenSpaces * dpi) / w
+      console.log('[obrBridge] rawSize:', rawSize, 'gridType:', gridType, 'tokenSpaces:', rawSize, 'dpi:', dpi, 'w:', w, 'h:', h)
+      // Escala uniforme: cabe em tokenSpaces células (tokenSpaces * dpi px) em AMBAS dimensões, mantendo proporção.
+      const maxPx = rawSize * dpi
+      const sW = maxPx / w
+      const sH = maxPx / h
+      const s = Math.min(sW, sH)
+      console.log('[obrBridge] calculated scale s:', s, 'sW:', sW, 'sH:', sH, 'maxPx:', maxPx)
 
       const sc = (sheet as any)?.ActiveMech?.StatController ?? (sheet as any)?.CombatController?.StatController
       const initialStats = sc ? {
@@ -1073,7 +1078,6 @@ class OBRBridge {
             sheetId: sheetId,
             ...(mechId ? { mechId } : {}),
             size: rawSize,
-            gridSpaces: tokenSpaces,
             ...(initialStats ? { stats: initialStats, lastUpdated: Date.now() } : {}),
           },
           ...(initialSummary ? { [TOKEN_TRACKER_SUMMARY_KEY]: initialSummary as any } : {}),
@@ -1227,37 +1231,7 @@ class OBRBridge {
     })
   }
 
-  /**
-   * Converte o SIZE nominal da ficha (0.5 para Size 1/2, 1, 2, 3, 4+) no número de
-   * espaços/células de grid que o token ocupa na cena, respeitando as regras do LANCER:
-   *
-   * - Grid Hexagonal (`HEX_VERTICAL` ou `HEX_HORIZONTAL`):
-   *   - Tamanho 1/2 e 1: ocupa 1 hex
-   *   - Tamanho 2: ocupa 3 hexes de espaço
-   *   - Tamanho 3: ocupa 7 hexes de espaço
-   *   - Tamanho 4+: ocupa 12 hexes de espaço
-   * - Grid Quadrado (`SQUARE`):
-   *   - Tamanho 1/2 e 1: ocupa 1 quadrado (1x1)
-   *   - Tamanho 2: ocupa 2 quadrados (2x2)
-   *   - Tamanho 3: ocupa 3 quadrados (3x3)
-   *   - Tamanho 4+: ocupa 4 quadrados (4x4)
-   */
-  public calculateTokenGridSpaces(size: number, gridType: string = 'HEX_VERTICAL'): number {
-    const isSquare = gridType === 'SQUARE'
-    if (isSquare) {
-      if (size <= 1) return 1
-      if (size <= 2) return 2
-      if (size <= 3) return 3
-      return Math.round(size)
-    }
-
-    // Grid Hexagonal (padrão oficial do LANCER):
-    if (size <= 1) return 1
-    if (size <= 2) return 3
-    if (size <= 3) return 7
-    return 12
-  }
-
+  
   /**
    * Obtém o SIZE nominal da ficha (ex.: 0.5 para Size 1/2, 1, 2, 3, etc.):
    * SIZE do mecha ativo para pilotos, SIZE do NPC para NPCs.

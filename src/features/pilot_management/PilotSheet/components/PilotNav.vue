@@ -2,7 +2,6 @@
   <!-- Mobile nav -->
   <v-bottom-navigation
     v-if="mobile"
-    height="42"
     density="compact"
     class="bg-primary mobile-bottom-nav"
     style="
@@ -10,6 +9,7 @@
       left: 12px;
       right: 12px;
       width: auto;
+      height auto;
       bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
       overflow: hidden;
@@ -18,7 +18,6 @@
     <v-tabs
       grow
       density="compact"
-      height="42"
       bg-color="primary"
       center-active
       hide-slider

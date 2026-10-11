@@ -18,7 +18,7 @@
     <v-col cols="auto">
       <v-btn
         size="x-small"
-        color="primary"
+        color="accent"
         variant="tonal"
         prepend-icon="mdi-map-marker-plus-outline"
         :loading="generatingToken"
