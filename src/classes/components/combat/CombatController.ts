@@ -213,6 +213,9 @@ class CombatController implements ICounterContainer, IStatContainer {
   public InTurn = false
   public BracedPenaltyPending = false
   public BracedPenaltyActive = false
+  public get IsBracedTurn(): boolean {
+    return this.Braced && this.BracedPenaltyActive
+  }
   public LastBraceTransitionTime = 0
   public Prepared = false
   public Disengaged = false
@@ -580,6 +583,8 @@ class CombatController implements ICounterContainer, IStatContainer {
     this.BracedPenaltyActive = false
     this.LastBraceTransitionTime = 0
     this.ClearBraceResistance()
+    this.ResetCombatActions()
+    this.StatController.setCurrentStat(StatKey.SPEED, this.StatController.getMax(StatKey.SPEED), { silent: true })
     this.StatusController.NotifyStatusChange()
     if (this.Counterpart) {
       this.Counterpart.Braced = false
@@ -587,6 +592,8 @@ class CombatController implements ICounterContainer, IStatContainer {
       this.Counterpart.BracedPenaltyActive = false
       this.Counterpart.LastBraceTransitionTime = 0
       this.Counterpart.ClearBraceResistance()
+      this.Counterpart.ResetCombatActions()
+      this.Counterpart.StatController.setCurrentStat(StatKey.SPEED, this.Counterpart.StatController.getMax(StatKey.SPEED), { silent: true })
       this.Counterpart.StatusController.NotifyStatusChange()
     }
     return true
@@ -911,6 +918,32 @@ class CombatController implements ICounterContainer, IStatContainer {
   }
 
   public DeniesActivation(action: string, actionId?: string): boolean {
+    const str = (action || '').toLowerCase().replace(/\s+/g, '')
+    const id = (actionId || '').toLowerCase()
+
+    // Suportar ativo: não pode realizar nenhuma reação até o fim do próximo turno
+    if (this.Braced && (str === 'reaction' || id === 'brace' || id === 'overwatch')) {
+      return true
+    }
+
+    // Turno com penalidade de Suportar ativa:
+    // Só pode realizar uma Ação Rápida. Não pode SOBRECARREGAR, mover-se normalmente,
+    // usar ações completas ou ações livres.
+    if (this.IsBracedTurn) {
+      if (
+        str === 'overcharge' ||
+        id === 'act_overcharge' ||
+        str === 'move' ||
+        str === 'full' ||
+        str === 'fulltech' ||
+        str === 'jockey' ||
+        str === 'free' ||
+        str === 'protocol'
+      ) {
+        return true
+      }
+    }
+
     return this.StatusController.DeniesActivation(action, actionId)
   }
 
@@ -1397,10 +1430,12 @@ class CombatController implements ICounterContainer, IStatContainer {
       this.BracedPenaltyPending = false
       this.BracedPenaltyActive = true
       this.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+      this.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
       if (this.Counterpart) {
         this.Counterpart.BracedPenaltyPending = false
         this.Counterpart.BracedPenaltyActive = true
         this.Counterpart.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+        this.Counterpart.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
       }
     }
   }

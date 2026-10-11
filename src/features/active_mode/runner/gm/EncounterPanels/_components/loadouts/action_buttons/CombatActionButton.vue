@@ -333,6 +333,7 @@
       actorName,
       actionName: props.action.Name,
       actionType: props.action.Activation as any,
+      actionId: props.action.ID,
       detail: props.action.Detail,
     })
   }
@@ -350,7 +351,10 @@
     return props.actionIcon ?? props.action.Icon
   })
   const canActivate = computed(() => {
-    return controller.value.CanActivate(props.action.Activation)
+    if (props.action.ID === 'act_overcharge') {
+      return controller.value.CanActivate('overcharge', props.action.ID)
+    }
+    return controller.value.CanActivate(props.action.Activation, props.action.ID)
   })
   const useId = computed(() => props.presetWeapon?.InstanceID ?? props.action.ID)
   const overchargeUse = computed(() =>

@@ -2,7 +2,9 @@
   <!-- Mobile nav -->
   <v-bottom-navigation
     v-if="mobile"
-    :height="xs ? 20 : 40"
+    height="42"
+    density="compact"
+    class="bg-primary mobile-bottom-nav"
     style="
       border-radius: 12px;
       left: 12px;
@@ -10,22 +12,22 @@
       width: auto;
       bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
     "
   >
     <v-tabs
       grow
-      center
       density="compact"
-      :height="xs ? 20 : 40"
+      height="42"
       bg-color="primary"
-      show-arrows
       center-active
       hide-slider
+      class="pilot-mobile-tabs"
     >
       <v-tab
         variant="text"
-        :class="selected === 1 ? 'bg-white' : ''"
-        :size="xs ? 'small' : ''"
+        :class="selected === 1 ? 'bg-white text-primary font-weight-bold' : 'text-white'"
+        class="pilot-tab-item px-1 px-sm-2"
         :selected="selected === 1"
         @click="$emit('to', 1)"
       >
@@ -34,8 +36,8 @@
       <v-tab
         v-if="hasBonds"
         variant="text"
-        :size="xs ? 'small' : ''"
-        :class="selected === 2 ? 'bg-white' : ''"
+        :class="selected === 2 ? 'bg-white text-primary font-weight-bold' : 'text-white'"
+        class="pilot-tab-item px-1 px-sm-2"
         :selected="selected === 2"
         @click="$emit('to', 2)"
       >
@@ -43,8 +45,8 @@
       </v-tab>
       <v-tab
         variant="text"
-        :class="selected === 3 ? 'bg-white' : ''"
-        :size="xs ? 'small' : ''"
+        :class="selected === 3 ? 'bg-white text-primary font-weight-bold' : 'text-white'"
+        class="pilot-tab-item px-1 px-sm-2"
         :selected="selected === 3"
         @click="$emit('to', 3)"
       >
@@ -52,8 +54,8 @@
       </v-tab>
       <v-tab
         variant="text"
-        :class="selected === 4 ? 'bg-white' : ''"
-        :size="xs ? 'small' : ''"
+        :class="selected === 4 ? 'bg-white text-primary font-weight-bold' : 'text-white'"
+        class="pilot-tab-item px-1 px-sm-2"
         :selected="selected === 4"
         @click="$emit('to', 4)"
       >
@@ -61,8 +63,8 @@
       </v-tab>
       <v-tab
         variant="text"
-        :class="selected === 5 ? 'bg-white' : ''"
-        :size="xs ? 'small' : ''"
+        :class="selected === 5 ? 'bg-white text-primary font-weight-bold' : 'text-white'"
+        class="pilot-tab-item px-1 px-sm-2"
         :selected="selected === 5"
         @click="$emit('to', 5)"
       >
@@ -362,5 +364,39 @@
 
   .nav-body:hover #end-cap {
     background-color: rgb(var(--v-theme-accent));
+  }
+
+  /* Estilos refinados da navegação móvel */
+  .mobile-bottom-nav {
+    overflow: hidden !important;
+  }
+
+  .pilot-mobile-tabs {
+    width: 100% !important;
+  }
+
+  .pilot-mobile-tabs :deep(.v-slide-group__container) {
+    scrollbar-width: none !important;
+  }
+
+  .pilot-mobile-tabs :deep(.v-slide-group__content) {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  .pilot-mobile-tabs :deep(.v-slide-group__content::-webkit-scrollbar) {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  .pilot-tab-item {
+    min-width: 0 !important;
+    letter-spacing: 0.5px !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    height: 42px !important;
+    line-height: 42px !important;
+    border-radius: 0 !important;
   }
 </style>

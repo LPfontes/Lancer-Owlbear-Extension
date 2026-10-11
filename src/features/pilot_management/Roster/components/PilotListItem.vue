@@ -68,6 +68,34 @@
             </v-col>
 
             <v-col
+              v-if="!mobile"
+              cols="auto"
+              class="mr-1"
+            >
+              <v-btn
+                size="small"
+                :variant="isCurrentActive ? 'flat' : 'tonal'"
+                :color="isCurrentActive ? 'accent' : 'primary'"
+                class="font-weight-bold rounded-0"
+                :class="{ 'text-black font-weight-bold': isCurrentActive }"
+                prepend-icon="mdi-card-account-details-outline"
+                @click.stop="openActiveSheet"
+              >
+                {{ isCurrentActive ? $t('ow.activeSheet') : $t('ow.openActiveSheet') }}
+              </v-btn>
+              <v-btn
+                size="small"
+                variant="tonal"
+                color="secondary"
+                class="font-weight-bold rounded-0 ml-1"
+                prepend-icon="mdi-pencil-outline"
+                @click.stop="toPilotSheet"
+              >
+                {{ $t('ow.editHangarSheet') }}
+              </v-btn>
+            </v-col>
+
+            <v-col
               cols="auto"
               class="mr-n2"
             >
@@ -83,10 +111,39 @@
           v-if="mobile"
           class="detail-row-mobile pa-2"
         >
-          <b class="text-stark">{{ pilot.Name }}</b>
-          <div class="text-cc-overline">
-            <span class="text-disabled">{{ $t('ui.fields.licenseLevel') }}</span>
-            {{ pilot.Level }}
+          <div class="d-flex justify-space-between align-center flex-wrap ga-2">
+            <div>
+              <b class="text-stark">{{ pilot.Name }}</b>
+              <div class="text-cc-overline">
+                <span class="text-disabled">{{ $t('ui.fields.licenseLevel') }}</span>
+                {{ pilot.Level }}
+              </div>
+            </div>
+
+            <div class="d-flex ga-1 flex-wrap">
+              <v-btn
+                size="x-small"
+                :variant="isCurrentActive ? 'flat' : 'tonal'"
+                :color="isCurrentActive ? 'accent' : 'primary'"
+                class="font-weight-bold rounded-0"
+                :class="{ 'text-black font-weight-bold': isCurrentActive }"
+                prepend-icon="mdi-card-account-details-outline"
+                @click.stop="openActiveSheet"
+              >
+                {{ isCurrentActive ? $t('ow.activeSheet') : $t('ow.openActiveSheet') }}
+              </v-btn>
+
+              <v-btn
+                size="x-small"
+                variant="tonal"
+                color="secondary"
+                class="font-weight-bold rounded-0"
+                prepend-icon="mdi-pencil-outline"
+                @click.stop="toPilotSheet"
+              >
+                {{ $t('ow.editHangarSheet') }}
+              </v-btn>
+            </div>
           </div>
         </div>
 
@@ -148,10 +205,13 @@
 </template>
 
 <script setup lang="ts">
+  import { computed } from 'vue'
+  import { useRouter } from 'vue-router'
   import { useDisplay } from 'vuetify'
   import { Pilot } from '@/classes/pilot/Pilot'
   import EditMenu from '../../PilotSheet/components/PilotEditMenu.vue'
   import { PilotStore } from '@/stores'
+  import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import PilotListItemDetails from './_pilotListItemDetails.vue'
 
   const props = defineProps<{ pilot: Pilot; selectable?: boolean }>()
@@ -159,9 +219,35 @@
   const emit = defineEmits<{ goTo: [id: string] }>()
 
   const { smAndDown: mobile } = useDisplay()
+  const router = useRouter()
+  const pilotSheetStore = PilotSheetStore()
+
+  const isCurrentActive = computed(() => {
+    const activeId = pilotSheetStore.CurrentActiveID
+    if (!activeId) return false
+    const pilotId = props.pilot?.ID || (props.pilot as any)?.id
+    const activeSheet = pilotSheetStore.GetSheet(activeId)
+    if (!activeSheet) return activeId === pilotId
+    return (
+      activeSheet.PilotID === pilotId ||
+      activeSheet.Combatant?.actor?.ID === pilotId ||
+      activeSheet.ID === pilotId
+    )
+  })
+
+  async function openActiveSheet() {
+    const sheet = await pilotSheetStore.ensureActiveSheetForPilot(props.pilot)
+    if (sheet) {
+      router.push(`/active-mode/pilot-runner/${sheet.ID}`)
+    }
+  }
 
   function toPilotSheet() {
     emit('goTo', props.pilot.ID)
+    router.push({
+      name: 'pilot_sheet_redirect',
+      params: { pilotID: props.pilot.ID },
+    })
   }
 
   function statusColor(status: string): string {

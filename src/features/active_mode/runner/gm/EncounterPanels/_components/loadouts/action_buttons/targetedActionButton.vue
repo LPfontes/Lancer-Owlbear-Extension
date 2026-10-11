@@ -14,6 +14,7 @@
   import CombatActionButton from './CombatActionButton.vue'
   import WeaponAttackHudModal from './WeaponAttackHudModal.vue'
   import { useTableActionStore } from '@/stores/tableActionStore'
+  import { resolveActionCategory } from '@/types/table-actions'
 
   const { owner, encounterInstance, activeController: controller, ownerController } = useEncounterContext()
   const { t } = useI18n()
@@ -125,11 +126,12 @@
       controller.value?.CombatName ||
       'Piloto'
     const targetName = targets[0]?.Combatant?.actor?.Name
-    const cat = activation.value === 'Full' ? 'full_action' : 'quick_action'
+    const cat = resolveActionCategory(activation.value, props.action.ID)
     void useTableActionStore().broadcastCombatAction({
       actorName,
       actionName: props.action.Name,
       actionType: cat,
+      actionId: props.action.ID,
       targetName,
     })
 

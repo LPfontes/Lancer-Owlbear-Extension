@@ -240,6 +240,7 @@
     return controller.value.HasRemainingActions
   })
   const remainingMovement = computed(() => {
+    if (controller.value.IsBracedTurn) return 0
     return controller.value.StatController.getCurrent(StatKey.SPEED) || 0
   })
 
@@ -283,7 +284,8 @@
           pilotCc?.ResetCombatActions()
           pilotCc?.ClearBoost()
           if (pilotCc) {
-            pilotCc.StatController.setCurrentStat(StatKey.SPEED, pilotCc.StatController.getMax(StatKey.SPEED))
+            const pSpeed = (pilotCc.Braced && pilotCc.BracedPenaltyActive) ? 0 : pilotCc.StatController.getMax(StatKey.SPEED)
+            pilotCc.StatController.setCurrentStat(StatKey.SPEED, pSpeed, { silent: true })
             pilotCc.ClearUses(ActivePeriod.Turn)
             pilotCc.ActionPoolController.ClearReactionUses()
             pilotCc.CombatLogVersion++
@@ -292,7 +294,8 @@
           mechCc?.ResetCombatActions()
           mechCc?.ClearBoost()
           if (mechCc) {
-            mechCc.StatController.setCurrentStat(StatKey.SPEED, mechCc.StatController.getMax(StatKey.SPEED))
+            const mSpeed = (mechCc.Braced && mechCc.BracedPenaltyActive) ? 0 : mechCc.StatController.getMax(StatKey.SPEED)
+            mechCc.StatController.setCurrentStat(StatKey.SPEED, mSpeed, { silent: true })
             mechCc.ClearUses(ActivePeriod.Turn)
             mechCc.ActionPoolController.ClearReactionUses()
             mechCc.CombatLogVersion++

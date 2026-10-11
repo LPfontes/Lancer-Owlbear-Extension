@@ -33,8 +33,7 @@ const routes = [
       },
       {
         path: 'sheet-manager',
-        name: 'active-sheet-manager',
-        component: SheetManager,
+        redirect: '/pilot_management',
       },
       {
         path: 'pilot-runner/:id?',

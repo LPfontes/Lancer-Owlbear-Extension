@@ -196,6 +196,7 @@
   import { useI18n } from 'vue-i18n'
   import { useTableActionStore } from '@/stores/tableActionStore'
   import { notify } from '@/util/notify'
+  import { resolveActionCategory } from '@/types/table-actions'
   import CombatActionIndicator from '@/ui/components/chips/_CombatActionIndicator.vue'
 
   const { t } = useI18n()
@@ -234,13 +235,7 @@
       props.actor?.CombatController?.CombatName ||
       (props.actor as any)?.CombatController?.ActiveActor?.CombatName ||
       'Piloto'
-    const activation = (props.deployable.DeployAction?.Activation || 'Quick').toLowerCase()
-    const cat =
-      activation === 'full'
-        ? 'full_action'
-        : activation === 'protocol'
-          ? 'protocol'
-          : 'quick_action'
+    const cat = resolveActionCategory(props.deployable.DeployAction?.Activation)
 
     void useTableActionStore().broadcastCombatAction({
       actorName,
@@ -257,13 +252,7 @@
       props.actor?.CombatController?.CombatName ||
       (props.actor as any)?.CombatController?.ActiveActor?.CombatName ||
       'Piloto'
-    const activation = (props.deployable.DeployAction?.Activation || 'Quick').toLowerCase()
-    const cat =
-      activation === 'full'
-        ? 'full_action'
-        : activation === 'protocol'
-          ? 'protocol'
-          : 'quick_action'
+    const cat = resolveActionCategory(props.deployable.DeployAction?.Activation)
 
     void useTableActionStore().broadcastCombatAction({
       actorName,

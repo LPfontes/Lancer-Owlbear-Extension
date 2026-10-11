@@ -4,6 +4,7 @@ import { obrBridge } from '@/services/obrBridge'
 import OBR from '@owlbear-rodeo/sdk'
 import type { PilotJoinRequestMetadata } from '@/types/compcon-obr'
 import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
+import { roomSyncedTracker } from '@/services/tableSyncSocket'
 
 // Cache em memória de fichas já autorizadas nesta sessão pelo Mestre
 const sessionApprovedSheetIds = new Set<string>()
@@ -49,6 +50,18 @@ export function usePilotJoinRequest() {
 
     const sheetId = sheet.ID || sheet.id || sheet.PilotID
     if (sheetId && sessionApprovedSheetIds.has(sheetId)) {
+      return true
+    }
+
+    // Se a sala não estiver em combate ativo (sem tracker ativo), o jogador
+    // pode ativar a ficha livremente sem pedir autorização ao Mestre.
+    const hasActiveCombat = Boolean(
+      roomSyncedTracker.value &&
+      Array.isArray(roomSyncedTracker.value.cards) &&
+      roomSyncedTracker.value.cards.length > 0
+    )
+    if (!hasActiveCombat) {
+      if (sheetId) sessionApprovedSheetIds.add(sheetId)
       return true
     }
 

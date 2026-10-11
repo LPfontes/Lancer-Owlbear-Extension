@@ -855,21 +855,25 @@ class TokenMovementCaptureService {
         // movimento padrão do turno.
         target.combatController.ClearBoost?.()
         const max = toTrackerInt(target.combatController?.StatController?.getMax?.('speed'))
-        target.statController?.setCurrentStat?.('speed', max, { silent: true })
+        const isBracedTurn = !!target.combatController?.IsBracedTurn
+        const currentSpeed = isBracedTurn ? 0 : max
+        target.statController?.setCurrentStat?.('speed', currentSpeed, { silent: true })
 
         // E o TOKEN também: é ele que as outras janelas desenham, e é dele que a
         // janela da ficha vai reconciliar o `SPEED` quando abrir.
         const gravado = await this.readMovementRecord(tokenId)
-        const cheio = fullMovementRecord(
-          gravado ?? movementRecordFromStats({ remaining: max, maxSpeed: max, boostBonus: 0 }),
-          this.writerId()
-        )
+        const record = isBracedTurn
+          ? movementRecordFromStats({ remaining: 0, maxSpeed: max, boostBonus: 0 })
+          : fullMovementRecord(
+              gravado ?? movementRecordFromStats({ remaining: max, maxSpeed: max, boostBonus: 0 }),
+              this.writerId()
+            )
         await OBR.scene.items.updateItems([tokenId], items => {
           for (const item of items) {
-            item.metadata[TOKEN_TRACKER_MOVEMENT_KEY] = cheio as unknown as never
+            item.metadata[TOKEN_TRACKER_MOVEMENT_KEY] = record as unknown as never
           }
         })
-        this.lastRecords.set(tokenId, cheio)
+        this.lastRecords.set(tokenId, record)
 
         reiniciados += 1
         await tokenTrackerService.refreshToken(tokenId)

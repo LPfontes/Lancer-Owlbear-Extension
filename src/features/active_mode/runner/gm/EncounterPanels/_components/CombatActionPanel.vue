@@ -102,7 +102,10 @@
   const { t } = useI18n()
   const { layout } = useLayoutOptions()
 
-  const movement = computed(() => props.controller.StatController?.CurrentStats['speed'] || 0)
+  const movement = computed(() => {
+    if (props.controller.IsBracedTurn) return 0
+    return props.controller.StatController?.CurrentStats['speed'] || 0
+  })
   const inOvercharge = computed(() => props.controller.InOvercharge)
 
   type Tile = {
@@ -167,6 +170,7 @@
       },
     ]
     if (!props.hideOvercharge) {
+      const isBraced = c.IsBracedTurn
       tiles.push({
         key: 'overcharge',
         icon: 'cc:overcharge',
@@ -174,8 +178,11 @@
           ? t('active.combatAction.overchargeReady')
           : t('active.combatAction.overcharge'),
         color: 'overcharge',
-        available: c.CanActivate('overcharge') || inOvercharge.value,
-        toggle: () => c.toggleCombatAction('overcharge'),
+        available: !isBraced && (c.CanActivate('overcharge') || inOvercharge.value),
+        toggle: () => {
+          if (isBraced) return
+          c.toggleCombatAction('overcharge')
+        },
       })
     }
     tiles.push({
@@ -184,7 +191,10 @@
       label: t('active.combatAction.reaction'),
       color: 'action--reaction',
       available: c.CanActivate('reaction'),
-      toggle: () => c.toggleCombatAction('reaction'),
+      toggle: () => {
+        if (c.Braced) return
+        c.toggleCombatAction('reaction')
+      },
     })
     return tiles
   })

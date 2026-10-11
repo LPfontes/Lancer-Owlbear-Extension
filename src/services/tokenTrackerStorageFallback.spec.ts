@@ -137,4 +137,119 @@ describe('tokenTrackerService - fallback de armazenamento e case-insensitivity',
     expect(local.reader).toBeDefined()
     expect(local.source).toContain('roomSyncedSheets')
   })
+
+  it('atribui rank 0 para pilotos do Hangar (fora de combate) e rank 1 para fichas ativas (pilot_sheets)', async () => {
+    const pilotId = 'pilot-hangar-1'
+    const hangarPilot = {
+      ID: pilotId,
+      Name: 'Hangar Pilot',
+      CombatController: {
+        StatController: {
+          getCurrent: (k: string) => (k === 'hp' ? 16 : 0),
+          getMax: (k: string) => (k === 'hp' ? 16 : 0),
+        },
+      },
+    }
+
+    tokenTrackerService.setStoreAccessors({
+      pilot: () => ({ Pilots: [hangarPilot], getPilotByID: (id: string) => (id === pilotId ? hangarPilot : undefined) }),
+      npc: () => ({ Npcs: [], getNpcByID: () => undefined }),
+      cards: () => [],
+      sheets: () => [],
+      activeSheet: () => null,
+      sheetsStore: () => null,
+      syncedSheets: () => ({}),
+    })
+
+    // @ts-expect-error testando método privado
+    const hangarState = await tokenTrackerService.resolveActorState({
+      sheetId: pilotId,
+      sheetType: 'pilot',
+    })
+
+    // Piloto apenas no Hangar não está em combate: rank deve ser 0
+    expect(hangarState.rank).toBe(0)
+
+    // Agora simulando com uma ficha ativa de combate no activeSheet
+    const activeCombatPilot = {
+      ID: pilotId,
+      Name: 'Active Combat Pilot',
+      CombatController: {
+        StatController: {
+          getCurrent: (k: string) => (k === 'hp' ? 10 : 0),
+          getMax: (k: string) => (k === 'hp' ? 16 : 0),
+        },
+      },
+    }
+
+    tokenTrackerService.setStoreAccessors({
+      pilot: () => ({ Pilots: [hangarPilot], getPilotByID: (id: string) => (id === pilotId ? hangarPilot : undefined) }),
+      npc: () => ({ Npcs: [], getNpcByID: () => undefined }),
+      cards: () => [],
+      sheets: () => [],
+      activeSheet: () => ({ Pilot: activeCombatPilot, ID: 'active-sheet-id' }),
+      sheetsStore: () => null,
+      syncedSheets: () => ({}),
+    })
+
+    // @ts-expect-error testando método privado
+    const combatState = await tokenTrackerService.resolveActorState({
+      sheetId: pilotId,
+      sheetType: 'pilot',
+    })
+
+    // Ficha ativa de combate deve ter rank 1
+    expect(combatState.rank).toBe(1)
+  })
+
+  it('preserva dados de dano do resumo do token contra template fora de combate do Hangar', async () => {
+    const pilotId = 'pilot-damaged-1'
+    const hangarPilot = {
+      ID: pilotId,
+      Name: 'Hangar Pilot',
+      CombatController: {
+        StatController: {
+          getCurrent: (k: string) => (k === 'hp' ? 16 : 0),
+          getMax: (k: string) => (k === 'hp' ? 16 : 0),
+        },
+      },
+    }
+
+    tokenTrackerService.setStoreAccessors({
+      pilot: () => ({ Pilots: [hangarPilot], getPilotByID: (id: string) => (id === pilotId ? hangarPilot : undefined) }),
+      npc: () => ({ Npcs: [], getNpcByID: () => undefined }),
+      cards: () => [],
+      sheets: () => [],
+      activeSheet: () => null,
+      sheetsStore: () => null,
+      syncedSheets: () => ({}),
+    })
+
+    const mockToken = {
+      id: 'token-damaged-1',
+      name: 'Mech Token',
+      metadata: {
+        'com.compcon.activemode': {
+          sheetId: pilotId,
+          sheetType: 'pilot',
+          stats: {
+            hp: { current: 10, max: 16 },
+            heat: { current: 2, max: 5 },
+          },
+        },
+        'com.compcon.activemode.token_tracker_summary': {
+          w: 'token',
+          t: Date.now(),
+          v: {
+            pv: [10, 16],
+            heat: [2, 5],
+          },
+        },
+      },
+    } as any
+
+    const desc = await tokenTrackerService.describeToken(mockToken)
+    expect(desc).toBeDefined()
+    expect(desc?.hasValues).toBe(true)
+  })
 })

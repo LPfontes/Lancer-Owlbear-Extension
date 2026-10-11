@@ -268,6 +268,7 @@ const filterOptions = [
   { label: 'Todas', value: 'all' },
   { label: 'Ações', value: 'full_action' },
   { label: 'Rápidas', value: 'quick_action' },
+  { label: 'Reações', value: 'reaction' },
   { label: 'Rolagens', value: 'roll' },
   { label: 'Danos', value: 'damage' },
   { label: 'Chat', value: 'chat' },

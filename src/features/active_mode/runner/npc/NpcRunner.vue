@@ -72,7 +72,20 @@
             <v-row
               dense
               justify="end"
+              align="center"
             >
+              <v-col cols="auto">
+                <v-btn
+                  size="small"
+                  color="primary"
+                  variant="tonal"
+                  prepend-icon="mdi-map-marker-plus-outline"
+                  :loading="generatingToken"
+                  @click="generateToken"
+                >
+                  {{ $t('ow.generateToken') }}
+                </v-btn>
+              </v-col>
               <v-col cols="auto">
                 <actor-logs
                   :actor="combatant.actor"
@@ -300,16 +313,22 @@
     }
   }
 
+  const generatingToken = ref(false)
+
+  async function generateToken(): Promise<void> {
+    const actor = combatant.value?.actor || NpcStore().getNpcByID(npcId.value)
+    if (!actor) return
+    generatingToken.value = true
+    try {
+      await obrBridge.createTokenForSheet(actor, 'npc', { force: true })
+    } finally {
+      generatingToken.value = false
+    }
+  }
+
   // Garante que as fontes estejam carregadas antes de resolver o combatente
   onMounted(async () => {
     void loadSources()
-
-    // Cria automaticamente o token no Owlbear Rodeo a partir do NPC do roster
-    // (usa o ID estável do NPC, não a instância efêmera do encontro)
-    const npc = NpcStore().getNpcByID(npcId.value)
-    if (npc) {
-      void obrBridge.createTokenForSheet(npc, 'npc').catch(() => {})
-    }
   })
 
   // Trocar de ficha na mesma janela (mesma rota, outro :id) recomeça a busca.
@@ -335,11 +354,24 @@
     () => (combatant.value ? combatantCombatVersion(combatant.value) : 0),
     () => {
       const enc = instanceToSave()
-      if (!enc) return
-      if (syncTimeout) clearTimeout(syncTimeout)
-      syncTimeout = setTimeout(() => {
-        void enc.Save?.()
-      }, 600)
+      if (enc) {
+        if (syncTimeout) clearTimeout(syncTimeout)
+        syncTimeout = setTimeout(() => {
+          void enc.Save?.()
+        }, 600)
+      }
+
+      const sc = combatant.value?.actor?.CombatController?.StatController
+      if (sc && npcId.value) {
+        void obrBridge.syncTokenCombatStats(npcId.value, {
+          hp: { current: Number(sc.getCurrent?.('hp') ?? 0), max: Number(sc.getMax?.('hp') ?? 0) },
+          heat: { current: Number(sc.getCurrent?.('heatcap') ?? 0), max: Number(sc.getMax?.('heatcap') ?? 0) },
+          structure: { current: Number(sc.getCurrent?.('structure') ?? 0), max: Number(sc.getMax?.('structure') ?? 0) },
+          stress: { current: Number(sc.getCurrent?.('stress') ?? 0), max: Number(sc.getMax?.('stress') ?? 0) },
+          overshield: { current: Number(sc.getCurrent?.('overshield') ?? 0), max: Number(sc.getMax?.('overshield') ?? 0) },
+          speed: { current: Number(sc.getCurrent?.('speed') ?? 0), max: Number(sc.getMax?.('speed') ?? 0) },
+        })
+      }
     }
   )
 </script>

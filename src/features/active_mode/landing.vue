@@ -4,7 +4,6 @@
       justify="space-between"
       align="center"
       class="my-2"
-      style="padding-top: 50px;"
     >
       <v-col><v-divider /></v-col>
       <v-col cols="auto" class="text-center">
@@ -217,12 +216,6 @@
         subtitle: 'Gerencie pilotos cadastrados, mechs, talentos e licenças',
         icon: 'cc:pilot',
         to: '/pilot_management',
-      },
-      {
-        title: t('active.titles.activeCharacterSheets'),
-        subtitle: t('active.subtitles.createManageAndRunActivePlayer'),
-        icon: 'mdi-card-account-details-outline',
-        to: '/active-mode/sheet-manager',
       },
       {
         id: 'last-sheet',

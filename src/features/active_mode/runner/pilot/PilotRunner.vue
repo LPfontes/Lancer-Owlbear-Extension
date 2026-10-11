@@ -78,7 +78,23 @@
               <v-row
                 dense
                 justify="end"
+                align="center"
               >
+                <v-col
+                  v-if="!readOnly"
+                  cols="auto"
+                >
+                  <v-btn
+                    size="small"
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="mdi-map-marker-plus-outline"
+                    :loading="generatingToken"
+                    @click="generateToken"
+                  >
+                    {{ $t('ow.generateToken') }}
+                  </v-btn>
+                </v-col>
                 <v-col cols="auto">
                   <actor-telemetry
                     :actor="pilot"
@@ -170,8 +186,9 @@
   import { EncounterStore } from '@/stores'
   import type { CombatantData } from '@/classes/encounter/Encounter'
   import type { EncounterInstance } from '@/classes/encounter/EncounterInstance'
+  import { COMPCON_METADATA_KEY } from '@/types/compcon-obr'
   import { obrBridge } from '@/services/obrBridge'
-  import { tableSyncSocket, roomSyncedSheets } from '@/services/tableSyncSocket'
+  import { tableSyncSocket, roomSyncedSheets, roomSyncedTracker } from '@/services/tableSyncSocket'
   import { createCoalescedDispatcher } from '@/services/coalescedDispatcher'
   import {
     activeMechIndex,
@@ -367,12 +384,103 @@ const panelMap: Record<string, any> = {
       }
     }
 
-    // Cria automaticamente o token no Owlbear Rodeo para esta ficha (se habilitado)
     if (sheet.value && sheet.value.Combatant?.actor) {
-      void obrBridge.createTokenForSheet(sheet.value.Combatant.actor, 'pilot').catch(() => {})
+      await hydrateCombatStateFromToken()
       await announceActiveSheetIfNeeded()
     }
   })
+
+  const generatingToken = ref(false)
+
+  async function generateToken(): Promise<void> {
+    if (!sheet.value?.Combatant?.actor) return
+    generatingToken.value = true
+    try {
+      await obrBridge.createTokenForSheet(sheet.value.Combatant.actor, 'pilot', { force: true })
+    } finally {
+      generatingToken.value = false
+    }
+  }
+
+  /**
+   * Hidrata o estado de combate da ficha ativa a partir do token correspondente no mapa (se existir).
+   * Evita perda de dano ou reinicialização de status quando a janela/iframe é recarregada.
+   */
+  async function hydrateCombatStateFromToken(): Promise<boolean> {
+    if (readOnly.value) return false
+    const currentSheet = sheet.value
+    const p = (combatant.value?.actor ?? currentSheet?.Combatant?.actor) as Pilot | undefined
+    if (!p) return false
+
+    const activeMech = p.ActiveMech
+    const sc = activeMech?.StatController ?? (p as any).CombatController?.StatController
+    if (!sc) return false
+
+    try {
+      const { default: OBR } = await import('@owlbear-rodeo/sdk')
+      const isAvailable = await OBR.isAvailable
+      if (!isAvailable) return false
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!isSceneReady) return false
+
+      const targetIds = [p.ID, activeMech?.ID, currentSheet?.ID].filter(Boolean) as string[]
+      const items = await OBR.scene.items.getItems((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        if (!meta) return false
+        return targetIds.some(id => meta.sheetId === id || meta.mechId === id)
+      }).catch(() => [])
+
+      if (!items.length) return false
+      const token = items[0]
+      const meta = token.metadata[COMPCON_METADATA_KEY] as any
+      const { sanitizeTokenTrackerSummary, summaryToValues } = await import('@/services/tokenTrackerSummary')
+      const { TOKEN_TRACKER_SUMMARY_KEY } = await import('@/types/token-tracker')
+      const summary = sanitizeTokenTrackerSummary(token.metadata[TOKEN_TRACKER_SUMMARY_KEY])
+
+      let tokenStats: any = meta?.stats
+      if (!tokenStats && summary) {
+        const fromSummary = summaryToValues(summary)
+        tokenStats = {
+          hp: fromSummary.pv,
+          heat: fromSummary.heat,
+          structure: fromSummary.structure,
+          stress: fromSummary.stress,
+          overshield: fromSummary.overshield,
+          speed: fromSummary.speed,
+        }
+      }
+
+      if (!tokenStats) return false
+
+      console.log(`[PilotRunner] Hidratando status de combate a partir do token "${token.name || token.id}":`, tokenStats)
+      if (tokenStats.hp?.current !== undefined) {
+        sc.setCurrentStat('hp', Number(tokenStats.hp.current), { silent: true })
+      }
+      if (tokenStats.heat?.current !== undefined) {
+        const h = Number(tokenStats.heat.current)
+        sc.setCurrentStat('heat', h, { silent: true })
+        sc.setCurrentStat('heatcap', h, { silent: true })
+      }
+      if (tokenStats.structure?.current !== undefined) {
+        sc.setCurrentStat('structure', Number(tokenStats.structure.current), { silent: true })
+      }
+      if (tokenStats.stress?.current !== undefined) {
+        sc.setCurrentStat('stress', Number(tokenStats.stress.current), { silent: true })
+      }
+      if (tokenStats.overshield?.current !== undefined) {
+        sc.setCurrentStat('overshield', Number(tokenStats.overshield.current), { silent: true })
+      }
+      if (tokenStats.speed?.current !== undefined) {
+        sc.setCurrentStat('speed', Number(tokenStats.speed.current), { silent: true })
+      }
+
+      currentSheet?.Save()
+      return true
+    } catch (err) {
+      console.warn('[PilotRunner] Falha ao hidratar status a partir do token:', err)
+      return false
+    }
+  }
 
   /**
    * Monta a ficha EFÊMERA do modo leitura a partir da cópia que esta janela já tem.
@@ -452,6 +560,30 @@ const panelMap: Record<string, any> = {
       console.log(`[PilotSync] Ficha de "${p.Callsign || p.Name}" (${p.ID}) já está ativa na sala (v${known.version}); sincronizando estado do combate...`)
       if (known.data) {
         hydrateCombatStateFromRoom(known.data)
+      }
+      return
+    }
+
+    const hasActiveCombat = Boolean(
+      roomSyncedTracker.value &&
+      Array.isArray(roomSyncedTracker.value.cards) &&
+      roomSyncedTracker.value.cards.length > 0
+    )
+
+    if (!hasActiveCombat) {
+      console.log(`[PilotSync] Sem combate ativo na sala. Ficha de "${p.Callsign || p.Name}" (${p.ID}) ativa fora de combate/iniciativa.`)
+      if (p.ID) {
+        roomSyncedSheets.value = {
+          ...roomSyncedSheets.value,
+          [p.ID]: {
+            characterId: p.ID,
+            characterType: 'pilot',
+            data: Pilot.Serialize(p as any),
+            inCombat: false,
+            version: patchVersion || 1,
+            updatedAt: Date.now(),
+          },
+        }
       }
       return
     }
@@ -559,6 +691,24 @@ const panelMap: Record<string, any> = {
     }
     console.log(`[PilotSync] Salvando alterações de combate na ficha local "${currentSheet.Name || currentSheet.ID}"...`)
     currentSheet.Save()
+    ;(currentSheet as any).SaveController?._throttledSave?.flush?.()
+
+    const p = (combatant.value?.actor ?? currentSheet.Combatant?.actor) as Pilot | undefined
+    if (p) {
+      const activeMech = p.ActiveMech
+      const sc = activeMech?.StatController ?? (p as any).CombatController?.StatController
+      if (sc) {
+        const stats = {
+          hp: { current: Number(sc.getCurrent?.('hp') ?? 0), max: Number(sc.getMax?.('hp') ?? 0) },
+          heat: { current: Number(sc.getCurrent?.('heatcap') ?? 0), max: Number(sc.getMax?.('heatcap') ?? 0) },
+          structure: { current: Number(sc.getCurrent?.('structure') ?? 0), max: Number(sc.getMax?.('structure') ?? 0) },
+          stress: { current: Number(sc.getCurrent?.('stress') ?? 0), max: Number(sc.getMax?.('stress') ?? 0) },
+          overshield: { current: Number(sc.getCurrent?.('overshield') ?? 0), max: Number(sc.getMax?.('overshield') ?? 0) },
+          speed: { current: Number(sc.getCurrent?.('speed') ?? 0), max: Number(sc.getMax?.('speed') ?? 0) },
+        }
+        void obrBridge.syncTokenCombatStats(p.ID, stats, activeMech?.ID)
+      }
+    }
   }
 
   let lastDispatchedHp: number | undefined
@@ -961,18 +1111,11 @@ function handleLeave(choice: 'save' | 'exit' | 'cancel') {
   if (hasActiveRouteRecord) {
     onBeforeRouteLeave(async () => {
       if (consumeLeaveGuardBypass()) return true
-      // Modo leitura: nada foi editado, então não há o que salvar nem o que confirmar.
       if (readOnly.value) return true
-      const choice = await openLeaveDialog()
-      if (choice === 'save') {
-        // Persiste o container realmente editado (encontro compartilhado ou ficha),
-        // descarregando antes o que ainda estiver no timer.
-        flushCombatSync()
-        return true
-      } else if (choice === 'exit') {
-        return true
-      }
-      return false
+      // Abrir ou fechar a ficha apenas altera se ela é o foco da janela.
+      // Persiste o estado imediatamente sem bloquear a navegação com modal.
+      flushCombatSync()
+      return true
     })
   }
 </script>

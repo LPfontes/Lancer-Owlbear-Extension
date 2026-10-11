@@ -156,23 +156,6 @@
           {{ $t('ow.hangar') }}
         </v-btn>
 
-        <v-btn
-          to="/active-mode/sheet-manager"
-          variant="text"
-          :class="isRouteActive('/active-mode/sheet-manager') ? 'nav-link-active text-accent' : 'text-grey-lighten-2'"
-          class="nav-btn font-weight-bold rounded-0"
-          prepend-icon="mdi-card-account-details-outline"
-        >
-          {{ $t('ow.activeMode') }}
-          <v-badge
-            v-if="activeSheetsCount > 0"
-            :content="activeSheetsCount"
-            color="accent"
-            inline
-            class="ml-1"
-          />
-        </v-btn>
-
 
         <v-btn
           to="/active-mode/npcs"
@@ -398,21 +381,6 @@
         color="accent"
         @click="drawer = false"
       />
-
-      <v-list-item
-        to="/active-mode/sheet-manager"
-        prepend-icon="mdi-card-account-details-outline"
-        :title="$t('ow.activeSheets')"
-        class="my-1 rounded-0"
-        :active="isRouteActive('/active-mode/sheet-manager')"
-        color="accent"
-        @click="drawer = false"
-      >
-        <template #append v-if="activeSheetsCount > 0">
-          <v-badge :content="activeSheetsCount" color="accent" inline />
-        </template>
-      </v-list-item>
-
 
       <v-list-item
         to="/active-mode/npcs"

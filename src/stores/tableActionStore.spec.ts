@@ -93,4 +93,43 @@ describe('useTableActionStore - Persistência Segura e Anti-DataCloneError', () 
 
     storageSpy.mockRestore()
   })
+
+  it('categoriza Suportar / act_brace e reações com a categoria reaction', async () => {
+    const store = useTableActionStore()
+
+    await store.broadcastCombatAction({
+      actorName: 'Quero-Quero',
+      actionName: 'Suportar',
+      actionId: 'act_brace',
+      actionType: 'Reaction',
+    })
+
+    expect(store.actions).toHaveLength(1)
+    expect(store.actions[0].category).toBe('reaction')
+    expect(store.actions[0].title).toBe('Suportar')
+  })
+
+  it('normaliza corretamente strings de ativação variadas', async () => {
+    const store = useTableActionStore()
+
+    await store.broadcastCombatAction({
+      actorName: 'Piloto',
+      actionName: 'Ação Rápida',
+      actionType: 'Quick',
+    })
+    await store.broadcastCombatAction({
+      actorName: 'Piloto',
+      actionName: 'Ação Completa',
+      actionType: 'Full Tech',
+    })
+    await store.broadcastCombatAction({
+      actorName: 'Piloto',
+      actionName: 'Ação Livre',
+      actionType: 'Free',
+    })
+
+    expect(store.actions[0].category).toBe('quick_action')
+    expect(store.actions[1].category).toBe('full_action')
+    expect(store.actions[2].category).toBe('free_action')
+  })
 })

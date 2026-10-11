@@ -495,7 +495,7 @@ async function createSheet(launch) {
         if (approved) router.push(`pilot-runner/${PilotSheetStore().CurrentActiveID}`)
       }
     } else {
-      router.push('sheet-manager')
+      router.push('/pilot_management')
     }
 }
 function reset() {

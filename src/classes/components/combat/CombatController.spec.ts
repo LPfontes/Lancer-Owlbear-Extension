@@ -322,15 +322,32 @@ describe('CombatController.EndRound', () => {
 
     // Inicia o PRÓXIMO turno do jogador: aqui o efeito do brace é aplicado
     cc().StartTurn()
+    expect(cc().IsBracedTurn).toBe(true)
     expect(cc().CombatActions.Full).toBe(false)
     expect(cc().CombatActions.Reaction).toBe(false)
+    expect(cc().CombatActions.Overcharge).toBe(false)
     expect(cc().CanActivate('full')).toBe(false)
     expect(cc().CanActivate('quick')).toBe(true)
+    expect(cc().CanActivate('overcharge')).toBe(false)
+    expect(cc().InOvercharge).toBe(false)
+    expect(cc().CanActivate('move')).toBe(false)
+    expect(cc().StatController.getCurrent(StatKey.SPEED)).toBe(0)
+    expect(cc().CanActivate('free')).toBe(false)
+    expect(cc().CanActivate('reaction')).toBe(false)
+    expect(cc().CanUseReaction('brace')).toBe(false)
+    expect(cc().CanUseReaction('overwatch')).toBe(false)
+    expect(cc().CanTakeAction('act_overcharge', 'free')).toBe(false)
 
     // Encerra o próximo turno (que sofreu a restrição): o Brace é limpo e ações restauradas
     cc().EndTurn()
     expect(cc().Braced).toBe(false)
+    expect(cc().IsBracedTurn).toBe(false)
     expect(cc().CanActivate('full')).toBe(true)
+    expect(cc().CanActivate('overcharge')).toBe(true)
+    expect(cc().CanActivate('move')).toBe(true)
+    expect(cc().StatController.getCurrent(StatKey.SPEED)).toBeGreaterThan(0)
+    expect(cc().CanActivate('free')).toBe(true)
+    expect(cc().CanActivate('reaction')).toBe(true)
   })
 
   it('notifies token status update when bracing and clearing brace', () => {

@@ -168,6 +168,12 @@ export const EncounterStore = defineStore('encounter', {
           )
         ).filter(x => !!x)
       ) as string[],
+    CurrentActive: (state): EncounterInstance | undefined => {
+      const found = state.ActiveEncounters.find(
+        (x: any) => x?.ID === state.CurrentActiveID || x?._id === state.CurrentActiveID || x?.id === state.CurrentActiveID
+      )
+      return found as unknown as EncounterInstance | undefined
+    },
     encounterIndexes: (state): IndexItem[] => {
       const encounters = state.Encounters.filter((x: any) => x && !x.SaveController.IsDeleted)
       return encounters.map((x: any) => ({
@@ -220,6 +226,17 @@ export const EncounterStore = defineStore('encounter', {
         this.notifyEncounterChange()
       }
 
+      return active
+    },
+    async resetContinuousEncounterCombatState(): Promise<EncounterInstance> {
+      const active = await this.ensureContinuousEncounter()
+      active.Round = 1
+      active.IsActive = false
+      for (const c of active.Combatants) {
+        c.actor?.CombatController?.ResetForEncounter?.()
+      }
+      await active.Save()
+      this.notifyEncounterChange()
       return active
     },
     async reconcilePilotCombatant(pilotId: string, pilotData: any): Promise<CombatantData> {
@@ -353,7 +370,7 @@ export const EncounterStore = defineStore('encounter', {
       this.notifyEncounterChange()
       return enc
     },
-    async updateContinuousEncounterWithTemplate(template: Encounter): Promise<void> {
+    async updateContinuousEncounterWithTemplate(template: Encounter): Promise<EncounterInstance> {
       const enc = await this.ensureContinuousEncounter()
       enc.Name = template.Name
       enc.Encounter = template
@@ -369,6 +386,7 @@ export const EncounterStore = defineStore('encounter', {
       enc.Combatants = [...existingPCs, ...templateNpcs]
       await enc.Save()
       this.notifyEncounterChange()
+      return enc
     },
     async LoadEncounters(): Promise<void> {
       const all = await GetAll('encounters')
@@ -380,6 +398,7 @@ export const EncounterStore = defineStore('encounter', {
       )
       await this.LoadActiveEncounters()
       await this.LoadArchivedEncounters()
+      await this.ensureContinuousEncounter()
     },
 
     // Local mutations update this store in place. Em arquitetura de janela única,

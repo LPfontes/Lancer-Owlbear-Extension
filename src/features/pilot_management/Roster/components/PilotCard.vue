@@ -123,19 +123,46 @@
                     >
                       {{ s.Talent.Name }} {{ 'I'.repeat(s.Rank) }}
                     </div>
-                    <v-divider />
-                    <div
-                      v-for="b in pilot.CoreBonusController.CoreBonuses"
-                      :key="b.ID"
+                    <v-divider class="my-2" />
+                    <v-btn
+                      size="x-small"
+                      variant="flat"
+                      :color="isActiveSheet ? 'primary' : 'surface-variant'"
+                      :prepend-icon="isActiveSheet ? 'mdi-check-decagram' : 'mdi-card-account-details-outline'"
+                      class="mt-1 w-100"
+                      @click.stop="openActiveSheet"
                     >
-                      {{ b.Name }}
-                    </div>
+                      {{ isActiveSheet ? $t('ow.activeSheet') : $t('ow.openActiveSheet') }}
+                    </v-btn>
+                    <v-btn
+                      size="x-small"
+                      variant="tonal"
+                      color="secondary"
+                      prepend-icon="mdi-pencil-outline"
+                      class="mt-1 w-100"
+                      @click.stop="toPilotSheet"
+                    >
+                      {{ $t('ow.editHangarSheet') }}
+                    </v-btn>
                   </div>
                 </div>
               </v-expand-transition>
             </cc-img>
             <div style="position: absolute; bottom: 2px; left: 2px">
               <cc-brew-info :controller="pilot.BrewController" />
+            </div>
+            <div
+              v-if="isActiveSheet"
+              style="position: absolute; top: 34px; right: 4px; z-index: 3;"
+            >
+              <v-chip
+                size="x-small"
+                color="primary"
+                variant="flat"
+                prepend-icon="mdi-check-decagram"
+              >
+                {{ $t('ow.activeSheet') }}
+              </v-chip>
             </div>
           </div>
         </v-card>
@@ -147,16 +174,34 @@
 <script setup lang="ts">
   import { computed } from 'vue'
   import { useDisplay } from 'vuetify'
+  import { useRouter } from 'vue-router'
+  import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
 
   const props = defineProps<{ pilot: any }>()
 
   const emit = defineEmits<{ goTo: [id: string] }>()
+  const router = useRouter()
 
   const { smAndDown, xs } = useDisplay()
 
   const small = computed(() => smAndDown.value)
 
   const remoteResource = computed(() => props.pilot.SaveController.IsRemote)
+
+  const isActiveSheet = computed(() => {
+    const sheetStore = PilotSheetStore()
+    const active = sheetStore.CurrentActive
+    return Boolean(active && (active.Pilot?.ID === props.pilot.ID || active.ID === props.pilot.ID))
+  })
+
+  async function openActiveSheet() {
+    const sheetStore = PilotSheetStore()
+    const activeSheet = await sheetStore.ensureActiveSheetForPilot(props.pilot)
+    router.push({
+      name: 'active-mode-pilot-runner',
+      params: { id: activeSheet.ID },
+    })
+  }
 
   const minWidth = computed(() => {
     if (xs.value) return '26vw'
@@ -165,6 +210,10 @@
 
   function toPilotSheet() {
     emit('goTo', props.pilot.ID)
+    router.push({
+      name: 'pilot_sheet_redirect',
+      params: { pilotID: props.pilot.ID },
+    })
   }
 </script>
 

@@ -84,6 +84,7 @@ class ActionPoolController {
   }
 
   public CanUseReaction(id: string): boolean {
+    if (this._parent.Braced || this._parent.DeniesActivation('reaction', id)) return false
     return this.CombatActions.Reaction && !this.ReactionsUsed.includes(id.toLowerCase())
   }
 
@@ -111,8 +112,12 @@ class ActionPoolController {
     this.ReactionsUsed = []
   }
 
+  public get IsBracedTurn(): boolean {
+    return this._parent.IsBracedTurn
+  }
+
   public get InOvercharge(): boolean {
-    if (this._parent.DeniesActivation('overcharge')) return false
+    if (this.IsBracedTurn || this._parent.DeniesActivation('overcharge')) return false
     return !!this.CombatActions.InOvercharge
   }
 
@@ -145,6 +150,8 @@ class ActionPoolController {
       return false
     switch (str) {
       case 'free':
+        if (this.IsBracedTurn) return false
+        return true
       case 'none':
         return true
       case 'protocol':
@@ -175,10 +182,13 @@ class ActionPoolController {
       case 'quick2':
         return this.CombatActions.Quick2
       case 'overcharge':
+        if (this.IsBracedTurn) return false
         return this.CombatActions.Overcharge
       case 'reaction':
+        if (this._parent.Braced) return false
         return this.CombatActions.Reaction
       case 'move':
+        if (this.IsBracedTurn) return false
         return this._parent.StatController.getCurrent(StatKey.SPEED) > 0
       case 'boost':
         return (
@@ -213,10 +223,13 @@ class ActionPoolController {
   }
 
   public ResetCombatActions(): void {
-    const isBracedTurn = this._parent.Braced && this._parent.BracedPenaltyActive
+    const isBracedTurn = this.IsBracedTurn
     this.CombatActions = isBracedTurn
       ? { ...BRACED_COMBAT_ACTIONS }
       : { ...DEFAULT_COMBAT_ACTIONS }
+    if (isBracedTurn) {
+      this._parent.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+    }
     this._parent.CombatLogVersion++
   }
 
@@ -376,6 +389,8 @@ class ActionPoolController {
   }
 
   public CanTakeAction(actionId: string, activation: string, useId?: string): boolean {
+    if (this._parent.DeniesActivation(activation, actionId)) return false
+    if (actionId === 'act_overcharge' && !this.CanActivate('overcharge')) return false
     if (this.CanRepeatAsOvercharge(actionId, activation)) return true
     return this.RemainingUses(actionId) > 0 && this.RemainingUses(useId ?? actionId) > 0
   }
@@ -393,6 +408,7 @@ class ActionPoolController {
   }
 
   public StartOvercharge(): void {
+    if (this.IsBracedTurn || this._parent.DeniesActivation('overcharge')) return
     this.CombatActions.Overcharge = false
     this.InOvercharge = true
   }

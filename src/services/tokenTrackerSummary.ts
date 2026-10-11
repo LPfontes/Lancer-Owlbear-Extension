@@ -151,7 +151,7 @@ export function summaryValueSignature(summary: TokenTrackerSummary | null): stri
 export function writerRank(writer: unknown): number {
   if (typeof writer !== 'string') return 0
   if (writer.includes('encounter')) return 2
-  if (writer.includes('sheet')) return 1
+  if (writer.includes('sheet') || writer.includes('token')) return 1
   return 0
 }
 

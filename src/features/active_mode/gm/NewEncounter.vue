@@ -297,20 +297,26 @@
   }
   async function createEncounter(launch: boolean) {
     if (!encounter.value) return
-    const instance = new EncounterInstance(
-      undefined,
-      encounter.value,
-      pilots.value,
-      placeholders.value
-    )
-    instance.IsActive = true
-    instance.Combatants.forEach(c => {
-      c.actor.CombatController.ResetForEncounter()
-      c.actor.CombatController.StartEncounter()
-    })
-    instance.RecordEncounterStart()
-    await EncounterStore().AddEncounterInstance(instance)
-    await EncounterStore().SetActiveEncounter(instance.ID)
+    const encStore = EncounterStore()
+    let instance: EncounterInstance
+    if (encStore.CurrentActive) {
+      instance = await encStore.updateContinuousEncounterWithTemplate(encounter.value)
+    } else {
+      instance = new EncounterInstance(
+        undefined,
+        encounter.value,
+        pilots.value,
+        placeholders.value
+      )
+      instance.IsActive = true
+      instance.Combatants.forEach(c => {
+        c.actor.CombatController?.ResetForEncounter?.()
+        c.actor.CombatController?.StartEncounter?.()
+      })
+      instance.RecordEncounterStart()
+      await encStore.AddEncounterInstance(instance)
+      await encStore.SetActiveEncounter(instance.ID)
+    }
 
     try {
       const { useTableActionStore } = await import('@/stores/tableActionStore')

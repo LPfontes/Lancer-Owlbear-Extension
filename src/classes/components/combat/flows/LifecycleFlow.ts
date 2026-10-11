@@ -102,11 +102,13 @@ const clearBraced = step<IEndTurnState>('clear-braced', s => {
     s.cc.BracedPenaltyActive = true
     s.cc.LastBraceTransitionTime = now
     s.cc.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+    s.cc.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
     if (s.cc.Counterpart) {
       s.cc.Counterpart.BracedPenaltyPending = false
       s.cc.Counterpart.BracedPenaltyActive = true
       s.cc.Counterpart.LastBraceTransitionTime = now
       s.cc.Counterpart.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+      s.cc.Counterpart.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
     }
     return
   }
@@ -141,10 +143,12 @@ const braceTeardown = step<IEndRoundState>('brace-teardown', s => {
     s.cc.BracedPenaltyActive = true
     s.cc.BracedPenaltyPending = false
     s.cc.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+    s.cc.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
     if (s.cc.Counterpart) {
       s.cc.Counterpart.BracedPenaltyActive = true
       s.cc.Counterpart.BracedPenaltyPending = false
       s.cc.Counterpart.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+      s.cc.Counterpart.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
     }
   } else {
     s.cc.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }

@@ -189,4 +189,18 @@ describe('EncounterStore - Encontro Contínuo da Mesa', () => {
     expect(enc.Autosave).toBe(false)
     expect(store.ActiveEncounters).toHaveLength(0)
   })
+
+  it('reseta o estado de combate da instância contínua sem destruir o encontro', async () => {
+    const store = EncounterStore()
+    const continuous = await store.ensureContinuousEncounter()
+    continuous.Round = 3
+    continuous.IsActive = true
+    await continuous.Save()
+
+    const reset = await store.resetContinuousEncounterCombatState()
+    expect(reset.ID).toBe(continuous.ID)
+    expect(reset.Round).toBe(1)
+    expect(reset.IsActive).toBe(false)
+    expect(store.CurrentActiveID).toBe(continuous.ID)
+  })
 })

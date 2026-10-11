@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { toRaw } from 'vue'
 import type { TableActionItem, ActionCategory, DiceRollDetail } from '@/types/table-actions'
+import { resolveActionCategory } from '@/types/table-actions'
 import { obrBridge } from '@/services/obrBridge'
 import localforage from 'localforage'
 import OBR from '@owlbear-rodeo/sdk'
@@ -176,7 +177,7 @@ function toPlainAction(action: any): TableActionItem {
       timestamp: Number(raw.timestamp || Date.now()),
       senderName: String(raw.senderName || ''),
       actorType: raw.actorType,
-      category: raw.category || 'chat',
+      category: resolveActionCategory(raw.category, raw.id),
       title: String(raw.title || ''),
       detail: typeof raw.detail === 'string' ? raw.detail : (raw.detail ? String(raw.detail) : undefined),
       targetName: typeof raw.targetName === 'string' ? raw.targetName : undefined,
@@ -430,13 +431,17 @@ export const useTableActionStore = defineStore('tableActions', {
     async broadcastCombatAction(params: {
       actorName: string
       actionName: string
-      actionType?: ActionCategory
+      actionType?: ActionCategory | string
+      actionId?: string
       detail?: string
       targetName?: string
       roll?: DiceRollDetail
       tags?: ITagData[]
     }): Promise<void> {
-      const category: ActionCategory = params.actionType || 'full_action'
+      let category: ActionCategory = resolveActionCategory(params.actionType, params.actionId)
+      if (params.actionName === 'Suportar' || params.actionName === 'Brace') {
+        category = 'reaction'
+      }
       const title = `${params.actionName}`
 
       await this.postAction({

@@ -1819,18 +1819,13 @@ async function confirmEndEncounter() {
   }
 
   try {
-    // 1. Limpa o tracker sincronizado e avisa a sala imediatamente ANTES de alterar o store local
+    // 1. Limpa o tracker sincronizado e avisa a sala imediatamente
     lastSwap = { room: '', local: '' }
     roomSyncedTracker.value = null
     await trackerSyncService.clear().catch(() => {})
 
-    // 2. Remove da lista de instâncias ativas no store e storage
-    await encounterStore.RemoveEncounterInstance(current).catch(() => {})
-    encounterStore.ActiveEncounters = (encounterStore.ActiveEncounters || []).filter(
-      (x: any) => (x.ID || x.id || x._id) !== encId
-    )
-    await encounterStore.SetActiveEncounter('').catch(() => {})
-    await encounterStore.SaveActiveEncounterData?.().catch(() => {})
+    // 2. Reseta o estado tático do encontro contínuo (mantendo a sessão da mesa viva)
+    await encounterStore.resetContinuousEncounterCombatState().catch(() => {})
 
     activeTurnId.value = null
 
@@ -1838,7 +1833,7 @@ async function confirmEndEncounter() {
       senderName: 'Combat Tracker',
       category: 'full_action',
       title: `Combate Encerrado: ${encName}`,
-      detail: `O combate foi finalizado pelo Mestre. O tracker está livre.`,
+      detail: `O combate foi finalizado pelo Mestre. A sala está fora de combate.`,
     })
 
     forceRefreshKey.value++
@@ -1950,26 +1945,25 @@ async function launchEncounter(enc: any) {
   syncingEncounterId.value = encId
   try {
     const { Encounter } = await import('@/classes/encounter/Encounter')
-    const { EncounterInstance } = await import('@/classes/encounter/EncounterInstance')
 
     const encObj = (enc instanceof Encounter) ? enc : Encounter.Deserialize(enc)
 
-    // Sem inclusão automática: o encontro preparado traz os próprios combatentes e
-    // os pilotos da mesa entram na iniciativa só quando o mestre adicionar.
-    const instance = new EncounterInstance(undefined, encObj, [], [])
-    instance.IsActive = true
-    instance.Combatants.forEach((c: any) => {
+    // Atualiza o encontro contínuo com o template carregado, preservando aliados e trazendo NPCs
+    await encounterStore.updateContinuousEncounterWithTemplate(encObj)
+    const active = await encounterStore.ensureContinuousEncounter()
+    active.IsActive = true
+    active.Round = 1
+    active.Combatants.forEach((c: any) => {
       c.actor?.CombatController?.ResetForEncounter()
       c.actor?.CombatController?.StartEncounter()
     })
-    instance.RecordEncounterStart()
-    await encounterStore.AddEncounterInstance(instance)
-    await encounterStore.SetActiveEncounter(instance.ID)
+    active.RecordEncounterStart()
+    await active.Save()
 
     void tableActionStore.postAction({
       senderName: 'Combat Tracker',
       category: 'full_action',
-      title: `Combate Iniciado — ${instance.Name}`,
+      title: `Combate Iniciado — ${active.Name}`,
       detail: `O encontro foi iniciado. Rodada 1.`,
     })
     selectEncounterDialog.value = false

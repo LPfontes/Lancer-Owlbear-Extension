@@ -14,7 +14,8 @@ import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrack
 import { tokenMovementCapture } from './tokenMovementCapture'
 import { getTrackerIconUrl } from './tokenTrackerIcons'
 import { i18n } from '@/i18n'
-import { TOKEN_TRACKER_MOVEMENT_KEY } from '@/types/token-tracker'
+import { TOKEN_TRACKER_MOVEMENT_KEY, TOKEN_TRACKER_SUMMARY_KEY } from '@/types/token-tracker'
+import { valuesToSummary } from './tokenTrackerSummary'
 import { tokenTrackerLog } from './tokenTrackerDebug'
 import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
@@ -922,15 +923,15 @@ class OBRBridge {
 
   /**
    * Verifica se a criação automática de token ao abrir uma ficha está habilitada.
-   * Padrão: habilitada.
+   * Padrão: desabilitada (geração sob demanda via botão da ficha).
    */
   public isAutoCreateTokenEnabled(): boolean {
     try {
       const raw = localStorage.getItem(COMPCON_AUTO_TOKEN_STORAGE_KEY)
-      if (raw === null) return true
-      return raw !== 'false' && raw !== '0'
+      if (raw === null) return false
+      return raw === 'true' || raw === '1'
     } catch {
-      return true
+      return false
     }
   }
 
@@ -951,13 +952,17 @@ class OBRBridge {
    * Usa o retrato da ficha quando há uma URL HTTP(S) válida; caso contrário
    * usa a imagem padrão (nodata) correspondente ao tipo.
    */
-  public async createTokenForSheet(sheet: any, type: 'pilot' | 'npc'): Promise<string | null> {
+  public async createTokenForSheet(
+    sheet: any,
+    type: 'pilot' | 'npc',
+    options?: { force?: boolean }
+  ): Promise<string | null> {
     if (!this.isReady || !OBR.isAvailable) return null
     const sheetId = sheet?.ID || sheet?.id
     if (!sheet || !sheetId) return null
     // Modo leitura nunca gera token no mapa.
     if (isSheetReadOnlySession()) return null
-    if (!this.isAutoCreateTokenEnabled()) return null
+    if (!options?.force && !this.isAutoCreateTokenEnabled()) return null
 
     try {
       const sceneReady = await OBR.scene.isReady().catch(() => false)
@@ -973,7 +978,12 @@ class OBRBridge {
         if (mechId && meta.mechId === mechId) return true
         return false
       })
-      if (existing.length > 0) return existing[0].id
+      if (existing.length > 0) {
+        await OBR.player.select([existing[0].id]).catch(() => {})
+        const existingName = this.resolveSheetName(sheet, type)
+        await OBR.notification.show(`Token já existe na cena: ${existingName}`).catch(() => {})
+        return existing[0].id
+      }
 
       // Para pilotos, usa a imagem do mecha ativo (arte do frame/retrato do mecha);
       // para NPCs (e pilotos sem mecha), usa o retrato da própria ficha.
@@ -1024,6 +1034,29 @@ class OBRBridge {
       // Escala uniforme para o token ocupar `size` células de grid na largura.
       const s = (size * dpi) / w
 
+      const sc = (sheet as any)?.ActiveMech?.StatController ?? (sheet as any)?.CombatController?.StatController
+      const initialStats = sc ? {
+        hp: { current: Number(sc.getCurrent?.('hp') ?? 0), max: Number(sc.getMax?.('hp') ?? 0) },
+        heat: { current: Number(sc.getCurrent?.('heatcap') ?? 0), max: Number(sc.getMax?.('heatcap') ?? 0) },
+        structure: { current: Number(sc.getCurrent?.('structure') ?? 0), max: Number(sc.getMax?.('structure') ?? 0) },
+        stress: { current: Number(sc.getCurrent?.('stress') ?? 0), max: Number(sc.getMax?.('stress') ?? 0) },
+        overshield: { current: Number(sc.getCurrent?.('overshield') ?? 0), max: Number(sc.getMax?.('overshield') ?? 0) },
+        speed: { current: Number(sc.getCurrent?.('speed') ?? 0), max: Number(sc.getMax?.('speed') ?? 0) },
+      } : undefined
+
+      const initialSummary = initialStats ? valuesToSummary(
+        {
+          pv: initialStats.hp,
+          heat: initialStats.heat,
+          structure: initialStats.structure,
+          stress: initialStats.stress,
+          overshield: initialStats.overshield,
+          speed: initialStats.speed,
+        },
+        this.role === 'GM' ? 'gm/sheet' : `p-${(OBR.player.id || 'local').slice(0, 8)}/sheet`,
+        Date.now()
+      ) : undefined
+
       const token = buildImage(
         { width: w, height: h, mime, url: tokenUrl },
         { offset: { x: w / 2, y: h / 2 }, dpi }
@@ -1037,12 +1070,15 @@ class OBRBridge {
             sheetType: type,
             sheetId: sheetId,
             ...(mechId ? { mechId } : {}),
+            ...(initialStats ? { stats: initialStats, lastUpdated: Date.now() } : {}),
           },
+          ...(initialSummary ? { [TOKEN_TRACKER_SUMMARY_KEY]: initialSummary as any } : {}),
         })
         .build()
 
       await OBR.scene.items.addItems([token])
-      await OBR.notification.show(`Token criado: ${name}`).catch(() => { })
+      await OBR.player.select([token.id]).catch(() => {})
+      await OBR.notification.show(`Token criado: ${name}`).catch(() => {})
       return token.id
     } catch (e) {
       console.warn('[OBRBridge] Erro ao criar token para ficha:', e)
@@ -1414,6 +1450,90 @@ class OBRBridge {
       }
     } catch (e) {
       console.warn('[OBRBridge] Erro ao sincronizar marcadores de status coalescidos:', e)
+    }
+  }
+
+  /**
+   * Sincroniza os status de combate (PV, Calor, Estrutura, Estresse, Blindagem, Velocidade)
+   * diretamente nos metadados do token na cena do Owlbear Rodeo.
+   *
+   * Garante que mesmo que o iframe seja recarregado ou a memória seja reiniciada,
+   * o token e a ficha preservem seus valores persistidos na cena do VTT.
+   */
+  public async syncTokenCombatStats(
+    sheetOrMechId: string,
+    stats: {
+      hp?: { current: number; max: number }
+      heat?: { current: number; max: number }
+      structure?: { current: number; max: number }
+      stress?: { current: number; max: number }
+      overshield?: { current: number; max: number } | number
+      speed?: { current: number; max: number } | number
+    },
+    originId?: string
+  ): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    if (isSheetReadOnlySession()) return
+
+    try {
+      const isSceneReady = await OBR.scene.isReady().catch(() => false)
+      if (!isSceneReady) return
+
+      const ids = [sheetOrMechId, originId].filter(Boolean) as string[]
+      const items = await OBR.scene.items.getItems((item) => {
+        const meta = item.metadata[COMPCON_METADATA_KEY] as any
+        if (!meta) return false
+        return ids.some(id => meta.sheetId === id || meta.mechId === id || meta.combatantId === id)
+      })
+
+      if (items.length === 0) return
+
+      const formattedStats = {
+        hp: { current: Number(stats.hp?.current ?? 0), max: Number(stats.hp?.max ?? 0) },
+        heat: { current: Number(stats.heat?.current ?? 0), max: Number(stats.heat?.max ?? 0) },
+        structure: { current: Number(stats.structure?.current ?? 0), max: Number(stats.structure?.max ?? 0) },
+        stress: { current: Number(stats.stress?.current ?? 0), max: Number(stats.stress?.max ?? 0) },
+        overshield: typeof stats.overshield === 'number'
+          ? { current: stats.overshield, max: stats.overshield }
+          : { current: Number(stats.overshield?.current ?? 0), max: Number(stats.overshield?.max ?? 0) },
+        speed: typeof stats.speed === 'number'
+          ? { current: stats.speed, max: stats.speed }
+          : { current: Number(stats.speed?.current ?? 0), max: Number(stats.speed?.max ?? 0) },
+      }
+
+      const now = Date.now()
+      const summary = valuesToSummary(
+        {
+          pv: formattedStats.hp,
+          heat: formattedStats.heat,
+          structure: formattedStats.structure,
+          stress: formattedStats.stress,
+          overshield: formattedStats.overshield,
+          speed: formattedStats.speed,
+        },
+        this.role === 'GM' ? 'gm/sheet' : `p-${(OBR.player.id || 'local').slice(0, 8)}/sheet`,
+        now
+      )
+
+      await OBR.scene.items.updateItems(items.map(it => it.id), (drafts) => {
+        for (const draft of drafts) {
+          const currentMeta = (draft.metadata[COMPCON_METADATA_KEY] as any) || {}
+          draft.metadata[COMPCON_METADATA_KEY] = {
+            ...currentMeta,
+            stats: formattedStats,
+            lastUpdated: now,
+          }
+          draft.metadata[TOKEN_TRACKER_SUMMARY_KEY] = summary as any
+        }
+      })
+
+      window.dispatchEvent(
+        new CustomEvent('compcon-token-trackers-changed', {
+          detail: { sheetId: sheetOrMechId },
+        })
+      )
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao sincronizar stats de combate no token:', e)
     }
   }
 
