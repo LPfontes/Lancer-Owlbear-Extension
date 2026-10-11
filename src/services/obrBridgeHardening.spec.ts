@@ -111,4 +111,56 @@ describe('obrBridge compatibility & read-only hardening', () => {
       setSheetReadOnlySession(false)
     }
   })
+
+  describe('calculateTokenGridSpaces e getSheetSize', () => {
+    it('calcula espaços em grid hexagonal conforme regra oficial do Lancer', () => {
+      // Tamanho 1/2 e Tamanho 1 ocupam 1 hex
+      expect(obrBridge.calculateTokenGridSpaces(0.5, 'HEX_VERTICAL')).toBe(1)
+      expect(obrBridge.calculateTokenGridSpaces(1, 'HEX_VERTICAL')).toBe(1)
+      expect(obrBridge.calculateTokenGridSpaces(1, 'HEX_HORIZONTAL')).toBe(1)
+
+      // Tamanho 2 ocupa 3 hex de espaços
+      expect(obrBridge.calculateTokenGridSpaces(2, 'HEX_VERTICAL')).toBe(3)
+      expect(obrBridge.calculateTokenGridSpaces(2, 'HEX_HORIZONTAL')).toBe(3)
+
+      // Tamanho 3 ocupa 7 hexes de espaço
+      expect(obrBridge.calculateTokenGridSpaces(3, 'HEX_VERTICAL')).toBe(7)
+      expect(obrBridge.calculateTokenGridSpaces(3, 'HEX_HORIZONTAL')).toBe(7)
+
+      // Tamanho 4+ ocupa 12 hexes de espaço
+      expect(obrBridge.calculateTokenGridSpaces(4, 'HEX_VERTICAL')).toBe(12)
+    })
+
+    it('calcula espaços em grid quadrado (SQUARE)', () => {
+      expect(obrBridge.calculateTokenGridSpaces(0.5, 'SQUARE')).toBe(1)
+      expect(obrBridge.calculateTokenGridSpaces(1, 'SQUARE')).toBe(1)
+      expect(obrBridge.calculateTokenGridSpaces(2, 'SQUARE')).toBe(2)
+      expect(obrBridge.calculateTokenGridSpaces(3, 'SQUARE')).toBe(3)
+      expect(obrBridge.calculateTokenGridSpaces(4, 'SQUARE')).toBe(4)
+    })
+
+    it('extrai corretamente o tamanho nominal da ficha (pilot e npc)', () => {
+      // Piloto com mecha tamanho 2
+      const pilotSize2 = {
+        ActiveMech: { Frame: { Size: 2 } },
+      }
+      expect(obrBridge.getSheetSize(pilotSize2, 'pilot')).toBe(2)
+
+      // Piloto tamanho 1/2
+      const pilotSizeHalf = {
+        ActiveMech: { Frame: { Size: '1/2' } },
+      }
+      expect(obrBridge.getSheetSize(pilotSizeHalf, 'pilot')).toBe(0.5)
+
+      // NPC tamanho 3
+      const npcSize3 = {
+        StatController: { getMax: (stat: string) => (stat === 'size' ? 3 : null) },
+      }
+      expect(obrBridge.getSheetSize(npcSize3, 'npc')).toBe(3)
+
+      // Fallback seguro
+      expect(obrBridge.getSheetSize({}, 'pilot')).toBe(1)
+    })
+  })
 })
+

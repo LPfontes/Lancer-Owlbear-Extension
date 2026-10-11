@@ -1025,14 +1025,16 @@ class OBRBridge {
         : { width: 512, height: 512 }
       const mime = (fetched.ok && fetched.blob && fetched.blob.type) || this.inferMime(imageUrl)
 
-      const size = this.getSheetSize(sheet, type)
+      const rawSize = this.getSheetSize(sheet, type)
+      const gridType = (await OBR.scene.grid.getType().catch(() => 'HEX_VERTICAL')) || 'HEX_VERTICAL'
+      const tokenSpaces = this.calculateTokenGridSpaces(rawSize, gridType)
       const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 150
       const name = this.resolveSheetName(sheet, type)
 
       const w = dims.width || 512
       const h = dims.height || 512
-      // Escala uniforme para o token ocupar `size` células de grid na largura.
-      const s = (size * dpi) / w
+      // Escala uniforme para o token ocupar `tokenSpaces` células de grid na largura.
+      const s = (tokenSpaces * dpi) / w
 
       const sc = (sheet as any)?.ActiveMech?.StatController ?? (sheet as any)?.CombatController?.StatController
       const initialStats = sc ? {
@@ -1070,6 +1072,8 @@ class OBRBridge {
             sheetType: type,
             sheetId: sheetId,
             ...(mechId ? { mechId } : {}),
+            size: rawSize,
+            gridSpaces: tokenSpaces,
             ...(initialStats ? { stats: initialStats, lastUpdated: Date.now() } : {}),
           },
           ...(initialSummary ? { [TOKEN_TRACKER_SUMMARY_KEY]: initialSummary as any } : {}),
@@ -1224,21 +1228,67 @@ class OBRBridge {
   }
 
   /**
-   * Obtém o SIZE (tamanho em células de grid) da ficha: SIZE do mecha ativo
-   * para pilotos, SIZE do NPC para NPCs.
+   * Converte o SIZE nominal da ficha (0.5 para Size 1/2, 1, 2, 3, 4+) no número de
+   * espaços/células de grid que o token ocupa na cena, respeitando as regras do LANCER:
+   *
+   * - Grid Hexagonal (`HEX_VERTICAL` ou `HEX_HORIZONTAL`):
+   *   - Tamanho 1/2 e 1: ocupa 1 hex
+   *   - Tamanho 2: ocupa 3 hexes de espaço
+   *   - Tamanho 3: ocupa 7 hexes de espaço
+   *   - Tamanho 4+: ocupa 12 hexes de espaço
+   * - Grid Quadrado (`SQUARE`):
+   *   - Tamanho 1/2 e 1: ocupa 1 quadrado (1x1)
+   *   - Tamanho 2: ocupa 2 quadrados (2x2)
+   *   - Tamanho 3: ocupa 3 quadrados (3x3)
+   *   - Tamanho 4+: ocupa 4 quadrados (4x4)
    */
-  private getSheetSize(sheet: any, type: 'pilot' | 'npc'): number {
+  public calculateTokenGridSpaces(size: number, gridType: string = 'HEX_VERTICAL'): number {
+    const isSquare = gridType === 'SQUARE'
+    if (isSquare) {
+      if (size <= 1) return 1
+      if (size <= 2) return 2
+      if (size <= 3) return 3
+      return Math.round(size)
+    }
+
+    // Grid Hexagonal (padrão oficial do LANCER):
+    if (size <= 1) return 1
+    if (size <= 2) return 3
+    if (size <= 3) return 7
+    return 12
+  }
+
+  /**
+   * Obtém o SIZE nominal da ficha (ex.: 0.5 para Size 1/2, 1, 2, 3, etc.):
+   * SIZE do mecha ativo para pilotos, SIZE do NPC para NPCs.
+   */
+  public getSheetSize(sheet: any, type: 'pilot' | 'npc'): number {
     try {
       if (type === 'pilot') {
         const mech = sheet?.ActiveMech
-        const size = mech?.Frame?.Size ?? mech?.StatController?.getMax?.('size')
-        if (size) return Math.max(1, Number(size) || 1)
+        const rawSize = mech?.Frame?.Size ?? mech?.StatController?.getMax?.('size')
+        if (rawSize !== undefined && rawSize !== null) {
+          return this.parseSizeValue(rawSize)
+        }
       } else {
-        const size = sheet?.StatController?.getMax?.('size')
-        if (size) return Math.max(1, Number(size) || 1)
+        const rawSize = sheet?.StatController?.getMax?.('size') ?? sheet?.Size ?? sheet?.size
+        if (rawSize !== undefined && rawSize !== null) {
+          return this.parseSizeValue(rawSize)
+        }
       }
     } catch {
       // ignore
+    }
+    return 1
+  }
+
+  private parseSizeValue(val: any): number {
+    if (typeof val === 'number') return val > 0 ? val : 1
+    if (typeof val === 'string') {
+      const trimmed = val.trim()
+      if (trimmed === '1/2' || trimmed === '0.5') return 0.5
+      const parsed = parseFloat(trimmed)
+      if (!isNaN(parsed) && parsed > 0) return parsed
     }
     return 1
   }
