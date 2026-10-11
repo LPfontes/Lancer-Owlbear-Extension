@@ -4,7 +4,7 @@ import { obrBridge } from '@/services/obrBridge'
 import OBR from '@owlbear-rodeo/sdk'
 import type { PilotJoinRequestMetadata } from '@/types/compcon-obr'
 import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
-import { roomSyncedTracker } from '@/services/tableSyncSocket'
+import { roomSyncedSheets, roomSyncedTracker, tableSyncSocket } from '@/services/tableSyncSocket'
 
 // Cache em memória de fichas já autorizadas nesta sessão pelo Mestre
 const sessionApprovedSheetIds = new Set<string>()
@@ -43,35 +43,47 @@ export function usePilotJoinRequest() {
     window.dispatchEvent(new CustomEvent('compcon-player-join-wait-close'))
   }
 
-  const requestPilotJoin = async (sheet: any): Promise<boolean> => {
+  /**
+   * Pede ao Mestre autorização para a ficha entrar no combate.
+   *
+   * `force` (pedido explícito do jogador pelo Combat Tracker) sempre passa pelo Mestre:
+   * ignora os atalhos de "sem combate na sala", "ficha já ativa" e o cache da sessão,
+   * que existem para não interromper quem só está abrindo a própria ficha.
+   */
+  const requestPilotJoin = async (
+    sheet: any,
+    options: { force?: boolean } = {}
+  ): Promise<boolean> => {
     if (obrBridge.getRole() === 'GM') {
       return true // GM bypasses authorization
     }
 
     const sheetId = sheet.ID || sheet.id || sheet.PilotID
-    if (sheetId && sessionApprovedSheetIds.has(sheetId)) {
-      return true
-    }
-
-    // Se a sala não estiver em combate ativo (sem tracker ativo), o jogador
-    // pode ativar a ficha livremente sem pedir autorização ao Mestre.
-    const hasActiveCombat = Boolean(
-      roomSyncedTracker.value &&
-      Array.isArray(roomSyncedTracker.value.cards) &&
-      roomSyncedTracker.value.cards.length > 0
-    )
-    if (!hasActiveCombat) {
-      if (sheetId) sessionApprovedSheetIds.add(sheetId)
-      return true
-    }
-
-    try {
-      if (sheetId && PilotSheetStore().CurrentActiveID === sheetId) {
-        sessionApprovedSheetIds.add(sheetId)
+    if (!options.force) {
+      if (sheetId && sessionApprovedSheetIds.has(sheetId)) {
         return true
       }
-    } catch (_e) {
-      // Store pode não estar pronto
+
+      // Se a sala não estiver em combate ativo (sem tracker ativo), o jogador
+      // pode ativar a ficha livremente sem pedir autorização ao Mestre.
+      const hasActiveCombat = Boolean(
+        roomSyncedTracker.value &&
+        Array.isArray(roomSyncedTracker.value.cards) &&
+        roomSyncedTracker.value.cards.length > 0
+      )
+      if (!hasActiveCombat) {
+        if (sheetId) sessionApprovedSheetIds.add(sheetId)
+        return true
+      }
+
+      try {
+        if (sheetId && PilotSheetStore().CurrentActiveID === sheetId) {
+          sessionApprovedSheetIds.add(sheetId)
+          return true
+        }
+      } catch (_e) {
+        // Store pode não estar pronto
+      }
     }
 
     if (OBR.isReady) {
@@ -99,7 +111,7 @@ export function usePilotJoinRequest() {
       playerName,
       pilotId,
       sheetId: sheet.ID || sheet.id,
-      callsign: sheet.Callsign || sheet.Name,
+      callsign: sheet.Callsign || sheet.Pilot?.Callsign || sheet.Name,
       name: sheet.Name,
       mechName: sheet.ActiveMech?.Name || sheet.Pilot?.ActiveMech?.Name || 'Sem Mech',
       timestamp: Date.now(),
@@ -151,9 +163,43 @@ export function usePilotJoinRequest() {
     finishRequest(false)
   })
 
+  /**
+   * Pedido explícito de entrada no combate (botão do Combat Tracker do jogador).
+   *
+   * Depois da aprovação do Mestre, a ficha vira a ativa desta janela e o jogador anuncia
+   * a entrada (`PILOT_JOIN_COMBAT`) com a ficha completa — é esse anúncio que o Mestre já
+   * reconcilia no encontro contínuo (`reconcilePilotCombatant`) e que marca a posse da
+   * ficha na sala. Disparo único, por evento do jogador: nada de rede em watcher.
+   */
+  const requestCombatEntry = async (sheet: any): Promise<boolean> => {
+    const pilot = sheet?.Pilot ?? sheet?.Combatant?.actor
+    if (!sheet?.ID || !pilot?.ID) return false
+
+    const approved = await requestPilotJoin(sheet, { force: true })
+    if (!approved) return false
+
+    try {
+      await PilotSheetStore().SetActiveSheet(sheet.ID)
+    } catch (_e) {
+      // Store pode não estar pronto; o anúncio abaixo continua valendo
+    }
+
+    const { Pilot } = await import('@/classes/pilot/Pilot')
+    const knownVersion = Number(roomSyncedSheets.value?.[pilot.ID]?.version)
+    tableSyncSocket.sendPilotJoinCombat({
+      pilotId: pilot.ID,
+      pilotData: Pilot.Serialize(pilot),
+      activeMechId: pilot.ActiveMech?.ID,
+      sheetId: sheet.ID,
+      version: Number.isFinite(knownVersion) && knownVersion > 0 ? knownVersion : 1,
+    })
+    return true
+  }
+
   return {
     isWaiting,
     requestPilotJoin,
+    requestCombatEntry,
     cancelRequest
   }
 }

@@ -14,7 +14,18 @@
     "noCardsForFilter": "No combatant matches this filter",
     "sideEnemy": "Enemy",
     "sideAlly": "Ally",
-    "sideNeutral": "Neutral"
+    "sideNeutral": "Neutral",
+    "joinRequest": "Request to Join Combat",
+    "joinRequestShort": "Request to Join",
+    "joinRequestHint": "Ask the GM to add your pilot to the initiative.",
+    "joinNotInCombat": "Your pilot is not in this combat.",
+    "joinSelectPilot": "Pilot",
+    "joinNoMech": "No active mech",
+    "joinNoSheet": "Open a pilot sheet in Active Mode to request to join combat.",
+    "joinApproved": "Request approved! {name} joined the combat.",
+    "joinDenied": "The request to join combat was denied or cancelled.",
+    "joinFailed": "Could not send the request to join combat.",
+    "openSheet": "Open combatant sheet"
   },
   "common": {
     "appName": "COMP/CON",

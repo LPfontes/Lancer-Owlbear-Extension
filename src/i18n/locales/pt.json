@@ -14,7 +14,18 @@
     "noCardsForFilter": "Nenhum combatente encontrado com este filtro",
     "sideEnemy": "Inimigo",
     "sideAlly": "Aliado",
-    "sideNeutral": "Neutro"
+    "sideNeutral": "Neutro",
+    "joinRequest": "Solicitar Entrada no Combate",
+    "joinRequestShort": "Solicitar Entrada",
+    "joinRequestHint": "Peça ao Mestre para colocar seu piloto na iniciativa.",
+    "joinNotInCombat": "Seu piloto não está neste combate.",
+    "joinSelectPilot": "Piloto",
+    "joinNoMech": "Sem mech ativo",
+    "joinNoSheet": "Abra uma ficha de piloto no Modo Ativo para solicitar entrada no combate.",
+    "joinApproved": "Pedido aprovado! {name} entrou no combate.",
+    "joinDenied": "O pedido de entrada no combate foi recusado ou cancelado.",
+    "joinFailed": "Não foi possível enviar o pedido de entrada no combate.",
+    "openSheet": "Abrir ficha do combatente"
   },
   "common": {
     "appName": "COMP/CON",
