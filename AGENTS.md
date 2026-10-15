@@ -93,6 +93,11 @@ de combate, que muda a cada PV/calor/ação.
   (posse de token) e as ações/chat da mesa. Não reintroduza broadcast de encontro sem decisão
   explícita.
 
+- **Proibido entrar em loops de busca/inspeção repetitiva (Regra Anti-Loop)**:
+  Quando o usuário apontar um trecho de HTML/UI para ajustar, remover ou alterar, o agente deve
+  ir **diretamente ao arquivo-alvo e aplicar a edição**, sem encadear leituras fragmentadas de arquivos,
+  múltiplos greps de strings compiladas ou pesquisas circulares de rastreamento de classes.
+
 ## Testes
 
 - Specs `.spec.ts` ficam ao lado do código.
@@ -106,3 +111,4 @@ de combate, que muda a cada PV/calor/ação.
 3. Nenhuma chamada de rede em watchers de estado em tempo real.
 4. Nenhum segredo (senha, token, connection string) no bundle ou em resposta/erro.
 5. Se mexeu na persistência local, respeitou a exigência de `id` no `SetItem`.
+6. Sem loops de busca: aja diretamente no arquivo de destino sem leituras em cascata.

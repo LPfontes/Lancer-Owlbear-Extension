@@ -50,20 +50,13 @@
             variant="outlined"
             class="flavor-text"
           />
-          <div class="d-flex justify-end ga-2 mt-4">
+          <div class="d-flex justify-end mt-4">
             <cc-button
               prepend-icon="mdi-chat-outline"
-              color="primary"
+              color="accent"
               @click="sendToChat()"
             >
               {{ $t('active.scan.sendToChat') }}
-            </cc-button>
-            <cc-button
-              prepend-icon="mdi-clipboard-text-outline"
-              color="accent"
-              @click="copy()"
-            >
-              {{ $t('common.copyToClipboard') }}
             </cc-button>
           </div>
         </v-card-text>
@@ -94,19 +87,22 @@
     return Statblock.ScanNpc(props.item as Unit, includeFeatureDetails.value)
   })
 
-  function sendToChat() {
+  async function sendToChat() {
     const item = props.item as any
-    const name = item?.Name || item?.CombatName || 'GM'
-    void useTableActionStore().postAction({
+    const name = item?.Name || item?.CombatName || 'Escanear'
+    const tableActionStore = useTableActionStore()
+
+    await tableActionStore.postAction({
       senderName: name,
       actorType: 'npc',
       category: 'status',
-      title: t('active.scan.reportTitle'),
+      title: `Escanear — ${name}`,
       detail: statblock.value,
     })
+
     notify({
-      title: t('active.scan.reportTitle'),
-      text: t('active.scan.sentToChat'),
+      title: `Escanear — ${name}`,
+      text: t('active.scan.sentToChat') || 'Enviado para o chat!',
       icon: 'mdi-chat-outline',
     })
   }

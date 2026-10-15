@@ -199,19 +199,36 @@ export const EncounterStore = defineStore('encounter', {
     async ensureContinuousEncounter(): Promise<EncounterInstance> {
       let active = this.getActiveEncounter(this.CurrentActiveID)
       if (!active) {
-        if (this.ActiveEncounters.length > 0) {
+        // 1. Primeiro verifica se há um encontro ativo na sala de sincronização
+        try {
+          const { roomSyncedTracker, roomSyncedSheets } = await import('@/services/tableSyncSocket')
+          const snapshot = roomSyncedTracker.value
+          if (snapshot && Array.isArray(snapshot.cards) && snapshot.cards.length > 0) {
+            const adopted = await this.adoptRoomEncounter(snapshot, roomSyncedSheets.value)
+            if (adopted) {
+              active = adopted
+            }
+          }
+        } catch (e) {
+          console.warn('[EncounterStore] Falha ao verificar encontro da sala em ensureContinuousEncounter:', e)
+        }
+
+        // 2. Se não adotou da sala, busca na lista de encontros ativos locais
+        if (!active && this.ActiveEncounters.length > 0) {
           active = this.ActiveEncounters[0] as unknown as EncounterInstance
-        } else {
+        }
+
+        // 3. Somente se não houver encontro na sala nem no armazenamento local cria um novo
+        if (!active) {
           const defaultEncounter = new Encounter()
           defaultEncounter.Name = 'Operação em Andamento'
           active = new EncounterInstance(undefined, defaultEncounter, [])
-          // O construtor da instância batiza com o nome genérico (`classes.newEncounter`):
-          // sem isto o encontro contínuo se chamava "Novo Encontro" na interface.
           active.Name = defaultEncounter.Name
           active.IsActive = true
           this.ActiveEncounters.push(active as any)
           await SetItem('active_encounters', toRaw(active).Serialize())
         }
+
         this.CurrentActiveID = active.ID
         await SetValue('current_active_encounter_id', active.ID)
         this.notifyEncounterChange()
@@ -365,6 +382,9 @@ export const EncounterStore = defineStore('encounter', {
 
       enc.Combatants = dedupeCombatants(rebuilt)
       if (Number.isFinite(snapshot?.round)) enc.Round = Math.max(1, Number(snapshot.round))
+      enc.IsActive = true
+      this.CurrentActiveID = enc.ID
+      await SetValue('current_active_encounter_id', enc.ID)
 
       await enc.Save()
       this.notifyEncounterChange()
@@ -372,8 +392,10 @@ export const EncounterStore = defineStore('encounter', {
     },
     async updateContinuousEncounterWithTemplate(template: Encounter): Promise<EncounterInstance> {
       const enc = await this.ensureContinuousEncounter()
-      enc.Name = template.Name
+      enc.Name = template.Name || 'Operação em Andamento'
       enc.Encounter = template
+      enc.Round = 1
+      enc.IsActive = true
 
       // Preserva combatentes aliados (PCs já conectados à mesa)
       const existingPCs = enc.Combatants.filter((c: any) => c.type === 'pilot')
@@ -384,6 +406,12 @@ export const EncounterStore = defineStore('encounter', {
       )
 
       enc.Combatants = [...existingPCs, ...templateNpcs]
+
+      for (const c of enc.Combatants) {
+        c.actor?.CombatController?.ResetForEncounter?.()
+        c.actor?.CombatController?.StartEncounter?.()
+      }
+
       await enc.Save()
       this.notifyEncounterChange()
       return enc

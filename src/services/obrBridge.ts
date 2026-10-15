@@ -18,7 +18,7 @@ import { TOKEN_TRACKER_MOVEMENT_KEY, TOKEN_TRACKER_SUMMARY_KEY } from '@/types/t
 import { valuesToSummary } from './tokenTrackerSummary'
 import { tokenTrackerLog } from './tokenTrackerDebug'
 import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
-import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
+import { obrPlayerId, obrPlayerName, obrReady, obrRole } from './obrRuntime'
 import { TAB_ID } from './tabId'
 import {
   addToTableRoster,
@@ -104,7 +104,9 @@ class OBRBridge {
       obrRole.value = this.role
 
       try {
-        this.playerId = OBR.player.id || (await OBR.player.getName()) || 'client_' + Math.random().toString(36).slice(2, 9)
+        const name = await OBR.player.getName()
+        obrPlayerName.value = name || ''
+        this.playerId = OBR.player.id || name || 'client_' + Math.random().toString(36).slice(2, 9)
       } catch {
         this.playerId = 'client_' + Math.random().toString(36).slice(2, 9)
       }
@@ -1231,7 +1233,37 @@ class OBRBridge {
     })
   }
 
-  
+  /**
+   * Converte o SIZE nominal da ficha (0.5 para Size 1/2, 1, 2, 3, 4+) no número de
+   * espaços/células de grid que o token ocupa na cena, respeitando as regras do LANCER:
+   *
+   * - Grid Hexagonal (`HEX_VERTICAL` ou `HEX_HORIZONTAL`):
+   *   - Tamanho 1/2 e 1: ocupa 1 hex
+   *   - Tamanho 2: ocupa 3 hexes de espaço
+   *   - Tamanho 3: ocupa 7 hexes de espaço
+   *   - Tamanho 4+: ocupa 12 hexes de espaço
+   * - Grid Quadrado (`SQUARE`):
+   *   - Tamanho 1/2 e 1: ocupa 1 quadrado (1x1)
+   *   - Tamanho 2: ocupa 2 quadrados (2x2)
+   *   - Tamanho 3: ocupa 3 quadrados (3x3)
+   *   - Tamanho 4+: ocupa 4 quadrados (4x4)
+   */
+  public calculateTokenGridSpaces(size: number, gridType: string = 'HEX_VERTICAL'): number {
+    const isSquare = gridType === 'SQUARE'
+    if (isSquare) {
+      if (size <= 1) return 1
+      if (size <= 2) return 2
+      if (size <= 3) return 3
+      return Math.round(size)
+    }
+
+    // Grid Hexagonal (padrão oficial do LANCER):
+    if (size <= 1) return 1
+    if (size <= 2) return 3
+    if (size <= 3) return 7
+    return 12
+  }
+
   /**
    * Obtém o SIZE nominal da ficha (ex.: 0.5 para Size 1/2, 1, 2, 3, etc.):
    * SIZE do mecha ativo para pilotos, SIZE do NPC para NPCs.
@@ -1683,6 +1715,13 @@ class OBRBridge {
     if (!OBR.isAvailable || !this.isReady) return
 
     this.playerSelectionUnsubscribe = OBR.player.onChange(async (player) => {
+      if (player.name) {
+        obrPlayerName.value = player.name
+      }
+      if (player.role) {
+        this.role = player.role
+        obrRole.value = player.role
+      }
       const selection = player.selection
       if (!selection || selection.length === 0) return
       const selectedId = selection[0]

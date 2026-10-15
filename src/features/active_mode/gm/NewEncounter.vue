@@ -117,6 +117,14 @@
                 :title="$t('classes.newEncounter')"
                 color="accent"
               />
+              <div class="pa-2">
+                <cc-text-field
+                  v-model="emptyEncounter.Name"
+                  :label="$t('common.name')"
+                  density="compact"
+                  hide-details
+                />
+              </div>
               <sitrep-editor :item="emptyEncounter" />
               <environment-editor :item="emptyEncounter" />
             </cc-panel>

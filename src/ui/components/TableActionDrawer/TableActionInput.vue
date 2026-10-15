@@ -64,16 +64,18 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue'
+  import { ref, computed, watch, onMounted } from 'vue'
   import { useTableActionStore } from '@/stores/tableActionStore'
   import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import { PilotStore } from '@/features/pilot_management/store'
   import { EncounterStore } from '@/features/gm/store/encounter_store'
+  import { obrPlayerName, obrRole } from '@/services/obrRuntime'
+  import OBR from '@owlbear-rodeo/sdk'
 
   const tableActionStore = useTableActionStore()
   const messageText = ref('')
-  const speakerName = ref('Piloto')
-  const speakerType = ref<'pilot' | 'npc' | 'gm'>('pilot')
+  const speakerName = ref(obrPlayerName.value || 'Jogador')
+  const speakerType = ref<'pilot' | 'npc' | 'gm'>(obrRole.value === 'GM' ? 'gm' : 'pilot')
 
   interface SpeakerOption {
     name: string
@@ -84,41 +86,84 @@
   const availableSpeakers = computed<SpeakerOption[]>(() => {
     const list: SpeakerOption[] = []
 
-    // 1. Piloto Ativo da ficha
+    // 1. Nome do jogador da sala (Owlbear) como opção principal/padrão
+    const roomPlayerName = (obrPlayerName.value || '').trim()
+    if (roomPlayerName) {
+      list.push({
+        name: roomPlayerName,
+        role: obrRole.value === 'GM' ? 'Mestre / Jogador' : 'Jogador',
+        type: obrRole.value === 'GM' ? 'gm' : 'pilot',
+      })
+    }
+
+    // 2. Piloto Ativo da ficha
     const activeSheetId = PilotSheetStore().CurrentActiveID
     if (activeSheetId) {
       const sheet = PilotSheetStore().GetSheet(activeSheetId)
       if (sheet) {
         const callsign = sheet.Combatant?.actor?.Callsign || sheet.Name
-        list.push({ name: callsign, role: 'Piloto Ativo', type: 'pilot' })
-        if (sheet.Combatant?.actor?.ActiveMech?.Name) {
+        if (callsign && !list.some(s => s.name === callsign)) {
+          list.push({ name: callsign, role: 'Piloto Ativo', type: 'pilot' })
+        }
+        if (sheet.Combatant?.actor?.ActiveMech?.Name && !list.some(s => s.name === sheet.Combatant.actor.ActiveMech.Name)) {
           list.push({ name: sheet.Combatant.actor.ActiveMech.Name, role: 'Mecha Ativo', type: 'pilot' })
         }
       }
     }
 
-    // 2. Outros pilotos locais
+    // 3. Outros pilotos locais
     const pilots = PilotStore().Pilots
     for (const p of pilots.slice(0, 5)) {
       const pName = p.Callsign || p.Name
-      if (!list.some(s => s.name === pName)) {
+      if (pName && !list.some(s => s.name === pName)) {
         list.push({ name: pName, role: 'Piloto', type: 'pilot' })
       }
     }
 
-    // 3. Opção de Mestre
-    list.push({ name: 'Mestre', role: 'Narrador / GM', type: 'gm' })
+    // 4. Opção de Mestre (se for GM ou não tiver o nome da sala ainda)
+    if (!list.some(s => s.name === 'Mestre')) {
+      list.push({ name: 'Mestre', role: 'Narrador / GM', type: 'gm' })
+    }
 
     return list
   })
 
-  onMounted(() => {
-    if (availableSpeakers.value.length > 0) {
+  // Sincroniza e define o padrão sempre que o nome do jogador da sala estiver disponível
+  watch(
+    () => obrPlayerName.value,
+    (newName) => {
+      if (newName && (speakerName.value === 'Piloto' || speakerName.value === 'Jogador' || speakerName.value === 'Mestre' || !speakerName.value)) {
+        speakerName.value = newName
+        speakerType.value = obrRole.value === 'GM' ? 'gm' : 'pilot'
+        tableActionStore.activeActorName = speakerName.value
+        tableActionStore.activeActorType = speakerType.value
+      }
+    },
+    { immediate: true }
+  )
+
+  onMounted(async () => {
+    if (OBR.isAvailable && !obrPlayerName.value) {
+      try {
+        const name = await OBR.player.getName()
+        if (name) {
+          obrPlayerName.value = name
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (obrPlayerName.value) {
+      speakerName.value = obrPlayerName.value
+      speakerType.value = obrRole.value === 'GM' ? 'gm' : 'pilot'
+    } else if (availableSpeakers.value.length > 0) {
       speakerName.value = availableSpeakers.value[0].name
       speakerType.value = availableSpeakers.value[0].type
-      tableActionStore.activeActorName = speakerName.value
-      tableActionStore.activeActorType = speakerType.value
     }
+
+    tableActionStore.activeActorName = speakerName.value
+    tableActionStore.activeActorType = speakerType.value
   })
 
   function selectSpeaker(name: string, type: 'pilot' | 'npc' | 'gm') {

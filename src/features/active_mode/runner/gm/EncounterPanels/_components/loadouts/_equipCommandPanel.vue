@@ -25,7 +25,7 @@
     <v-col
       v-if="canDealDamage && isFeature"
       cols="auto"
-      class="ml-1"
+      :class="{ 'ml-1': !isSuperheavy }"
     >
       <npc-barrage-button
         :action="barrageAction"
@@ -287,10 +287,12 @@
   import { computed } from 'vue'
   import { useDisplay } from 'vuetify'
   import MechSkirmishButton from './action_buttons/mechSkirmishButton.vue'
+  import NpcSkirmishButton from './action_buttons/npcSkirmishButton.vue'
   import { CompendiumStore } from '@/features/compendium/store'
   import MechBarrageButton from './action_buttons/mechBarrageButton.vue'
-  import NpcSkirmishButton from './action_buttons/npcSkirmishButton.vue'
   import NpcBarrageButton from './action_buttons/npcBarrageButton.vue'
+  import WeaponAttackHudModal from './action_buttons/WeaponAttackHudModal.vue'
+  import WeaponDamageHudModal from './action_buttons/WeaponDamageHudModal.vue'
   import PilotFightButton from './action_buttons/pilotFightButton.vue'
   import AiControlButton from './_aiControlButton.vue'
   import { CombatController } from '@/classes/components/combat/CombatController'

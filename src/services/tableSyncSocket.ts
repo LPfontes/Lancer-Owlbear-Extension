@@ -246,13 +246,25 @@ class TableSyncSocket {
         if (payload?.activeTracker) {
           roomSyncedTracker.value = payload.activeTracker
           window.dispatchEvent(new CustomEvent('compcon-tracker-sync', { detail: payload.activeTracker }))
+          
+          if (this.activeRole === 'GM') {
+            try {
+              const { EncounterStore } = await import('@/stores')
+              const encStore = EncounterStore()
+              const adopted = await encStore.adoptRoomEncounter(payload.activeTracker, payload.sheets || {})
+              if (adopted) {
+                await encStore.SetActiveEncounter(adopted.ID)
+              }
+            } catch (err) {
+              console.warn('[TableSyncSocket] Falha ao adotar activeTracker no INIT_SYNC:', err)
+            }
+          }
         }
 
         window.dispatchEvent(new CustomEvent('compcon-init-sync', { detail: payload }))
 
         // Se o GM acabou de se conectar/reconectar, executa a reconciliação (Salvaguarda
-        // Camada 2). O painel somente-leitura também reconcilia: é o encontro contínuo
-        // dele que vira a iniciativa publicada na mesa.
+        // Camada 2).
         if (this.activeRole === 'GM' && payload?.sheets) {
           await this.reconcileGmSheets(payload.sheets)
         }

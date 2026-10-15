@@ -1,7 +1,7 @@
 <template>
   <div class="combat-tracker-tab fill-height d-flex flex-column text-white">
     <!-- Header do Encontro Ativo e Rodada -->
-    <div v-if="effectiveIsGM && encounterInstance" class="tracker-header px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
+    <div v-if="effectiveIsGM && encounterInstance" class="tracker-header px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0 align-center">
       <div class="d-flex align-center justify-space-between ga-2 mb-1.5">
         <!-- Título do Encontro e Rodada -->
         <div class="d-flex align-center ga-2 text-truncate">
@@ -310,7 +310,7 @@
         </div>
 
         <!-- Botões de Controle de Turno e Ações Rápidas -->
-        <div class="d-flex align-center justify-space-between ga-2 mt-2 pt-1 border-t border-grey-darken-3">
+        <div class="d-flex align-center justify-space-between mt-2 pt-1 border-t border-grey-darken-3">
           <!-- Botão Principal: Ativar Turno vs Encerrar Turno -->
           <v-btn
             v-if="activeTurnId === c.id"
@@ -399,7 +399,7 @@
           <!-- Aplicar dano (regras de LANCER) na ficha sincronizada — só o Mestre -->
           <damage-application-dialog
             v-if="effectiveIsGM"
-            class="ml-1"
+            class="rounded-0 ml-1"
             :combatant="c"
             @applied="onDamageApplied"
           />
@@ -794,17 +794,34 @@
                   Rodada {{ enc.Round || enc.round || 1 }} &bull; {{ (enc.Combatants || enc.combatants || []).length }} combatentes
                 </div>
               </div>
-              <v-btn
-                color="accent"
-                size="small"
-                variant="flat"
-                class="font-weight-bold text-black rounded-0"
-                prepend-icon="mdi-play"
-                :loading="syncingEncounterId === (enc.ID || enc.id || enc._id)"
-                @click="resumeEncounter(enc)"
-              >
-                Retomar
-              </v-btn>
+              <div class="d-flex align-center ga-1">
+                <v-tooltip text="Apagar encontro" location="top">
+                  <template #activator="{ props: tipProps }">
+                    <v-btn
+                      v-bind="tipProps"
+                      color="error"
+                      size="small"
+                      variant="text"
+                      icon="mdi-delete-outline"
+                      density="compact"
+                      class="rounded-0"
+                      :loading="deletingEncounterId === (enc.ID || enc.id || enc._id)"
+                      @click="deleteSavedEncounter(enc, true)"
+                    />
+                  </template>
+                </v-tooltip>
+                <v-btn
+                  color="accent"
+                  size="small"
+                  variant="flat"
+                  class="font-weight-bold text-black rounded-0"
+                  prepend-icon="mdi-play"
+                  :loading="syncingEncounterId === (enc.ID || enc.id || enc._id)"
+                  @click="resumeEncounter(enc)"
+                >
+                  Retomar
+                </v-btn>
+              </div>
             </div>
           </div>
         </div>
@@ -827,17 +844,34 @@
                   {{ (enc.Combatants || enc.combatants || []).length }} combatentes
                 </div>
               </div>
-              <v-btn
-                color="primary"
-                size="small"
-                variant="flat"
-                class="font-weight-bold text-white rounded-0"
-                prepend-icon="mdi-sword-cross"
-                :loading="syncingEncounterId === (enc.ID || enc.id || enc._id)"
-                @click="launchEncounter(enc)"
-              >
-                Iniciar
-              </v-btn>
+              <div class="d-flex align-center ga-1">
+                <v-tooltip text="Apagar encontro" location="top">
+                  <template #activator="{ props: tipProps }">
+                    <v-btn
+                      v-bind="tipProps"
+                      color="error"
+                      size="small"
+                      variant="text"
+                      icon="mdi-delete-outline"
+                      density="compact"
+                      class="rounded-0"
+                      :loading="deletingEncounterId === (enc.ID || enc.id || enc._id)"
+                      @click="deleteSavedEncounter(enc, false)"
+                    />
+                  </template>
+                </v-tooltip>
+                <v-btn
+                  color="primary"
+                  size="small"
+                  variant="flat"
+                  class="font-weight-bold text-white rounded-0"
+                  prepend-icon="mdi-sword-cross"
+                  :loading="syncingEncounterId === (enc.ID || enc.id || enc._id)"
+                  @click="launchEncounter(enc)"
+                >
+                  Iniciar
+                </v-btn>
+              </div>
             </div>
           </div>
         </div>
@@ -845,20 +879,42 @@
         <!-- Se nenhum encontro salvo -->
         <div v-if="activeEncountersList.length === 0 && preparedEncountersList.length === 0" class="text-center py-4 bg-grey-darken-3 mb-3">
           <v-icon icon="mdi-alert-circle-outline" color="grey-lighten-1" size="32" class="mb-1" />
-          <div class="text-caption text-grey-lighten-1 mb-2">Nenhum encontro salvo no momento.</div>
-          <v-btn
-            size="small"
-            color="accent"
-            variant="flat"
-            class="text-black font-weight-bold rounded-0"
-            prepend-icon="mdi-play-circle"
-            @click="selectEncounterDialog = false; openNewEncounterModal()"
-          >
-            Criar Encontro Rápido
-          </v-btn>
+          <div class="text-caption text-grey-lighten-1 mb-3">Nenhum encontro salvo no momento.</div>
+          <div class="d-flex align-center justify-center ga-2">
+            <v-btn
+              size="small"
+              color="accent"
+              variant="flat"
+              class="text-black font-weight-bold rounded-0"
+              prepend-icon="mdi-code-json"
+              @click="selectEncounterDialog = false; loadFromJsonDialog = true; loadJsonInput = ''; loadJsonError = ''"
+            >
+              Carregar de JSON
+            </v-btn>
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="grey-lighten-1"
+              class="rounded-0"
+              prepend-icon="mdi-play-circle"
+              @click="selectEncounterDialog = false; openNewEncounterModal()"
+            >
+              Criar Encontro Rápido
+            </v-btn>
+          </div>
         </div>
 
-        <div class="d-flex align-center justify-end pt-2 border-t border-grey-darken-3">
+        <div class="d-flex align-center justify-space-between pt-2 border-t border-grey-darken-3">
+          <v-btn
+            variant="tonal"
+            size="small"
+            color="accent"
+            class="rounded-0 text-caption font-weight-bold"
+            prepend-icon="mdi-code-json"
+            @click="selectEncounterDialog = false; loadFromJsonDialog = true; loadJsonInput = ''; loadJsonError = ''"
+          >
+            Carregar de JSON
+          </v-btn>
           <v-btn variant="text" size="small" color="grey-lighten-1" class="rounded-0" @click="selectEncounterDialog = false">
             Fechar
           </v-btn>
@@ -1029,6 +1085,7 @@ const bindConfirmDialog = ref(false)
 const pendingBindCombatant = ref<any>(null)
 const selectedFromCanvasCombatantId = ref<string | null>(null)
 const syncingEncounterId = ref<string | null>(null)
+const deletingEncounterId = ref<string | null>(null)
 const isLoadingEncounters = ref(false)
 const forceRefreshKey = ref(0)
 let highlightTimeout: any = null
@@ -1974,6 +2031,29 @@ async function launchEncounter(enc: any) {
     console.error('[CombatTracker] Erro ao iniciar encontro preparado:', e)
   } finally {
     syncingEncounterId.value = null
+  }
+}
+
+async function deleteSavedEncounter(enc: any, isActive: boolean) {
+  const encId = enc.ID || enc.id || enc._id
+  const encName = enc.Name || enc.name || enc._name || 'Encontro'
+  if (!confirm(`Deseja realmente apagar o encontro "${encName}"?`)) {
+    return
+  }
+
+  deletingEncounterId.value = encId
+  try {
+    if (isActive) {
+      await encounterStore.RemoveEncounterInstance(enc)
+    } else {
+      await encounterStore.DeleteEncounterPermanent(enc)
+    }
+    forceRefreshKey.value++
+    await refreshEncountersList()
+  } catch (err) {
+    console.error('[CombatTracker] Erro ao apagar encontro:', err)
+  } finally {
+    deletingEncounterId.value = null
   }
 }
 

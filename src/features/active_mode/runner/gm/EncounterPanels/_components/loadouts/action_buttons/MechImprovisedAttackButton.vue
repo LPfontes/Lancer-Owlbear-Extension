@@ -173,27 +173,6 @@
           </v-chip>
         </div>
 
-        <!-- Target Selector (Optional) -->
-        <div
-          v-if="availableTargets.length"
-          class="pa-3 mb-3 bg-panel rounded border-sm"
-        >
-          <div class="text-caption text-disabled mb-1 font-weight-bold">
-            <v-icon icon="mdi-crosshairs-gps" size="14" class="mr-1" />
-            {{ $t('ui.fields.selectTarget') }}
-          </div>
-          <v-select
-            v-model="selectedTargetId"
-            :items="availableTargets"
-            item-title="actor.Name"
-            item-value="actor.ID"
-            density="compact"
-            variant="outlined"
-            hide-details
-            clearable
-            :placeholder="$t('ui.combat.noTarget')"
-          />
-        </div>
 
         <!-- Weapon Card Profile -->
         <div class="weapon-card pa-3 mb-3 rounded bg-panel border-sm">

@@ -53,10 +53,7 @@
 
 
     <template #actions>
-      <mech-actions-panel
-        :controller="mech.CombatController"
-        @deploy="deploy($event)"
-      />
+      <unified-actions-panel @deploy="deploy($event)" />
     </template>
 
     <v-expansion-panels
@@ -231,7 +228,7 @@
   import PanelBase from './_PanelBase.vue'
   import MechCombatLoadout from './_components/loadouts/MechCombatLoadout.vue'
   import MechCorePanel from './_components/loadouts/MechCorePanel.vue'
-  import MechActionsPanel from './_components/MechActionsPanel.vue'
+  import UnifiedActionsPanel from './_components/UnifiedActionsPanel.vue'
   import DeployButton from './_components/loadouts/_deployButton.vue'
   import CombatActionsBlock from './_CombatActionsBlock.vue'
   import { Deployable } from '@/classes/components/feature/deployable/Deployable'

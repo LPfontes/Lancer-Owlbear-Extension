@@ -70,11 +70,6 @@
                 align-self="start"
                 class="ml-auto mr-1 mt-1"
               >
-                <open-npc-sheet-button
-                  v-if="isNpc"
-                  :combatant="owner"
-                  class="mr-1"
-                />
                 <activation-tracker :item="item" />
                 <v-menu v-if="(owner as any)[statusField]">
                   <template #activator="{ props: statusProps }">
@@ -330,12 +325,6 @@
             </div>
 
             <slot name="stat-block" />
-            <div v-if="!noActions && item.CombatController.StatController.MaxStats['activations']">
-              <combat-action-panel
-                :controller="item.CombatController"
-                :hide-overcharge="item.ItemType !== 'mech'"
-              />
-            </div>
             <slot name="actions" />
 
             <div
@@ -421,7 +410,6 @@
   import TrackableStatsComplex from './_components/TrackableStatsComplex.vue'
   import TrackableStatsSimple from './_components/TrackableStatsSimple.vue'
   import LancerFoundryStatsHud from './_components/LancerFoundryStatsHud.vue'
-  import OpenNpcSheetButton from './_components/_OpenNpcSheetButton.vue'
   import { ICombatant } from '@/classes/components/combat/ICombatant'
   import { PilotStatus, NpcStatus, MechStatus } from '@/classes/enums'
   import { useLayoutOptions, filterStats } from '@/features/active_mode/layoutOptions'
