@@ -1881,7 +1881,9 @@ async function confirmEndEncounter() {
     roomSyncedTracker.value = null
     await trackerSyncService.clear().catch(() => {})
 
-    // 2. Reseta o estado tático do encontro contínuo (mantendo a sessão da mesa viva)
+    // 2. Limpa os combatentes do encontro e reseta o estado tático
+    current.Combatants = []
+    await current.Save?.().catch(() => {})
     await encounterStore.resetContinuousEncounterCombatState().catch(() => {})
 
     activeTurnId.value = null

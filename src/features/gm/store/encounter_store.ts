@@ -249,9 +249,7 @@ export const EncounterStore = defineStore('encounter', {
       const active = await this.ensureContinuousEncounter()
       active.Round = 1
       active.IsActive = false
-      for (const c of active.Combatants) {
-        c.actor?.CombatController?.ResetForEncounter?.()
-      }
+      active.Combatants = []
       await active.Save()
       this.notifyEncounterChange()
       return active
