@@ -180,5 +180,19 @@ if (typeof window !== 'undefined') {
   })
 }
 
+// 8. Proteção contra erro assíncrono de load em imagens desmontadas (ex: cropper/preview em race condition)
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    if (
+      event.message &&
+      (event.message.includes("reading 'naturalHeight'") || event.message.includes("reading 'naturalWidth'"))
+    ) {
+      event.preventDefault()
+      event.stopPropagation()
+      console.warn('[COMP/CON Handled Image Load Error]:', event.message)
+    }
+  }, true)
+}
+
 export {}
 

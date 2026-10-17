@@ -87,10 +87,9 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       if (!id) return null
       const sheet = this.PilotSheets.find((ps: any) => ps.ID === id)
       if (sheet) return sheet as PilotSheet
-      // Ainda não carregamos do storage: um "não encontrado" aqui é transitório,
-      // não uma ficha perdida.
-      if (!this.SheetsLoaded) return null
-      logger.error(`No pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
+      // Ainda não carregamos do storage ou a lista está vazia: não é erro fatal.
+      if (!this.SheetsLoaded || !this.PilotSheets.length) return null
+      logger.warn(`No pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
       return null
     },
     GetActiveSheet(): PilotSheet | null {
@@ -99,7 +98,13 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       const activeSheet = this.PilotSheets.find((ps: any) => ps.ID === id)
       if (activeSheet) return activeSheet as PilotSheet
       if (!this.SheetsLoaded) return null
-      logger.error(`No active pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
+      if (!this.PilotSheets.length) {
+        // Se a lista de fichas está vazia, o CurrentActiveID salvo é obsoleto
+        this.CurrentActiveID = ''
+        void SetValue('current_active_sheet', '')
+        return null
+      }
+      logger.warn(`No active pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
       return null
     },
     async AssignActiveSheet(payload: PilotSheet): Promise<void> {

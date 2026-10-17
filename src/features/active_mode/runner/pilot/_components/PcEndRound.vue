@@ -193,7 +193,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import * as _ from 'lodash-es'
   import PilotSheet from '@/features/pilot_management/store/PilotSheet'
   import EndRoundDialog from '../../_shared/_EndRoundDialog.vue'
@@ -213,19 +213,27 @@
   }>()
 
   const burnDialog = ref(false)
-  const burnHandledRound = ref<number | null>(null)
-  const burnHandled = computed(() => burnHandledRound.value === props.sheet.Round)
+  const burnHandled = ref(false)
+  const lastBurnValue = ref(0)
   const mechController = computed(() => props.sheet.Pilot.ActiveMech?.CombatController)
   const currentBurn = computed(
     () => mechController.value?.StatController.getCurrent(StatKey.BURN) ?? 0
   )
   const hasBurn = computed(() => currentBurn.value > 0)
 
+  // Se a unidade sofrer novo dano de queimadura (ou o valor aumentar),
+  // reseta o estado de resolvido para exigir novo teste
+  watch(currentBurn, (newVal, oldVal) => {
+    if (newVal > 0 && newVal > (oldVal ?? 0)) {
+      burnHandled.value = false
+    }
+  }, { immediate: true })
+
   function markBurnHandled(answer?: { success?: boolean; skip?: boolean; rolled?: number }) {
     if (answer && !answer.skip && typeof answer.success === 'boolean') {
       mechController.value?.ResolveBurn(answer.success, answer.rolled)
     }
-    burnHandledRound.value = props.sheet.Round
+    burnHandled.value = true
   }
   function cleanSvg(svg: string) {
     return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } })
@@ -260,6 +268,7 @@
   }
   async function endTurn(isActive) {
     isActive.value = false
+    burnHandled.value = false
     // Encerra o TURNO da própria ficha. O `EndTurnFlow` cuida de burn, checagens,
     // ativação e usos de turno; as ações voltam limpas e o movimento ao máximo.
     await props.sheet.EndTurn()

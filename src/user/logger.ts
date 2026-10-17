@@ -312,7 +312,13 @@ class Logger {
     }
     if (typeof window !== 'undefined') {
       window.addEventListener('error', e => {
-        if (!e.error) return // resource load errors (img/script) have no error object
+        if (!e.error || e.defaultPrevented) return // resource load errors (img/script) have no error object
+        if (
+          e.message &&
+          (e.message.includes("reading 'naturalHeight'") || e.message.includes("reading 'naturalWidth'"))
+        ) {
+          return // race condition in unmounted cropper/preview image
+        }
         this.log(`Uncaught: ${e.message}`, 'error', null, e.error)
       })
       window.addEventListener('unhandledrejection', e => {

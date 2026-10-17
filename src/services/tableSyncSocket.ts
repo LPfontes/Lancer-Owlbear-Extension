@@ -519,11 +519,11 @@ class TableSyncSocket {
           const statTarget: any = isMechPath ? pilot.ActiveMech : pilot
           const statController = statTarget?.CombatController?.StatController
           if (statController) {
-            console.log(`[TableSyncSocket][PATCH_FIELD] Aplicando ${patch.field} em "${pilot.Callsign || pilot.Name}" (${patch.characterId})`)
             if (fieldTarget === 'combatActions' && patch.value) {
               statTarget.CombatController.CombatActions = { ...patch.value }
               statTarget.CombatController.CombatLogVersion++
             } else if (fieldTarget === 'statuses' && Array.isArray(patch.value)) {
+              console.log(`[StatusInvestigation][SyncRoom -> LocalStore] Aplicando "statuses" em PilotStore para "${pilot.Callsign || pilot.Name}" (${patch.characterId}):`, patch.value)
               statTarget.CombatController.Statuses = [...patch.value]
               statTarget.CombatController.CombatLogVersion++
             } else {
@@ -542,7 +542,6 @@ class TableSyncSocket {
         if (combatant?.actor) {
           const targetMech = combatant.actor.ActiveMech
           const targetSc = targetMech?.StatController ?? combatant.actor.CombatController?.StatController
-          console.log(`[TableSyncSocket][PATCH_FIELD] Aplicando ${patch.field} no combatente do encontro "${combatant.actor.Callsign || combatant.actor.Name || patch.characterId}"`)
           if (fieldTarget === 'combatActions' && patch.value) {
             if (targetMech?.CombatController) {
               targetMech.CombatController.CombatActions = { ...patch.value }
@@ -553,6 +552,7 @@ class TableSyncSocket {
               combatant.actor.CombatController.CombatLogVersion++
             }
           } else if (fieldTarget === 'statuses' && Array.isArray(patch.value)) {
+            console.log(`[StatusInvestigation][SyncRoom -> LocalEncounter] Aplicando "statuses" no combatente do encontro ativo "${combatant.actor.Name || combatant.actor.Callsign || combatant.id}":`, patch.value)
             if (targetMech?.CombatController) {
               targetMech.CombatController.Statuses = [ ...patch.value ]
               targetMech.CombatController.CombatLogVersion++
@@ -644,11 +644,9 @@ class TableSyncSocket {
     }
 
     if (applied === 0) {
-      console.warn(`[TableSyncSocket][PATCH_FIELD] Não foi possível aplicar "${patch.field}" em ${patch.characterId} (item não encontrado nesta cópia).`)
       return
     }
 
-    console.log(`[TableSyncSocket][PATCH_FIELD] ${patch.field} = ${patch.value} aplicado em ${applied} cópia(s) de ${patch.characterId}.`)
     activeSheet?.Save()
 
     if (typeof window !== 'undefined') {
@@ -780,7 +778,6 @@ class TableSyncSocket {
    * descartava e o dano aplicado no tracker não chegava na ficha do jogador.
    */
   public sendPatchField(characterId: string, characterType: 'pilot' | 'npc', field: string, value: any, version: number): void {
-    console.log(`[TableSyncSocket][PATCH_FIELD] Preparando alteração de ${characterType} "${characterId}": ${field} = ${value} (v${version})`)
 
     const known = roomSyncedSheets.value?.[characterId]
     if (known && Number(known.version) < version) {

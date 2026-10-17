@@ -1456,6 +1456,8 @@ class OBRBridge {
    * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha).
    * Coalesce requisições em rajada para evitar chamadas de cena repetidas.
    */
+  private lastSyncedCombatantStatusSignatures = new Map<string, string>()
+
   public async syncCombatantStatusMarkers(
     combatantId: string,
     statuses: string[],
@@ -1464,7 +1466,12 @@ class OBRBridge {
     if (!this.isReady || !OBR.isAvailable) return
     // Ficha aberta em modo leitura nesta janela: nada é escrito no token.
     if (isSheetReadOnlySession()) {
-      console.log('[OBRBridge] Ficha em modo leitura: marcadores de token não sincronizados.')
+      return
+    }
+
+    const sig = statuses.slice().sort().join('|')
+    const prevSig = this.lastSyncedCombatantStatusSignatures.get(combatantId)
+    if (prevSig === sig) {
       return
     }
 
@@ -1487,11 +1494,21 @@ class OBRBridge {
     const entries = Array.from(this.pendingStatusSyncs.entries())
     this.pendingStatusSyncs.clear()
 
+    for (const [combatantId, { statuses }] of entries) {
+      this.lastSyncedCombatantStatusSignatures.set(combatantId, statuses.slice().sort().join('|'))
+    }
+
     try {
       const items = await OBR.scene.items.getItems((item) => {
         const meta = item.metadata[COMPCON_METADATA_KEY] as any
         return !!(meta && meta.sheetId)
       })
+
+      console.log(`[StatusInvestigation][Metadata] flushPendingStatusSyncs procurando tokens vinculados para ${entries.length} combatente(s). Tokens na cena com COMPCON_METADATA:`, items.map(it => ({
+        id: it.id,
+        name: it.name,
+        meta: it.metadata[COMPCON_METADATA_KEY]
+      })))
 
       for (const [combatantId, { statuses, originId }] of entries) {
         const ids = [combatantId, originId].filter(Boolean) as string[]
@@ -1500,6 +1517,9 @@ class OBRBridge {
           if (!meta) return false
           return ids.some(id => meta.sheetId === id || meta.mechId === id || meta.combatantId === id)
         })
+
+        console.log(`[StatusInvestigation][Metadata] Combatant "${combatantId}" (ids=${ids.join(',')}) encontrou ${matching.length} token(s) correspondente(s):`, matching.map(m => m.id))
+
         for (const it of matching) {
           await statusMarkerService.syncTokenStatusMarkers(it.id, statuses).catch(() => { })
         }

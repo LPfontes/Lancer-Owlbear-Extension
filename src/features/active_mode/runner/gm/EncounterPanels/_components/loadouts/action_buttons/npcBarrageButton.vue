@@ -336,10 +336,6 @@
 
   const availableWeapons = computed<any[]>(() => {
     const actor = owner.value?.actor as any
-    console.log('[NpcBarrageButton] Calculando availableWeapons para ator:', actor?.Name || actor?.ID, {
-      hasFeatureController: !!actor?.NpcFeatureController,
-      presetWeapon: props.presetWeapon?.Name,
-    })
     if (!actor) return []
     const weapons: any[] = []
     const features = actor.NpcFeatureController?.ActiveFeatures || actor.NpcFeatureController?.Features || actor.Features || []
@@ -351,7 +347,6 @@
     if (props.presetWeapon && !weapons.some(w => w.ID === props.presetWeapon?.ID)) {
       weapons.push(props.presetWeapon)
     }
-    console.log('[NpcBarrageButton] Armas de NPC encontradas:', weapons.map(w => ({ id: w.ID, name: w.Name, isSuperheavy: !!w.IsSuperheavy })))
     return weapons
   })
 
@@ -370,24 +365,19 @@
   watch(
     availableWeapons,
     list => {
-      console.log('[NpcBarrageButton] Watch availableWeapons disparado:', list.length, 'armas')
       if (!list.length) return
       if (props.presetWeapon?.ID) {
         selectedWeapon1Id.value = props.presetWeapon.ID
-        console.log('[NpcBarrageButton] Arma 1 pré-selecionada pelo presetWeapon:', props.presetWeapon.Name)
       } else if (!selectedWeapon1Id.value || !list.some(w => w.ID === selectedWeapon1Id.value)) {
         selectedWeapon1Id.value = list[0]?.ID || ''
-        console.log('[NpcBarrageButton] Arma 1 auto-selecionada (primeira da lista):', list[0]?.Name)
       }
 
       if (isWeapon1Superheavy.value) {
         selectedWeapon2Id.value = ''
-        console.log('[NpcBarrageButton] Arma 1 é Superpesada: Arma 2 desativada')
       } else {
         const remaining = list.filter(w => w.ID !== selectedWeapon1Id.value)
         if (!selectedWeapon2Id.value || !remaining.some(w => w.ID === selectedWeapon2Id.value)) {
           selectedWeapon2Id.value = remaining[0]?.ID || ''
-          console.log('[NpcBarrageButton] Arma 2 auto-selecionada:', remaining[0]?.Name || 'nenhuma')
         }
       }
     },
@@ -395,7 +385,6 @@
   )
 
   watch(selectedWeapon1Id, newId => {
-    console.log('[NpcBarrageButton] selectedWeapon1Id alterado para:', newId, 'isSuperheavy:', isWeapon1Superheavy.value)
     if (isWeapon1Superheavy.value) {
       selectedWeapon2Id.value = ''
       return

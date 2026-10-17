@@ -115,6 +115,14 @@
         >
           <v-icon icon="mdi-shield-sun-outline" size="18" />
         </v-tab>
+        <v-tab
+          value="storage"
+          class="font-weight-bold"
+          style="letter-spacing: 0.5px; font-size: 0.78rem;"
+          title="Armazenamento & Stores"
+        >
+          <v-icon icon="mdi-database-outline" size="18" />
+        </v-tab>
       </v-tabs>
     </div>
 
@@ -214,6 +222,15 @@
     >
       <TokenTrackerPanel v-if="currentTab === 'trackers'" />
     </div>
+
+    <!-- Aba 4: Gerenciador de Armazenamento e Stores -->
+    <div
+      v-show="currentTab === 'storage'"
+      class="flex-grow-1 overflow-hidden flex-column"
+      :class="currentTab === 'storage' ? 'd-flex' : 'd-none'"
+    >
+      <StorageManagerTab v-if="currentTab === 'storage'" />
+    </div>
   </div>
 </template>
 
@@ -227,6 +244,7 @@ import TableActionCard from '@/ui/components/TableActionDrawer/TableActionCard.v
 import TableActionInput from '@/ui/components/TableActionDrawer/TableActionInput.vue'
 import CombatTrackerTab from '@/ui/components/TableActionDrawer/CombatTrackerTab.vue'
 import TokenTrackerPanel from '@/ui/components/TokenTrackers/TokenTrackerPanel.vue'
+import StorageManagerTab from '@/ui/components/TableActionDrawer/StorageManagerTab.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -235,16 +253,16 @@ const route = useRoute()
 const tableActionStore = useTableActionStore()
 const encounterStore = EncounterStore()
 const feedContainer = ref<HTMLElement | null>(null)
-const initialTab = route.query.tab as 'tracker' | 'chat' | 'trackers'
-const currentTab = ref<'tracker' | 'chat' | 'trackers'>(
-  initialTab && ['tracker', 'chat', 'trackers'].includes(initialTab) ? initialTab : 'tracker'
+const initialTab = route.query.tab as 'tracker' | 'chat' | 'trackers' | 'storage'
+const currentTab = ref<'tracker' | 'chat' | 'trackers' | 'storage'>(
+  initialTab && ['tracker', 'chat', 'trackers', 'storage'].includes(initialTab) ? initialTab : 'tracker'
 )
 
 watch(
   () => route.query.tab,
   (newTab) => {
-    if (newTab && ['tracker', 'chat', 'trackers'].includes(newTab as string)) {
-      currentTab.value = newTab as 'tracker' | 'chat' | 'trackers'
+    if (newTab && ['tracker', 'chat', 'trackers', 'storage'].includes(newTab as string)) {
+      currentTab.value = newTab as 'tracker' | 'chat' | 'trackers' | 'storage'
     }
   }
 )

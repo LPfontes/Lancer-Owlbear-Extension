@@ -139,39 +139,40 @@ class StatusController {
     return list
   }
 
+  private _lastNotifiedStatusSignature = ''
+
   public NotifyStatusChange(): void {
     if (typeof window !== 'undefined') {
       try {
         const parent = (this._parent as any).Parent
         const parentId = parent?.ID
-        if (parentId) {
           const pilotId = parent?.Pilot?.ID || (parent?.ItemType === 'Pilot' ? parent?.ID : null)
           const mechId = parent?.ActiveMech?.ID || (parent?.ItemType === 'Mech' ? parent?.ID : null)
-          const originId = parent?.OriginId || pilotId || mechId || parentId
+
+          // Não lidamos com token de piloto desmontado: marcadores visuais no mapa pertencem ao Mecha (ou NPC)
+          const targetCombatantId = mechId || (parent?.ItemType !== 'Pilot' ? parentId : null)
+          if (!targetCombatantId) {
+            return
+          }
+
+          const markerStatuses = this.MarkerStatusIds()
+          const signature = markerStatuses.slice().sort().join('|')
+
+          // Guarda de eco: se os status desta entidade não mudaram, não re-dispara
+          if (this._lastNotifiedStatusSignature === signature) {
+            return
+          }
+          this._lastNotifiedStatusSignature = signature
+
           window.dispatchEvent(
             new CustomEvent('compcon-combatant-statuses-changed', {
               detail: {
-                combatantId: parentId,
-                originId,
-                statuses: this.MarkerStatusIds(),
+                combatantId: targetCombatantId,
+                originId: targetCombatantId,
+                statuses: markerStatuses,
               },
             })
           )
-
-          const counterpart = (this._parent as any).Counterpart
-          const counterpartParent = counterpart?.Parent
-          if (counterpartParent?.ID && counterpartParent.ID !== parentId) {
-            window.dispatchEvent(
-              new CustomEvent('compcon-combatant-statuses-changed', {
-                detail: {
-                  combatantId: counterpartParent.ID,
-                  originId: counterpartParent.OriginId || parentId || counterpartParent.ID,
-                  statuses: this.MarkerStatusIds(),
-                },
-              })
-            )
-          }
-        }
       } catch (_e) {}
     }
   }

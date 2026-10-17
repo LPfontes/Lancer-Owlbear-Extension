@@ -471,11 +471,6 @@
   }
 
   const availableMounts = computed<MountOption[]>(() => {
-    console.log('[MechBarrageButton] Calculando availableMounts para activeMech:', activeMech.value?.Name || activeMech.value?.ID, {
-      hasLoadoutController: !!activeMech.value?.MechLoadoutController,
-      presetWeapon: props.presetWeapon?.Name,
-      owner: owner.value?.actor?.Name,
-    })
     if (!activeMech.value) {
       console.warn('[MechBarrageButton] activeMech.value é nulo!')
       return []
@@ -489,7 +484,6 @@
     let rawMounts = []
     try {
       rawMounts = loadout.AllActiveMounts(activeMech.value)
-      console.log('[MechBarrageButton] loadout.AllActiveMounts retornou:', rawMounts.length, 'montagens')
     } catch (e) {
       console.warn('[MechBarrageButton] Erro em AllActiveMounts:', e)
       rawMounts = []
@@ -497,7 +491,6 @@
 
     if (!rawMounts || rawMounts.length === 0) {
       rawMounts = (loadout.Mounts || []).filter((m: any) => m?.Weapons?.length)
-      console.log('[MechBarrageButton] Fallback para loadout.Mounts retornou:', rawMounts.length, 'montagens')
     }
 
     const result = rawMounts.map((m: any, idx: number) => {
@@ -524,7 +517,6 @@
 
     // Se ainda não encontrou encaixes formais, mas há uma arma de preset ou armas no mech, cria uma montagem sintética
     if (result.length === 0) {
-      console.log('[MechBarrageButton] result vazio, gerando montagens sintéticas com base nas armas instaladas...')
       const allWeapons: MechWeapon[] = []
       if (props.presetWeapon) allWeapons.push(props.presetWeapon)
       const mechWeapons = (activeMech.value?.Weapons || activeMech.value?.MechLoadoutController?.ActiveLoadout?.Weapons || []) as MechWeapon[]
@@ -535,7 +527,7 @@
       }
       for (let i = 0; i < allWeapons.length; i++) {
         const w = allWeapons[i]
-        const isSH = w.Size === 'Superheavy' || w.Type === 'Superheavy' || (w as any).IsSuperheavy
+        const isSH = Boolean(w.Size === 'Superheavy' || (w as any).Type === 'Superheavy' || (w as any).IsSuperheavy)
         result.push({
           id: w.InstanceID || w.ID || `weapon_mount_${i}`,
           title: isSH ? 'Encaixe Superpesado' : 'Encaixe de Arma',
@@ -546,12 +538,11 @@
           weaponCount: 1,
           isSuperheavy: isSH,
           disabled: false,
+          disabledReason: undefined,
         })
       }
-      console.log('[MechBarrageButton] Montagens sintéticas geradas:', result)
     }
 
-    console.log('[MechBarrageButton] availableMounts final:', result)
     return result
   })
 
@@ -592,7 +583,6 @@
   watch(
     availableMounts,
     mounts => {
-      console.log('[MechBarrageButton] Watch availableMounts disparado com', mounts.length, 'montagens')
       if (!mounts.length) return
 
       // Select Mount 1
@@ -602,28 +592,24 @@
         )
         if (match && !match.disabled) {
           selectedMount1Id.value = match.id
-          console.log('[MechBarrageButton] Mount 1 pré-selecionado pelo presetWeapon:', match.title)
         }
       }
       if (!selectedMount1Id.value || !mounts.some(m => m.id === selectedMount1Id.value)) {
         const firstValid = mounts.find(m => !m.disabled)
         if (firstValid) {
           selectedMount1Id.value = firstValid.id
-          console.log('[MechBarrageButton] Mount 1 auto-selecionado (primeiro válido):', firstValid.title)
         }
       }
 
       // Select Mount 2
       if (isMount1Superheavy.value) {
         selectedMount2Id.value = ''
-        console.log('[MechBarrageButton] Mount 1 é superpesada: Mount 2 desativado/limpo')
       } else {
         const validFor2 = mounts.filter(
           m => !m.disabled && !m.isSuperheavy && m.id !== selectedMount1Id.value
         )
         if (!selectedMount2Id.value || !validFor2.some(m => m.id === selectedMount2Id.value)) {
           selectedMount2Id.value = validFor2[0]?.id || ''
-          console.log('[MechBarrageButton] Mount 2 auto-selecionado:', validFor2[0]?.title || 'nenhum')
         }
       }
     },
@@ -632,7 +618,6 @@
 
   // Watch Mount 1 changes to re-evaluate Mount 2
   watch(selectedMount1Id, newId => {
-    console.log('[MechBarrageButton] selectedMount1Id alterado para:', newId, 'isSuperheavy:', isMount1Superheavy.value)
     if (isMount1Superheavy.value) {
       selectedMount2Id.value = ''
       return

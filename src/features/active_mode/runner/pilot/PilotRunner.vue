@@ -179,7 +179,7 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onBeforeUnmount, inject } from 'vue'
   import { useDisplay } from 'vuetify'
-  import { useRoute, onBeforeRouteLeave, matchedRouteKey } from 'vue-router'
+  import { useRoute, useRouter, onBeforeRouteLeave, matchedRouteKey } from 'vue-router'
   import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
   import PilotSheet from '@/features/pilot_management/store/PilotSheet'
   import { PilotStore } from '@/features/pilot_management/store'
@@ -237,6 +237,7 @@ const panelMap: Record<string, any> = {
 
   const { mdAndDown: mobile } = useDisplay()
   const route = useRoute()
+  const router = useRouter()
 
   const showRight = ref(false)
   const panel = ref('pc')
@@ -377,6 +378,13 @@ const panelMap: Record<string, any> = {
           })
           targetSheet = findLocalSheet(sheetStore, sheetStore.CurrentActiveID)
         }
+      }
+
+      if (!targetSheet) {
+        // Ficha inexistente ou apagada do storage: volta com segurança para a lista de fichas
+        await sheetStore.SetActiveSheet('')
+        router.push('/active-mode/sheets').catch(() => {})
+        return
       }
 
       if (targetSheet && sheetStore.CurrentActiveID !== targetSheet.ID) {
@@ -804,6 +812,16 @@ const panelMap: Record<string, any> = {
     lastDispatchedSpeed = finalStats?.speed !== undefined ? finalStats.speed : sc?.getCurrent('speed')
     lastDispatchedActions = cc?.CombatActions ? JSON.stringify(cc.CombatActions) : undefined
     lastDispatchedStatuses = cc?.Statuses ? JSON.stringify(cc.Statuses) : undefined
+    lastDispatchedCorePower = cc?.CorePower
+    lastDispatchedCoreActive = cc?.CoreActive
+
+    const mechIdx = activeMechIndex(p)
+    if (mechIdx >= 0) {
+      for (const ref of equipmentDestroyedRefs(p, mechIdx)) {
+        const key = `${ref.path}#${ref.item.ID ?? ''}`
+        lastDispatchedDestroyed.set(key, !!ref.item.Destroyed)
+      }
+    }
     isInitialized = true
 
     console.log(`[PilotSync] Ficha hidratada do estado da sala: HP=${lastDispatchedHp}, Calor=${lastDispatchedHeat}, Est=${lastDispatchedStructure}, Estresse=${lastDispatchedStress}`)
@@ -858,6 +876,19 @@ const panelMap: Record<string, any> = {
       lastDispatchedSpeed = currentSpeed
       lastDispatchedActions = currentActions
       lastDispatchedStatuses = currentStatuses
+
+      const mechCc = mech?.CombatController ?? p.CombatController
+      lastDispatchedCorePower = mechCc?.CorePower
+      lastDispatchedCoreActive = mechCc?.CoreActive
+
+      const mechIdx = activeMechIndex(p)
+      if (mechIdx >= 0) {
+        for (const ref of equipmentDestroyedRefs(p, mechIdx)) {
+          const key = `${ref.path}#${ref.item.ID ?? ''}`
+          lastDispatchedDestroyed.set(key, !!ref.item.Destroyed)
+        }
+      }
+
       console.log(`[PilotSync] Estado inicial de combate capturado (HP=${currentHp}, Calor=${currentHeat}, Est=${currentStructure}, Estresse=${currentStress}). Nenhum delta despachado na montagem.`)
       return
     }
@@ -949,10 +980,10 @@ const panelMap: Record<string, any> = {
       changesCount++
     }
     if (currentStatuses !== undefined && currentStatuses !== lastDispatchedStatuses) {
-      console.log(`[PilotSync] Condições/Status alterados (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
       lastDispatchedStatuses = currentStatuses
       patchVersion++
       const statusesField = mechIndex >= 0 ? mechStatusesPath(mechIndex) : 'statuses'
+      console.log(`[StatusInvestigation][SyncRoom][Envio] Status alterados na ficha do piloto "${pilotName}" (${p.ID}). Enviando PATCH_FIELD (v${patchVersion}): field="${statusesField}", value=`, statusesList)
       tableSyncSocket.sendPatchField(p.ID, 'pilot', statusesField, statusesList, patchVersion)
       changesCount++
     }
@@ -1037,6 +1068,7 @@ const panelMap: Record<string, any> = {
     else if (key === 'speed') lastDispatchedSpeed = Number(patch.value)
     else if (patchFieldTarget(patch.field) === 'combatActions') lastDispatchedActions = JSON.stringify(patch.value)
     else if (patchFieldTarget(patch.field) === 'statuses') {
+      console.log(`[StatusInvestigation][SyncRoom][Recebido] onRemotePatch recebeu "statuses" para piloto "${p.ID}":`, patch.value)
       lastDispatchedStatuses = JSON.stringify(patch.value)
       const cc = p.ActiveMech?.CombatController ?? p.CombatController
       if (cc && Array.isArray(patch.value)) {

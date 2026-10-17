@@ -166,6 +166,7 @@
       // inteiro de marcadores, o badge do cover era apagado ao adicionar uma
       // condição. `MarkerStatusIds` já inclui status + dangerzone + cobertura.
       const list = (props.controller as any).StatusController.MarkerStatusIds(props.controller)
+      console.log(`[StatusInvestigation][UI-GM] StatusConditionSelector disparando syncMarkers para parentId="${parentId}" (origem="${parent?.OriginId || parentId}"):`, list)
       obrBridge
         .syncCombatantStatusMarkers(parentId, list, parent?.OriginId || parentId)
         .catch(() => {})
@@ -173,6 +174,7 @@
   }
 
   function setStatus(status: any) {
+    console.log(`[StatusInvestigation][UI-GM] setStatus acionado: status="${status?.ID || status?.id || status?.Name || status}"`)
     ;(props.controller as any).ToggleStatus(status, undefined, true)
     syncMarkers()
   }

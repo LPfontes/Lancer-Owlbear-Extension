@@ -105,8 +105,9 @@
         if (callsign && !list.some(s => s.name === callsign)) {
           list.push({ name: callsign, role: 'Piloto Ativo', type: 'pilot' })
         }
-        if (sheet.Combatant?.actor?.ActiveMech?.Name && !list.some(s => s.name === sheet.Combatant.actor.ActiveMech.Name)) {
-          list.push({ name: sheet.Combatant.actor.ActiveMech.Name, role: 'Mecha Ativo', type: 'pilot' })
+        const activeMechName = sheet.Combatant?.actor?.ActiveMech?.Name
+        if (activeMechName && !list.some(s => s.name === activeMechName)) {
+          list.push({ name: activeMechName, role: 'Mecha Ativo', type: 'pilot' })
         }
       }
     }

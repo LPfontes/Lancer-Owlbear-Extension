@@ -82,6 +82,8 @@ export class StatusMarkerService {
         )
       )
 
+      console.log(`[StatusInvestigation][TokenMarkers] applyTokenStatusMarkers para tokenId="${tokenId}": rawStatusIds=[${rawStatusIds.join(', ')}] -> normalizados=[${normalizedStatusIds.join(', ')}]`)
+
       // 3. Obtém anexos existentes vinculados ao token
       const attachments = await OBR.scene.items.getItemAttachments([tokenId])
       const existingMarkers = attachments.filter(
@@ -91,6 +93,8 @@ export class StatusMarkerService {
             (item.metadata[STATUS_MARKER_METADATA_KEY] === true ||
              item.metadata[STATUS_MARKER_ID_KEY] !== undefined))
       )
+
+      console.log(`[StatusInvestigation][TokenMarkers] Token "${tokenId}" possui ${existingMarkers.length} marcadores anexados atualmente:`, existingMarkers.map(m => ({ id: m.id, statusId: m.metadata?.[STATUS_MARKER_ID_KEY] })))
 
       // 4. Remove marcadores que não estão mais ativos, que possuem URL legada
       // (data: URL ou não HTTP) ou que estão DUPLICADOS. Itens do tipo TEXT
