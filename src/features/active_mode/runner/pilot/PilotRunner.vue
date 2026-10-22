@@ -137,6 +137,20 @@
             <v-col>
               <pc-end-encounter v-if="!readOnly" :sheet="sheet" />
             </v-col>
+            <v-col>
+              <v-btn
+                id="pilot-runner-back-to-chat"
+                block
+                flat
+                tile
+                variant="text"
+                color="accent"
+                prepend-icon="mdi-message-text"
+                @click="router.push('/table-chat')"
+              >
+                {{ $t('active.endRound.backToChat') }}
+              </v-btn>
+            </v-col>
           </v-row>
         </v-footer>
       </v-layout>

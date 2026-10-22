@@ -101,6 +101,41 @@
             </v-row>
           </v-container>
         </v-main>
+
+        <v-footer
+          app
+          height="36"
+          class="bg-panel"
+          style="position: fixed !important; bottom: 0px !important; left: 0px !important; right: 0px !important; width: 100% !important; z-index: 1000 !important; border-top: 1px solid rgba(255, 255, 255, 0.1);"
+        >
+          <v-row
+            justify="space-between"
+            align="center"
+            no-gutters
+          >
+            <v-col>
+              <npc-end-turn
+                :combatant="combatant"
+                :encounter-instance="encounterInstance"
+                :sheet-id="npcId"
+              />
+            </v-col>
+            <v-col>
+              <v-btn
+                id="npc-runner-back-to-chat"
+                block
+                flat
+                tile
+                variant="text"
+                color="accent"
+                prepend-icon="mdi-message-text"
+                @click="router.push('/table-chat')"
+              >
+                {{ $t('active.endRound.backToChat') }}
+              </v-btn>
+            </v-col>
+          </v-row>
+        </v-footer>
       </v-layout>
     </div>
 
@@ -120,7 +155,7 @@
 
 <script setup lang="ts">
   import { ref, shallowRef, computed, watch, reactive, onMounted, onUnmounted } from 'vue'
-  import { useRoute } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { NpcStore, EncounterStore } from '@/stores'
   import { Encounter } from '@/classes/encounter/Encounter'
   import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
@@ -134,6 +169,7 @@
   import CombatStatblockExport from '../gm/EncounterPanels/_components/CombatStatblockExport.vue'
   import { combatantCombatVersion } from '../_shared/combatVersion'
   import { combatantMatchesSheetId, findEncounterForNpc, findNpcCombatant } from '../_shared/npcSheetLookup'
+  import NpcEndTurn from './_components/NpcEndTurn.vue'
 
   const typeMap: Record<string, any> = {
     unit: UnitPanel,
@@ -144,6 +180,7 @@
   const props = withDefaults(defineProps<{ id?: string | null }>(), { id: null })
 
   const route = useRoute()
+  const router = useRouter()
   const diceDialog = ref(false)
 
   const npcId = computed(() => (props.id || (route.params.id as string) || '') as string)

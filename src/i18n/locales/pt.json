@@ -2344,7 +2344,10 @@
       "endTurn": "Finalizar Turno",
       "confirmEndTurn": "Confirmar Fim do Turno",
       "finishTurn": "Finalizar Turno",
-      "confirmFinishTurn": "Confirmar Fim do Turno"
+      "confirmFinishTurn": "Confirmar Fim do Turno",
+      "backToChat": "Voltar ao Chat",
+      "turnEndedTitle": "Fim de Turno — {name}",
+      "turnEndedDetail": "Turno encerrado. Ações e movimento renovados para a próxima ativação."
     },
     "actionChips": {
       "protocol": "Protocolo",
