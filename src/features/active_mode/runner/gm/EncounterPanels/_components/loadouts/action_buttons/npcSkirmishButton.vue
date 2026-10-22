@@ -50,6 +50,7 @@
             v-model="selectedWeaponId"
             :items="availableWeapons"
             item-value="ID"
+            item-title="Name"
             variant="outlined"
             density="compact"
             hide-details
@@ -215,11 +216,14 @@
     const actor = owner.value?.actor as any
     if (!actor) return []
     const weapons: any[] = []
-    const features = actor.NpcFeatureController?.ActiveFeatures || actor.Features || []
+    const features: any[] = actor.NpcFeatureController?.Features ?? actor.Features ?? []
     for (const f of features) {
-      if (f.ItemType === 'NpcWeapon' || f.Damage || f.WeaponType) {
-        weapons.push(f)
-      }
+      if (!f || f.Mod) continue
+      const isWeapon = f.FeatureType === 'Weapon' || f.ItemType === 'NpcWeapon' || !!f.WeaponType
+      if (isWeapon && !f.IsSuperheavy) weapons.push(f)
+    }
+    if (props.presetWeapon && !weapons.some(w => w.ID === props.presetWeapon?.ID)) {
+      weapons.unshift(props.presetWeapon)
     }
     return weapons
   })
