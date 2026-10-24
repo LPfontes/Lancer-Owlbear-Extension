@@ -62,17 +62,11 @@
             fluid
             class="pb-12"
           >
-            <component
-              :is="typeMap[combatant.type]"
-              :key="combatant.id"
-              :combatant="combatant"
-              :encounter-instance="encounterInstance"
-            />
-
             <v-row
               dense
               justify="end"
               align="center"
+              class="mb-1"
             >
               <v-col cols="auto">
                 <v-btn
@@ -86,6 +80,20 @@
                   {{ $t('ow.generateToken') }}
                 </v-btn>
               </v-col>
+            </v-row>
+
+            <component
+              :is="typeMap[combatant.type]"
+              :key="combatant.id"
+              :combatant="combatant"
+              :encounter-instance="encounterInstance"
+            />
+
+            <v-row
+              dense
+              justify="end"
+              align="center"
+            >
               <v-col cols="auto">
                 <actor-logs
                   :actor="combatant.actor"
