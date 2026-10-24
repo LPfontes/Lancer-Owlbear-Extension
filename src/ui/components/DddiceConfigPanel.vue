@@ -152,7 +152,7 @@ onMounted(() => {
           class="flex-grow-1 font-weight-bold"
           prepend-icon="mdi-dice-d20-outline"
         >
-          Dice+ (Nativo Owlbear)
+          Dice+
         </v-btn>
         <v-btn
           value="dddice"
@@ -203,7 +203,7 @@ onMounted(() => {
                 </v-chip>
               </div>
               <div class="text-caption text-grey-lighten-1">
-                Extensão 3D oficial do Owlbear Rodeo com física determinística
+                Extensão 3D
               </div>
             </div>
           </div>
@@ -233,7 +233,7 @@ onMounted(() => {
             </div>
 
             <div class="text-caption text-grey-lighten-1 mb-3" style="line-height: 1.5;">
-              O <strong>Dice+</strong> roda nativamente no seu Owlbear Rodeo através de canais de broadcast. Não exige cadastro, chaves de API nem sala externa.
+              O <strong>Dice+</strong> roda no seu Owlbear Rodeo através de canais de broadcast. Não exige cadastro, chaves de API nem sala externa.
             </div>
 
             <!-- Alerta de Conectividade -->
