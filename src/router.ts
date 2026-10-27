@@ -28,6 +28,11 @@ const router = createRouter({
       component: () => import('@/features/active_mode/TableChatView.vue'),
     },
     {
+      path: '/token-status-embed',
+      name: 'token-status-embed',
+      component: () => import('@/ui/components/TokenStatus/TokenStatusEmbed.vue'),
+    },
+    {
       path: '/new',
       redirect: '/new/no_group',
     },

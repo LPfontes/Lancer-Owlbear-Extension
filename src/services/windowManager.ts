@@ -237,7 +237,7 @@ class WindowManager {
     }
 
     try {
-      console.log('[WindowManager] 🚀 OBR.popover.open disparado com margens seguras:', {
+      console.log('[WindowManager] OBR.popover.open disparado com margens seguras:', {
         id: OBR_POPOVER_ID,
         anchorPosition: { left: finalLeft, top: finalTop },
         width,
@@ -509,7 +509,7 @@ class WindowManager {
 
     const clamped = this.clampPosition({ left: rawLeft, top: rawTop }, w, this.currentHeight, screenW, screenH)
 
-    console.log('[WindowManager] 📐 alignRight Calculado (com margem segura Owlbear Rodeo):', clamped)
+    console.log('[WindowManager] alignRight Calculado (com margem segura Owlbear Rodeo):', clamped)
 
     this.currentPosition.value = clamped
     this.saveState()
@@ -531,7 +531,7 @@ class WindowManager {
     const w = this.isMinimized.value ? 400 : this.currentWidth
     const clamped = this.clampPosition({ left: rawLeft, top: rawTop }, w, this.currentHeight, screenW, screenH)
 
-    console.log('[WindowManager] 📐 setPercentagePosition Calculado:', clamped)
+    console.log('[WindowManager] setPercentagePosition Calculado:', clamped)
 
     this.currentPosition.value = clamped
     this.saveState()

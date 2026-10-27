@@ -174,7 +174,7 @@ function apply(close: () => void, force = false) {
 </script>
 
 <template>
-  <combat-action-button :action="action" min-width="560px">
+  <combat-action-button :action="action" min-width="600px">
     <template #default="{ close }">
       <div class="hud-container pa-3">
         <!-- Action Header -->

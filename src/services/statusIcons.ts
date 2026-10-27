@@ -14,8 +14,8 @@ export interface StatusDefinition {
 export const STATUS_DEFINITIONS: StatusDefinition[] = [
   {
     id: 'lockon',
-    aliases: ['lock_on', 'lock-on', 'lock on'],
-    label: 'Trava de Mira',
+    aliases: ['lock_on', 'lock-on', 'lock on', 'travado em mira', 'trava de mira', 'travar em mira'],
+    label: 'Travado em Mira',
     color: '#D32F2F', // Vermelho
     accentColor: '#FF5252',
     path: `M-0.41,802.5v-7.27l0.91-0.91l0.91,0.91v7.27H-0.41L-0.41,802.5z M-5.86,798.86v-3.64h1.82v1.82h1.82v1.82H-5.86
@@ -26,8 +26,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'impaired',
-    aliases: ['impaired', 'debilitado'],
-    label: 'Debilitado',
+    aliases: ['impaired', 'impedido', 'debilitado'],
+    label: 'Impedido',
     color: '#E65100', // Laranja Escuro
     accentColor: '#FF9800',
     path: `M0.5,802.5l-8.66-5v-10l8.66-5l8.66,5v10L0.5,802.5z M0.5,800.19l6.66-3.84v-7.69l-6.66-3.85l-6.66,3.85v7.69L0.5,800.19z
@@ -35,8 +35,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'slow',
-    aliases: ['slowed', 'slow', 'lentificado'],
-    label: 'Lentificado',
+    aliases: ['slowed', 'slow', 'lento', 'lentificado'],
+    label: 'Lento',
     color: '#F57F17', // Âmbar
     accentColor: '#FFD54F',
     path: `M0.5,802.5c-0.48,0-0.95-0.48-1.9-1.43l-6.67-6.67c-1.9-1.91-1.9-1.91,0-3.81l6.67-6.67c1.9-1.91,1.9-1.91,3.81,0l6.67,6.67
@@ -57,8 +57,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'jammed',
-    aliases: ['jammed', 'interferido', 'congestionado'],
-    label: 'Interferido',
+    aliases: ['jammed', 'bloqueado', 'interferido', 'congestionado'],
+    label: 'Bloqueado',
     color: '#6A1B9A', // Roxo
     accentColor: '#BA68C8',
     path: `M3.23,792.5l-2.73,1.82v8.18l-2.73-10l2.73-1.82v-8.18L3.23,792.5z M-8.71,786.05l4.25,5.71l-1.46,1.98l1.87,5.13
@@ -66,8 +66,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'shredded',
-    aliases: ['shredded', 'estracalhado', 'estraçalhado', 'fragmentado'],
-    label: 'Estraçalhado',
+    aliases: ['shredded', 'dilacerado', 'estracalhado', 'estraçalhado', 'fragmentado'],
+    label: 'Dilacerado',
     color: '#B71C1C', // Carmim Escuro
     accentColor: '#EF5350',
     path: `M2.41,782.5c1.74,0.83,4.38,1.87,6.68,1.87c0,0-0.28,5.16-0.95,7.63c-0.63,2.34-1.4,4.75-2.86,6.68
@@ -89,8 +89,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'hidden',
-    aliases: ['hidden', 'oculto'],
-    label: 'Oculto',
+    aliases: ['hidden', 'escondido', 'oculto'],
+    label: 'Escondido',
     color: '#00838F', // Ciano Profundo
     accentColor: '#26C6DA',
     path: `M-8.14,802.5v-20h5.45v20H-8.14z M0.95,800.68l-1.82-1.82v-2.73l1.82,1.82l5.45-5.45l-5.45-5.45l-1.82,1.82v-2.73l1.82-1.82
@@ -109,8 +109,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'prone',
-    aliases: ['prone', 'caido', 'caído'],
-    label: 'Caído',
+    aliases: ['prone', 'prostrado', 'caido', 'caído'],
+    label: 'Prostrado',
     color: '#4E342E', // Marrom
     accentColor: '#8D6E63',
     path: `M4.4,783.54l1.29,1.29l-5.19,5.19l-5.19-5.19l1.28-1.29l3.9,3.91L4.4,783.54L4.4,783.54z M4.4,789.91l1.29,1.28l-5.19,5.19
@@ -161,8 +161,8 @@ export const STATUS_DEFINITIONS: StatusDefinition[] = [
   },
   {
     id: 'downandout',
-    aliases: ['downandout', 'down and out', 'fora de combate'],
-    label: 'Fora de Combate',
+    aliases: ['downandout', 'down and out', 'caído e apagado', 'caido e apagado', 'fora de combate'],
+    label: 'Caído e Apagado',
     color: '#212121', // Preto Grafite
     accentColor: '#757575',
     path: `M0.5,802.5l-8.66-5v-10l8.66-5l8.66,5v10L0.5,802.5z M-5.5,792.5h12v-2h-12V792.5z`,

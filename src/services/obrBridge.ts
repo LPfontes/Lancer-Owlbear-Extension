@@ -13,9 +13,20 @@ import { sanitizeTokenTrackerConfig } from './tokenTrackerPolicy'
 import { obrPlayerId, obrReady, obrRole } from './obrRuntime'
 import { isActiveModePrewarm } from './prewarmContext'
 import { TAB_ID } from './tabId'
+import {
+  COMPCON_TOKEN_STATUSES_KEY,
+  type TokenDirectStatusPayload,
+  type TokenStatusPriorityMode,
+} from '@/types/token-status'
+import {
+  resolveEffectiveStatuses,
+  sanitizeTokenStatusPayload,
+  createTokenStatusPayload,
+} from './tokenStatusModel'
 
 // Reexportado para quem já importava a constante daqui (ver `types/compcon-obr`).
-export { COMPCON_METADATA_KEY }
+export { COMPCON_METADATA_KEY, COMPCON_TOKEN_STATUSES_KEY }
+export type { TokenDirectStatusPayload, TokenStatusPriorityMode }
 
 export const COMPCON_PILOT_PREFIX = 'com.compcon.activemode/p/'
 export const COMPCON_NPC_PREFIX = 'com.compcon.activemode/n/'
@@ -30,6 +41,8 @@ export const COMPCON_TRACKER_SYNC_KEY = 'com.compcon.activemode/tracker_sync'
 export const COMPCON_BROADCAST_CHANNEL = 'com.compcon.activemode.broadcast'
 export const COMPCON_ICON_URL = '/icon.svg'
 export const COMPCON_ICON_DATA_URI = COMPCON_ICON_URL
+export const COMPCON_STATUS_ICON_URL = '/status-icons/customstatus.svg'
+export const COMPCON_STATUS_ICON_DATA_URI = COMPCON_STATUS_ICON_URL
 export const COMPCON_AUTO_TOKEN_STORAGE_KEY = 'compcon_auto_token_enabled'
 
 
@@ -262,6 +275,28 @@ class OBRBridge {
         },
       }).catch((e) => {
         console.warn('[OBRBridge] Aviso ao criar menu de contexto open-sheet:', e)
+      })
+
+      // Menu de contexto para gerenciar Estados e Condições diretamente no token (estilo Ativar Movimento)
+      void OBR.contextMenu.create({
+        id: 'compcon-token-status',
+        icons: [
+          {
+            icon: COMPCON_STATUS_ICON_DATA_URI,
+            label: 'Estados e Condições',
+            filter: {
+              roles: ['GM', 'PLAYER'],
+              min: 1,
+              max: 1,
+            },
+          },
+        ],
+        embed: {
+          url: '/index.html#/token-status-embed',
+          height: 380,
+        },
+      }).catch((e) => {
+        console.warn('[OBRBridge] Aviso ao criar menu de contexto token-status:', e)
       })
     } catch (e) {
       console.warn('[OBRBridge] Erro ao registrar menus de contexto:', e)
@@ -2235,9 +2270,13 @@ class OBRBridge {
     const label = binding.name || binding.sheetId
     await OBR.notification.show(`Token vinculado com sucesso a: ${label}`)
 
-    // Marcadores visuais são derivados do estado atual da ficha, não do vínculo.
-    if (binding.statuses && binding.statuses.length > 0) {
-      await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => {})
+    // Marcadores visuais: respeita a prioridade de status direto já existente no token.
+    const boundItems = await OBR.scene.items.getItems([tokenId])
+    const rawTokenStatus = boundItems[0]?.metadata?.[COMPCON_TOKEN_STATUSES_KEY]
+    const tokenPayload = sanitizeTokenStatusPayload(rawTokenStatus)
+    const effectiveStatuses = resolveEffectiveStatuses(tokenPayload, binding.statuses || [])
+    if (effectiveStatuses.length > 0) {
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, effectiveStatuses).catch(() => {})
     }
 
     // Trackers: o painel é derivado do estado da ficha, então redesenha já.
@@ -2289,22 +2328,25 @@ class OBRBridge {
   /**
    * Aplica os marcadores visuais de status nos tokens vinculados a um mecha.
    *
-   * O estado de combate (HP/heat/estrutura/stress) NÃO é copiado para o token:
-   * ele é lido da ficha. Aqui só sincronizamos os ícones de status, que são
-   * itens próprios da cena, e apenas para o token que pediu a atualização.
+   * REGRA DE PRIORIDADE:
+   * O efeito aplicado diretamente no token tem prioridade sobre os dados da ficha.
    */
   public async updateTokenVisuals(tokenId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
     if (state.statuses) {
-      await statusMarkerService.syncTokenStatusMarkers(tokenId, state.statuses).catch(() => {})
+      const items = await OBR.scene.items.getItems([tokenId])
+      const rawTokenStatus = items[0]?.metadata?.[COMPCON_TOKEN_STATUSES_KEY]
+      const tokenPayload = sanitizeTokenStatusPayload(rawTokenStatus)
+      const effectiveStatuses = resolveEffectiveStatuses(tokenPayload, state.statuses)
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, effectiveStatuses).catch(() => {})
     }
   }
 
   /**
    * Sincroniza os marcadores de status de todos os tokens vinculados à ficha.
    *
-   * O vínculo é resolvido pelos IDs no metadata do token (`sheetId`/`mechId`);
-   * nada de estado de combate é persistido no token.
+   * REGRA DE PRIORIDADE:
+   * O efeito aplicado diretamente no token tem prioridade sobre os dados da ficha.
    */
   public async updateTokensForCombatant(sheetId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
@@ -2316,13 +2358,19 @@ class OBRBridge {
 
     if (items.length > 0 && state.statuses) {
       for (const item of items) {
-        await statusMarkerService.syncTokenStatusMarkers(item.id, state.statuses).catch(() => {})
+        const rawTokenStatus = item.metadata?.[COMPCON_TOKEN_STATUSES_KEY]
+        const tokenPayload = sanitizeTokenStatusPayload(rawTokenStatus)
+        const effectiveStatuses = resolveEffectiveStatuses(tokenPayload, state.statuses)
+        await statusMarkerService.syncTokenStatusMarkers(item.id, effectiveStatuses).catch(() => {})
       }
     }
   }
 
   /**
-   * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha)
+   * Atualiza diretamente os marcadores visuais de um combatente (por ID da ficha ou mecha).
+   *
+   * REGRA DE PRIORIDADE:
+   * O efeito aplicado diretamente no token tem prioridade sobre os dados da ficha.
    */
   public async syncCombatantStatusMarkers(
     combatantId: string,
@@ -2338,10 +2386,98 @@ class OBRBridge {
         return ids.some(id => meta.sheetId === id || meta.mechId === id || meta.combatantId === id)
       })
       for (const item of items) {
-        await statusMarkerService.syncTokenStatusMarkers(item.id, statuses).catch(() => {})
+        const rawTokenStatus = item.metadata?.[COMPCON_TOKEN_STATUSES_KEY]
+        const tokenPayload = sanitizeTokenStatusPayload(rawTokenStatus)
+        const effectiveStatuses = resolveEffectiveStatuses(tokenPayload, statuses)
+        await statusMarkerService.syncTokenStatusMarkers(item.id, effectiveStatuses).catch(() => {})
       }
     } catch (e) {
       console.warn('[OBRBridge] Erro ao sincronizar marcadores de status do combatente:', e)
+    }
+  }
+
+  /**
+   * Obtém o payload de status diretos aplicados a um token
+   */
+  public async getTokenDirectStatuses(tokenId: string): Promise<TokenDirectStatusPayload | null> {
+    if (!this.isReady || !OBR.isAvailable) return null
+    try {
+      const items = await OBR.scene.items.getItems([tokenId])
+      if (!items.length) return null
+      return sanitizeTokenStatusPayload(items[0].metadata?.[COMPCON_TOKEN_STATUSES_KEY])
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao ler status diretos do token:', e)
+      return null
+    }
+  }
+
+  /**
+   * Grava status diretamente no metadata do token e atualiza os marcadores visuais.
+   * Estes status têm prioridade soberana sobre qualquer dado vindo da ficha ou da sala.
+   */
+  public async setTokenDirectStatuses(
+    tokenId: string,
+    statuses: string[],
+    priorityMode: TokenStatusPriorityMode = 'override'
+  ): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    try {
+      const payload = createTokenStatusPayload(
+        statuses,
+        this.playerId || this.role,
+        priorityMode
+      )
+
+      await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
+        for (const item of items) {
+          item.metadata[COMPCON_TOKEN_STATUSES_KEY] = payload
+        }
+      })
+
+      // Atualiza os marcadores visuais imediatamente no mapa com os status do token
+      await statusMarkerService.syncTokenStatusMarkers(tokenId, payload.statuses).catch(() => {})
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('compcon-token-statuses-updated', {
+            detail: { tokenId, payload },
+          })
+        )
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao gravar status diretos no token:', e)
+    }
+  }
+
+  /**
+   * Remove o override de status direto do token, restaurando a visualização da ficha (se houver).
+   */
+  public async clearTokenDirectStatuses(tokenId: string): Promise<void> {
+    if (!this.isReady || !OBR.isAvailable) return
+    try {
+      await OBR.scene.items.updateItems([tokenId], (items: Item[]) => {
+        for (const item of items) {
+          delete item.metadata[COMPCON_TOKEN_STATUSES_KEY]
+        }
+      })
+
+      // Se o token estiver vinculado a uma ficha, restaura os status da ficha
+      const binding = await this.getTokenBinding(tokenId)
+      if (binding && binding.statuses && binding.statuses.length > 0) {
+        await statusMarkerService.syncTokenStatusMarkers(tokenId, binding.statuses).catch(() => {})
+      } else {
+        await statusMarkerService.clearTokenStatusMarkers(tokenId).catch(() => {})
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('compcon-token-statuses-updated', {
+            detail: { tokenId, payload: null },
+          })
+        )
+      }
+    } catch (e) {
+      console.warn('[OBRBridge] Erro ao limpar status diretos do token:', e)
     }
   }
 
