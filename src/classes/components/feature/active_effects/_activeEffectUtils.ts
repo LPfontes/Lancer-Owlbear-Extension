@@ -1,5 +1,6 @@
 import { ActiveEffect, IActiveEffectData } from './ActiveEffect'
 import { keyPrefixes } from '@/i18n/contentKeys'
+import { i18n } from '@/i18n'
 
 interface IActiveEffectCallbackData {
   on_miss?: string | IActiveEffectData
@@ -22,8 +23,15 @@ const mkEffect = (
   owner: any
 ): ActiveEffect | undefined => {
   if (!raw) return undefined
-  const data = typeof raw === 'string' ? { name, detail: raw } : raw
-  keyPrefixes.set(data as object, `${owner.ID}.${key}`)
+  const ownerKey = owner?._lkey ?? owner?.ID
+  const effectKey = ownerKey ? `${ownerKey}.${key}` : undefined
+  const data =
+    typeof raw === 'string'
+      ? { name, detail: raw, ...(effectKey ? { id: effectKey } : {}) }
+      : { ...raw, ...(effectKey && !raw.id ? { id: effectKey } : {}) }
+  if (effectKey) {
+    keyPrefixes.set(data as object, effectKey)
+  }
   return new ActiveEffect(data, owner, undefined, name)
 }
 
@@ -37,3 +45,26 @@ export function initActiveEffectCallbacks(
   target.OnHit = mkEffect('on_hit', data.on_hit, 'On Hit Effect', owner)
   target.OnCrit = mkEffect('on_crit', data.on_crit, 'On Crit Effect', owner)
 }
+
+export function translateDamageType(type?: string): string {
+  if (!type) return ''
+  const lower = String(type).trim().toLowerCase()
+  const key = `enums.damageType.${lower}`
+  if (i18n?.global?.te?.(key)) {
+    return i18n.global.t(key)
+  }
+  const fallbackMap: Record<string, string> = {
+    kinetic: 'Cinético',
+    energy: 'Energia',
+    explosive: 'Explosivo',
+    heat: 'Calor',
+    burn: 'Queimadura',
+    variable: 'Variável',
+  }
+  const currentLocale = i18n?.global?.locale?.value || i18n?.global?.locale || ''
+  if (String(currentLocale).startsWith('pt') && fallbackMap[lower]) {
+    return fallbackMap[lower]
+  }
+  return type
+}
+

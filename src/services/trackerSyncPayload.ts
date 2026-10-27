@@ -41,11 +41,15 @@ function toInt(value: unknown, fallback: number): number {
 }
 
 function readActivations(combatant: any): { current: number; max: number } {
-  const statController = combatant?.actor?.CombatController?.StatController
-  const maxRaw = Number(statController?.MaxStats?.activations)
+  const mechSc = combatant?.actor?.ActiveMech?.CombatController?.StatController
+  const pilotSc = combatant?.actor?.CombatController?.StatController
+
+  const maxRaw = Number(mechSc?.MaxStats?.activations ?? pilotSc?.MaxStats?.activations)
   const max = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.trunc(maxRaw) : 1
-  const currentRaw = Number(statController?.CurrentStats?.activations)
+
+  const currentRaw = Number(mechSc?.CurrentStats?.activations ?? pilotSc?.CurrentStats?.activations)
   const current = Number.isFinite(currentRaw) ? Math.trunc(currentRaw) : 0
+
   return { current: Math.max(0, Math.min(max, current)), max }
 }
 
@@ -59,7 +63,7 @@ export function buildTrackerSnapshot(
   instance: any,
   inTurnId: string | null = null
 ): SyncedTrackerSnapshot | null {
-  if (!instance) return null
+  if (!instance || instance.IsActive === false) return null
 
   const rawCombatants = Array.isArray(instance.Combatants) ? instance.Combatants : []
   const cards: SyncedTrackerCard[] = []
@@ -134,6 +138,103 @@ export function sanitizeTrackerSnapshot(value: unknown): SyncedTrackerSnapshot |
     cards,
     updatedAt: toInt(data.updatedAt, Date.now()),
   }
+}
+
+/**
+ * Escolhe de onde hidratar o tracker.
+ *
+ * O **servidor de sincronização** é quem guarda o "encontro salvo" da mesa
+ * (`INIT_SYNC.activeTracker` → `roomSyncedTracker`) e por isso tem prioridade. O
+ * snapshot no metadata da sala do Owlbear é LEGADO: o app não grava mais ali, e a
+ * leitura só serve para salas que ainda tenham o payload de uma versão anterior.
+ *
+ * Puro de propósito: a leitura das duas fontes fica no serviço, e a decisão pode ser
+ * testada sem arrastar o bridge inteiro.
+ */
+export function pickTrackerSnapshot(
+  socketSnapshot: unknown,
+  legacyRoomMetadata: unknown
+): SyncedTrackerSnapshot | null {
+  return sanitizeTrackerSnapshot(socketSnapshot) ?? sanitizeTrackerSnapshot(legacyRoomMetadata)
+}
+
+/**
+ * Assinatura SÓ da iniciativa: cards (com ativações), rodada e turno atual.
+ *
+ * Deixa de fora identidade e nome do encontro de propósito — duas janelas da mesma mesa
+ * guardam o encontro com IDs próprios, e comparar o ID faria a troca automática nunca
+ * convergir (o Mestre substituiria o encontro para sempre).
+ */
+function initiativeSignature(snapshot: SyncedTrackerSnapshot): string {
+  return JSON.stringify({ r: snapshot.round, t: snapshot.inTurnId, c: snapshot.cards })
+}
+
+/**
+ * A sala publicou um combate DIFERENTE do que esta janela já tem?
+ *
+ * É a pergunta que decide a troca automática do encontro local pelo da sala: comparar a
+ * iniciativa local (rodada, turno, cards) com a do snapshot recebido deixa a operação
+ * idempotente — reaplicar o mesmo combate não faz nada, e o eco da própria publicação
+ * não vira ping-pong.
+ *
+ * Puro de propósito: a decisão pode ser testada sem arrastar o store/bridge.
+ */
+export function roomEncounterDiffers(
+  localInstance: any,
+  inTurnId: string | null,
+  roomSnapshot: unknown
+): boolean {
+  const room = sanitizeTrackerSnapshot(roomSnapshot)
+  if (!room || !room.cards.length) return false
+
+  const local = buildTrackerSnapshot(localInstance, inTurnId)
+  if (!local) return true
+
+  return initiativeSignature(local) !== initiativeSignature(room)
+}
+
+/**
+ * Vale publicar este snapshot do tracker?
+ *
+ * Não quando a janela está **mais pobre** que a sala. Um painel que acabou de abrir monta o
+ * snapshot do encontro local — que pode estar vazio — ANTES de receber o estado da mesa, e
+ * um `TRACKER_SYNC` vazio apagava a iniciativa para todo mundo ("Encontro Vazio"). Regra:
+ * quem já tem o combate publicado manda; a janela vazia espera a substituição pelo da sala.
+ */
+export function shouldPublishTrackerSnapshot(
+  localSnapshot: unknown,
+  roomSnapshot: unknown
+): boolean {
+  const local = sanitizeTrackerSnapshot(localSnapshot)
+  if (!local) return false
+  if (local.cards.length) return true
+
+  const room = sanitizeTrackerSnapshot(roomSnapshot)
+  return !(room && room.cards.length > 0)
+}
+
+/**
+ * Qual rodada o tracker deve MOSTRAR.
+ *
+ * Na visão sincronizada (jogador, ou Mestre sem encontro local) quem manda é a sala —
+ * o número vem do `TRACKER_SYNC`/`INIT_SYNC` que o `TableSyncSocket` recebeu. Na visão
+ * local, a rodada é a do encontro desta janela. Sem isso o cabeçalho continuava exibindo
+ * a rodada local (parada) enquanto a mesa já estava em outra.
+ */
+export function displayedTrackerRound(
+  usesSyncedTracker: boolean,
+  syncedRound: unknown,
+  localRound: unknown
+): number {
+  const toRound = (value: unknown): number => {
+    const round = Number(value)
+    return Number.isFinite(round) && round > 0 ? Math.floor(round) : 0
+  }
+
+  if (usesSyncedTracker) {
+    return toRound(syncedRound) || toRound(localRound) || 1
+  }
+  return toRound(localRound) || toRound(syncedRound) || 1
 }
 
 /** Assinatura do conteúdo, usada para não republicar snapshots idênticos. */

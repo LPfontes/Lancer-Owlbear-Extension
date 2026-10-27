@@ -52,11 +52,11 @@
           />
           <div class="d-flex justify-end mt-4">
             <cc-button
-              prepend-icon="mdi-clipboard-text-outline"
+              prepend-icon="mdi-chat-outline"
               color="accent"
-              @click="copy()"
+              @click="sendToChat()"
             >
-              {{ $t('common.copyToClipboard') }}
+              {{ $t('active.scan.sendToChat') }}
             </cc-button>
           </div>
         </v-card-text>
@@ -72,6 +72,7 @@
   const { t } = useI18n()
   import * as _ from 'lodash-es'
   import Statblock from '@/classes/Statblock'
+  import { useTableActionStore } from '@/stores/tableActionStore'
   import { Unit } from '@/classes/npc/unit/Unit'
 
   defineOptions({ name: 'ScanMenu' })
@@ -85,6 +86,26 @@
   const statblock = computed(() => {
     return Statblock.ScanNpc(props.item as Unit, includeFeatureDetails.value)
   })
+
+  async function sendToChat() {
+    const item = props.item as any
+    const name = item?.Name || item?.CombatName || 'Escanear'
+    const tableActionStore = useTableActionStore()
+
+    await tableActionStore.postAction({
+      senderName: name,
+      actorType: 'npc',
+      category: 'status',
+      title: `Escanear — ${name}`,
+      detail: statblock.value,
+    })
+
+    notify({
+      title: `Escanear — ${name}`,
+      text: t('active.scan.sentToChat') || 'Enviado para o chat!',
+      icon: 'mdi-chat-outline',
+    })
+  }
 
   function copy() {
     navigator.clipboard

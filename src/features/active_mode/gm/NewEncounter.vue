@@ -117,6 +117,14 @@
                 :title="$t('classes.newEncounter')"
                 color="accent"
               />
+              <div class="pa-2">
+                <cc-text-field
+                  v-model="emptyEncounter.Name"
+                  :label="$t('common.name')"
+                  density="compact"
+                  hide-details
+                />
+              </div>
               <sitrep-editor :item="emptyEncounter" />
               <environment-editor :item="emptyEncounter" />
             </cc-panel>
@@ -297,19 +305,26 @@
   }
   async function createEncounter(launch: boolean) {
     if (!encounter.value) return
-    const instance = new EncounterInstance(
-      undefined,
-      encounter.value,
-      pilots.value,
-      placeholders.value
-    )
-    instance.Combatants.forEach(c => {
-      c.actor.CombatController.ResetForEncounter()
-      c.actor.CombatController.StartEncounter()
-    })
-    instance.RecordEncounterStart()
-    await EncounterStore().AddEncounterInstance(instance)
-    await EncounterStore().SetActiveEncounter(instance.ID)
+    const encStore = EncounterStore()
+    let instance: EncounterInstance
+    if (encStore.CurrentActive) {
+      instance = await encStore.updateContinuousEncounterWithTemplate(encounter.value)
+    } else {
+      instance = new EncounterInstance(
+        undefined,
+        encounter.value,
+        pilots.value,
+        placeholders.value
+      )
+      instance.IsActive = true
+      instance.Combatants.forEach(c => {
+        c.actor.CombatController?.ResetForEncounter?.()
+        c.actor.CombatController?.StartEncounter?.()
+      })
+      instance.RecordEncounterStart()
+      await encStore.AddEncounterInstance(instance)
+      await encStore.SetActiveEncounter(instance.ID)
+    }
 
     try {
       const { useTableActionStore } = await import('@/stores/tableActionStore')
@@ -323,8 +338,8 @@
       console.warn('[NewEncounter] Erro ao registrar a ação de combate:', err)
     }
 
-    if (launch) router.push('gm-encounter-runner')
-    else router.push('manage-encounters')
+    if (launch) router.push('/table-chat?tab=tracker')
+    else router.push('/table-chat?tab=tracker')
   }
   async function loadEncounter() {
     if (!loadInput.value.trim()) {
@@ -334,13 +349,13 @@
     loadLoading.value = true
     loadError.value = ''
     try {
-      const { instance } = await loadEncounterFromJsonOrSharecode(loadInput.value.trim(), {
+      await loadEncounterFromJsonOrSharecode(loadInput.value.trim(), {
         pilots: pilots.value,
         placeholders: placeholders.value,
         navigate: false,
       })
-      // Navigate to the runner with the loaded encounter
-      router.push({ name: 'active-gm-encounter-runner', params: { id: instance.ID } })
+      // Navigate to the combat tracker
+      router.push('/table-chat?tab=tracker')
     } catch (err) {
       loadError.value = err instanceof Error ? err.message : 'Erro ao carregar encontro.'
     } finally {

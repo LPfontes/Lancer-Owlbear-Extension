@@ -52,23 +52,13 @@
           </v-list>
         </v-menu>
 
-        <!-- Destacar em janela do navegador -->
+        <!-- Voltar / Fechar -->
         <v-btn
-          icon="mdi-open-in-new"
+          icon="mdi-arrow-left"
           variant="text"
           size="small"
           color="grey-lighten-1"
-          title="Destacar em nova janela do navegador"
-          @click="detachWindow"
-        />
-
-        <!-- Fechar Janela -->
-        <v-btn
-          icon="mdi-close"
-          variant="text"
-          size="small"
-          color="grey-lighten-1"
-          title="Fechar Janela"
+          :title="$t('ow.back')"
           @click="closeWindow"
         />
       </div>
@@ -83,9 +73,13 @@
         bg-color="grey-darken-4"
         class="flex-grow-1"
       >
-        <v-tab value="tracker" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
-          <v-icon icon="cc:encounter" class="mr-1" size="18" />
-          Tracker
+        <v-tab
+          value="tracker"
+          class="font-weight-bold"
+          style="letter-spacing: 0.5px; font-size: 0.78rem;"
+          title="Tracker de Combate"
+        >
+          <v-icon icon="cc:encounter" size="18" />
           <v-chip
             v-if="encounterRound"
             size="x-small"
@@ -96,9 +90,13 @@
             R{{ encounterRound }}
           </v-chip>
         </v-tab>
-        <v-tab value="chat" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
-          <v-icon icon="mdi-sword-cross" class="mr-1" size="18" />
-          Ações & Chat
+        <v-tab
+          value="chat"
+          class="font-weight-bold"
+          style="letter-spacing: 0.5px; font-size: 0.78rem;"
+          title="Ações & Chat"
+        >
+          <v-icon icon="mdi-sword-cross" size="18" />
           <v-chip
             v-if="tableActionStore.actions.length > 0"
             size="x-small"
@@ -109,9 +107,21 @@
             {{ tableActionStore.actions.length }}
           </v-chip>
         </v-tab>
-        <v-tab value="trackers" class="font-weight-bold" style="letter-spacing: 0.5px; font-size: 0.78rem;">
-          <v-icon icon="mdi-shield-sun-outline" class="mr-1" size="18" />
-          {{ t('active.tokenTrackers.tab') }}
+        <v-tab
+          value="trackers"
+          class="font-weight-bold"
+          style="letter-spacing: 0.5px; font-size: 0.78rem;"
+          :title="t('active.tokenTrackers.tab')"
+        >
+          <v-icon icon="mdi-shield-sun-outline" size="18" />
+        </v-tab>
+        <v-tab
+          value="storage"
+          class="font-weight-bold"
+          style="letter-spacing: 0.5px; font-size: 0.78rem;"
+          title="Armazenamento & Stores"
+        >
+          <v-icon icon="mdi-database-outline" size="18" />
         </v-tab>
       </v-tabs>
     </div>
@@ -135,22 +145,7 @@
       class="flex-grow-1 overflow-hidden flex-column"
       :class="currentTab === 'chat' ? 'd-flex' : 'd-none'"
     >
-      <!-- Botão para Abrir a Janela da Ficha (COMP/CON na lateral direita) -->
-      <div class="px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
-        <v-btn
-          block
-          color="accent"
-          variant="tonal"
-          size="small"
-          class="font-weight-bold text-uppercase rounded-0"
-          prepend-icon="mdi-card-account-details-outline"
-          append-icon="mdi-dock-window"
-          title="Abrir a Janela da Ficha do COMP/CON na lateral direita"
-          @click="handleOpenMainWindow"
-        >
-          Abrir Janela da Ficha
-        </v-btn>
-      </div>
+
 
       <!-- Barra de Filtros e Busca -->
       <div class="filter-bar px-3 py-2 bg-grey-darken-4 border-b border-grey-darken-3 flex-shrink-0">
@@ -227,27 +222,50 @@
     >
       <TokenTrackerPanel v-if="currentTab === 'trackers'" />
     </div>
+
+    <!-- Aba 4: Gerenciador de Armazenamento e Stores -->
+    <div
+      v-show="currentTab === 'storage'"
+      class="flex-grow-1 overflow-hidden flex-column"
+      :class="currentTab === 'storage' ? 'd-flex' : 'd-none'"
+    >
+      <StorageManagerTab v-if="currentTab === 'storage'" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { EncounterStore } from '@/stores'
-import { closeTableChatWindow, detachTableChatWindow } from '@/services/tableChatWindow'
-import { openMainWindow, isMainWindowOpen } from '@/services/mainWindow'
 import TableActionCard from '@/ui/components/TableActionDrawer/TableActionCard.vue'
 import TableActionInput from '@/ui/components/TableActionDrawer/TableActionInput.vue'
 import CombatTrackerTab from '@/ui/components/TableActionDrawer/CombatTrackerTab.vue'
 import TokenTrackerPanel from '@/ui/components/TokenTrackers/TokenTrackerPanel.vue'
+import StorageManagerTab from '@/ui/components/TableActionDrawer/StorageManagerTab.vue'
 
 const { t } = useI18n()
+const router = useRouter()
+const route = useRoute()
 
 const tableActionStore = useTableActionStore()
 const encounterStore = EncounterStore()
 const feedContainer = ref<HTMLElement | null>(null)
-const currentTab = ref<'tracker' | 'chat' | 'trackers'>('tracker')
+const initialTab = route.query.tab as 'tracker' | 'chat' | 'trackers' | 'storage'
+const currentTab = ref<'tracker' | 'chat' | 'trackers' | 'storage'>(
+  initialTab && ['tracker', 'chat', 'trackers', 'storage'].includes(initialTab) ? initialTab : 'tracker'
+)
+
+watch(
+  () => route.query.tab,
+  (newTab) => {
+    if (newTab && ['tracker', 'chat', 'trackers', 'storage'].includes(newTab as string)) {
+      currentTab.value = newTab as 'tracker' | 'chat' | 'trackers' | 'storage'
+    }
+  }
+)
 const trackerSideFilters = ref<{ label: string; value: string; count: number }[]>([])
 const trackerActiveFilter = ref<'all' | 'enemy' | 'ally' | 'neutral' | 'pending'>('all')
 
@@ -262,19 +280,13 @@ const encounterRound = computed(() => {
   return null
 })
 
-function handleOpenMainWindow() {
-  // Reexibe a janela persistente (mesmo iframe); só cria uma se ainda não existir.
-  // Não recria nem recarrega: isso descartaria o estado da ficha.
-  void openMainWindow({
-    restoreIfHidden: true,
-    targetRoute: '/active-mode',
-  })
-}
+
 
 const filterOptions = [
   { label: 'Todas', value: 'all' },
   { label: 'Ações', value: 'full_action' },
   { label: 'Rápidas', value: 'quick_action' },
+  { label: 'Reações', value: 'reaction' },
   { label: 'Rolagens', value: 'roll' },
   { label: 'Danos', value: 'damage' },
   { label: 'Chat', value: 'chat' },
@@ -296,11 +308,11 @@ function scrollToLatest() {
 }
 
 function closeWindow() {
-  void closeTableChatWindow()
-}
-
-function detachWindow() {
-  detachTableChatWindow()
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/active-mode')
+  }
 }
 
 function confirmClearHistory() {
@@ -345,7 +357,9 @@ watch(currentTab, (tab) => {
 <style scoped>
 .table-chat-window {
   width: 100%;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   background: rgba(14, 18, 24, 0.98) !important;
   display: flex;

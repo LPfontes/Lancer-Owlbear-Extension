@@ -25,13 +25,15 @@ class expiration {
     this.Raw = expiration || ''
     let text = ''
 
-    if (str.includes('round')) this.Period = 'round'
-    else if (str.includes('turn')) this.Period = 'turn'
+    if (str.includes('round') || str.includes('rodada')) this.Period = 'round'
+    else if (str.includes('turn') || str.includes('turno')) this.Period = 'turn'
 
-    if (str.includes('start')) this.EndsOn = 'start'
+    if (str.includes('start') || str.includes('início') || str.includes('inicio')) this.EndsOn = 'start'
+
+    const isTarget = str.includes('target') || str.includes('alvo')
 
     if (target && this.Period === 'turn') {
-      if (str.includes('target')) {
+      if (isTarget) {
         this.ExpirationActorID = target.Parent.ID
         this.ExpirationActorTurn = target.Turn
         text = i18n.global.t('active.expiration.endsOnSelfTurn', {

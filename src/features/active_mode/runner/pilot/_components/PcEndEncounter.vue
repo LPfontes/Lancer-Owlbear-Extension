@@ -44,6 +44,6 @@
     props.sheet.Archive()
     PilotSheetStore().SetActiveSheet('')
     bypassLeaveGuard()
-    router.replace('/active-mode/sheet-manager')
+    router.replace('/pilot_management')
   }
 </script>

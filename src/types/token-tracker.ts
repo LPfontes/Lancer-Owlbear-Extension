@@ -90,6 +90,37 @@ export interface TokenTrackerSummary {
 /** Chave do resumo no metadata do token. Distinta do vínculo (COMPCON_METADATA_KEY). */
 export const TOKEN_TRACKER_SUMMARY_KEY = 'com.compcon.activemode/trackers'
 
+/**
+ * Chave do MOVIMENTO no metadata do token.
+ *
+ * O resto dos trackers é derivado da ficha; o Movimento não pode ser, porque ele muda
+ * pelo **arrasto no mapa** — que acontece numa janela que muitas vezes não tem o
+ * controlador vivo (a ficha viva está noutro iframe). Deixar o número só na ficha
+ * significava: duas janelas veem o mesmo arrasto e as duas debitam, ou nenhuma debita
+ * porque a ficha não está aqui.
+ *
+ * Com o registro no token, quem arrastou escreve (um escritor só), **todas** as
+ * janelas desenham o mesmo número, e a janela da ficha apenas **alinha** o `SPEED`
+ * dela ao registro.
+ */
+export const TOKEN_TRACKER_MOVEMENT_KEY = 'com.compcon.activemode/movement'
+
+/** Movimento gravado no token (§13 — revisão da captura). */
+export interface TokenTrackerMovementRecord {
+  /** Versão do formato. */
+  v: 1
+  /** Movimento RESTANTE do turno. */
+  current: number
+  /** Movimento padrão da ficha (sem Boost). */
+  max: number
+  /** Quanto de Boost já entrou no turno (`BoostBonus`). */
+  boost: number
+  /** Quando foi gravado (ms). */
+  t: number
+  /** Quem gravou (janela), só para diagnóstico. */
+  w?: string
+}
+
 /** Marca os itens LOCAIS de desenho criados por este serviço. */
 export const TOKEN_TRACKER_ITEM_METADATA_KEY = 'com.compcon.token_tracker'
 

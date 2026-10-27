@@ -217,6 +217,7 @@
   import EndRoundDialog from '../../../_shared/_EndRoundDialog.vue'
   import EndRoundActionChips from '../../../_components/EndRoundActionChips.vue'
   import BurnCheckModal from './BurnCheckModal.vue'
+  import { tokenMovementCapture } from '@/services/tokenMovementCapture'
   import type { IFlowResult } from '@/classes/components/combat/flows/Flow'
   import type { IEndTurnState } from '@/classes/components/combat/flows/LifecycleFlow'
 
@@ -311,6 +312,10 @@
     loading.value = true
     await nextTick()
     await props.encounterInstance.EndRound()
+    // O motor NÃO devolve o movimento no fim da rodada (`EndRoundFlow` só mexe em
+    // ativações/usos/status): quem devolve é `Reset()`. Aqui o pedido sai para a mesa
+    // inteira — sem filtro, porque a rodada é de todos.
+    await tokenMovementCapture.resetRoundMovements()
     loading.value = false
     isActive.value = false
   }

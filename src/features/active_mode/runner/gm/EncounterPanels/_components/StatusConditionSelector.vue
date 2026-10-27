@@ -8,7 +8,7 @@
       >
         <status-condition-item
           :status="status"
-          :active="controller.Statuses.some(s => s.status.ID === status.ID)"
+          :active="isStatusActive(status)"
           @click="setStatus(status)"
         />
       </v-col>
@@ -21,7 +21,7 @@
       >
         <status-condition-item
           :status="status"
-          :active="controller.Statuses.some(s => s.status.ID === status.ID)"
+          :active="isStatusActive(status)"
           :applied-detail="appliedStatus(status)"
           @click="setStatus(status)"
         />
@@ -130,7 +130,7 @@
   import type { CombatController } from '@/classes/components/combat/CombatController'
   import { computed, ref, watch } from 'vue'
   import * as _ from 'lodash-es'
-  import { CompendiumStore } from '@/stores'
+  import { CompendiumStore } from '@/features/compendium/store'
   import { obrBridge } from '@/services/obrBridge'
   import StatusConditionItem from './StatusConditionItem.vue'
 
@@ -166,6 +166,7 @@
       // inteiro de marcadores, o badge do cover era apagado ao adicionar uma
       // condição. `MarkerStatusIds` já inclui status + dangerzone + cobertura.
       const list = (props.controller as any).StatusController.MarkerStatusIds(props.controller)
+      console.log(`[StatusInvestigation][UI-GM] StatusConditionSelector disparando syncMarkers para parentId="${parentId}" (origem="${parent?.OriginId || parentId}"):`, list)
       obrBridge
         .syncCombatantStatusMarkers(parentId, list, parent?.OriginId || parentId)
         .catch(() => {})
@@ -173,6 +174,7 @@
   }
 
   function setStatus(status: any) {
+    console.log(`[StatusInvestigation][UI-GM] setStatus acionado: status="${status?.ID || status?.id || status?.Name || status}"`)
     ;(props.controller as any).ToggleStatus(status, undefined, true)
     syncMarkers()
   }
@@ -189,9 +191,29 @@
     customStatus.value = ''
   }
 
+  function getStatusKey(s: any): string {
+    if (!s) return ''
+    if (typeof s === 'string') return s.toLowerCase()
+    if (s.status) {
+      if (typeof s.status === 'string') return s.status.toLowerCase()
+      return String(s.status.ID || s.status.id || '').toLowerCase()
+    }
+    return String(s.ID || s.id || '').toLowerCase()
+  }
+
+  function isStatusActive(status: any): boolean {
+    const targetKey = getStatusKey(status)
+    if (!targetKey) return false
+    const list = (props.controller as any)?.Statuses || []
+    return list.some((s: any) => getStatusKey(s) === targetKey)
+  }
+
   function appliedStatus(status: any) {
-    const applied = (props.controller as any).Statuses.find((s: any) => s.status.ID === status.ID)
-    if (!applied || applied.expires) return null
+    const targetKey = getStatusKey(status)
+    if (!targetKey) return null
+    const list = (props.controller as any)?.Statuses || []
+    const applied = list.find((s: any) => getStatusKey(s) === targetKey)
+    if (!applied || !applied.expires) return null
     return applied.expires?.Text || ''
   }
 </script>

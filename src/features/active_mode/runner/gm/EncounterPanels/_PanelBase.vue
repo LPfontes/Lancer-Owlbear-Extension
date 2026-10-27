@@ -70,11 +70,6 @@
                 align-self="start"
                 class="ml-auto mr-1 mt-1"
               >
-                <open-npc-sheet-button
-                  v-if="isNpc"
-                  :combatant="owner"
-                  class="mr-1"
-                />
                 <activation-tracker :item="item" />
                 <v-menu v-if="(owner as any)[statusField]">
                   <template #activator="{ props: statusProps }">
@@ -320,7 +315,7 @@
               <lancer-foundry-stats-hud :item="item">
                 <template #dmg>
                   <damage-menu
-                    v-if="item.CombatController.StatController.MaxStats['hp']"
+                    v-if="!readOnlySession && item.CombatController.StatController.MaxStats['hp']"
                     :encounter="encounterInstance.Encounter"
                     :controller="item.CombatController"
                   />
@@ -330,12 +325,6 @@
             </div>
 
             <slot name="stat-block" />
-            <div v-if="!noActions && item.CombatController.StatController.MaxStats['activations']">
-              <combat-action-panel
-                :controller="item.CombatController"
-                :hide-overcharge="item.ItemType !== 'mech'"
-              />
-            </div>
             <slot name="actions" />
 
             <div
@@ -421,10 +410,10 @@
   import TrackableStatsComplex from './_components/TrackableStatsComplex.vue'
   import TrackableStatsSimple from './_components/TrackableStatsSimple.vue'
   import LancerFoundryStatsHud from './_components/LancerFoundryStatsHud.vue'
-  import OpenNpcSheetButton from './_components/_OpenNpcSheetButton.vue'
   import { ICombatant } from '@/classes/components/combat/ICombatant'
   import { PilotStatus, NpcStatus, MechStatus } from '@/classes/enums'
   import { useLayoutOptions, filterStats } from '@/features/active_mode/layoutOptions'
+  import { isSheetReadOnlySession } from '@/services/sheetReadOnlySession'
 
   const _TrackableStatsComplex = markRaw(TrackableStatsComplex)
   const _TrackableStatsSimple = markRaw(TrackableStatsSimple)
@@ -435,6 +424,13 @@
 
   const { encounterInstance, owner } = useEncounterContext()
   const { layout } = useLayoutOptions()
+
+  /**
+   * Ficha em modo leitura (`?readonly=1`): os controles de AÇÃO (sofrer dano, aplicar
+   * status, gastar ativação) saem da tela — a visão serve para ler a ficha, não para
+   * conduzir o combate por ela.
+   */
+  const readOnlySession = computed((): boolean => isSheetReadOnlySession())
 
   const itemType = computed(() => props.item.ItemType.toLowerCase())
   const isNpc = computed(() => ['unit', 'doodad', 'eidolon'].includes(owner.value?.type ?? ''))

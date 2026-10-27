@@ -561,7 +561,7 @@
     } catch (e) {
       console.warn('[EncounterManager] Erro ao registrar a ação de combate:', e)
     }
-    router.push(`gm-encounter-runner/${encounter.ID}`)
+    router.push('/table-chat?tab=tracker')
   }
 
   async function deleteEncounter(encounter: EncounterArchive) {

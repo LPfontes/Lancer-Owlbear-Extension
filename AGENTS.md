@@ -27,6 +27,17 @@ npm run test:run       # Vitest single-run (dois projetos: domain e component)
    LocalStorage/memória). Fichas, encontros, logbooks e ações da mesa vivem aqui.
 3. **Backend (Vercel Functions)** — `api/share/[code].js` e `api/image.js`, sobre
    `server/proxy.mjs` (CORS, anti-SSRF). **Não há banco de dados externo.**
+4. **Geometria da janela da ficha** — `src/services/obrLayout.ts` é a **fonte única** de margens,
+   largura/altura da janela cheia e da barra compacta. `windowManager` (posiciona/redimensiona) e
+   `mainWindow` (cria/oculta/reexibe o popover) importam de lá; não recrie cópias locais.
+5. **Janela única persistente** — Todo o assistente (fichas, NPCs, Hangar, Encontros, Chat e
+   Combat Tracker) roda no popover flutuante persistente `com.compcon.activemode.floating`
+   (`index.html`). O Chat e Tracker residem na rota interna `/table-chat` como aba padrão de navegação,
+   sem iframes secundários nem redimensionamento dinâmico. O `launcher.html` (`OBR.action`) é
+   um lançador efêmero que apenas restaura/abre a janela flutuante e executa `OBR.action.close()`.
+6. **Sincronização WebSocket (Go)** — `src/services/tableSyncSocket.ts` mantém conexão única por aba
+   com o servidor de sincronização em Go. Não existem modos `readOnly` no socket nem canais
+   `compcon_obr_local_tabs` de IPC entre iframes da mesma janela.
 
 > O antigo **cold storage em MongoDB Atlas** (`api/rooms/**`, `server/coldStorage.mjs`,
 > `src/services/roomColdStorage.ts`, `src/services/sheetColdSync.ts`, `src/io/apis/roomStorage.ts`)
@@ -67,10 +78,25 @@ de combate, que muda a cada PV/calor/ação.
   vínculo de token).
 - **NPCs têm discriminador `npcType`** (`unit` | `doodad` | `eidolon`) — é ele que decide qual
   `Deserialize` usar (ver `src/classes/npc/` e `src/io/Importer.ts`).
+- **O SDK do Owlbear não tem `setPosition`.** `OBR.popover` só oferece
+  `open/close/getWidth/getHeight/setWidth/setHeight`: um popover aberto **não pode ser movido**, e
+  `OBR.popover.open` no mesmo id recria o iframe (perda de estado em memória — por isso o fluxo de
+  fechar/abrir a ficha nunca passa por ali). Consequência prática: a posição só vale **na criação**
+  (`anchorPosition` em `OBR.popover.open`, montado por `mainWindow.computeGeometry`), e é por isso
+  que o left especial da barra compacta (100×48 em `left: 90`, constantes `BAR_*` de `obrLayout.ts`)
+  só aparece num popover recriado já minimizado — `computeGeometry` lê o flag
+  `cc_sheet_window_minimized` (sessionStorage, gravado por `windowManager.minimize/restore`).
+  Minimizar uma janela viva apenas a redimensiona: nada de fechar/abrir, e
+  `windowManager.resizeExistingPopover` **não** aplica posição alguma.
 - **O encontro ativo não é sincronizado entre GM e jogadores.** Ele vive no armazenamento local de
   cada janela (`active_encounters`, `current_active_encounter_id`); o que cruza a mesa são as fichas
   (posse de token) e as ações/chat da mesa. Não reintroduza broadcast de encontro sem decisão
   explícita.
+
+- **Proibido entrar em loops de busca/inspeção repetitiva (Regra Anti-Loop)**:
+  Quando o usuário apontar um trecho de HTML/UI para ajustar, remover ou alterar, o agente deve
+  ir **diretamente ao arquivo-alvo e aplicar a edição**, sem encadear leituras fragmentadas de arquivos,
+  múltiplos greps de strings compiladas ou pesquisas circulares de rastreamento de classes.
 
 ## Testes
 
@@ -85,3 +111,4 @@ de combate, que muda a cada PV/calor/ação.
 3. Nenhuma chamada de rede em watchers de estado em tempo real.
 4. Nenhum segredo (senha, token, connection string) no bundle ou em resposta/erro.
 5. Se mexeu na persistência local, respeitou a exigência de `id` no `SetItem`.
+6. Sem loops de busca: aja diretamente no arquivo de destino sem leituras em cascata.

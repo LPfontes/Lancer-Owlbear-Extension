@@ -34,7 +34,8 @@ class BrewController {
 
     out = this.Parent.BrewableCollection.filter(x => x && x.InLcp).map(item => item.Brew)
 
-    this._savedBrewData.forEach(pack => {
+    // `_savedBrewData` pode chegar `undefined` de um payload sem `brews` (ver Deserialize).
+    ;(this._savedBrewData ?? []).forEach(pack => {
       if (!out.some(x => x.LcpId === pack.LcpId)) out.push(pack)
     })
 
@@ -116,7 +117,9 @@ class BrewController {
   public static Deserialize(parent: IBrewable, data: IBrewData) {
     assertController(parent.BrewController, 'BrewController')
 
-    parent.BrewController._savedBrewData = data.brews
+    // Ficha sincronizada/antiga pode não trazer `brews`: sem o fallback o campo ficava
+    // `undefined` e o próximo Serialize (ou a própria UI, via getter `Brews`) estourava.
+    parent.BrewController._savedBrewData = data?.brews ?? []
   }
 }
 export { BrewController }

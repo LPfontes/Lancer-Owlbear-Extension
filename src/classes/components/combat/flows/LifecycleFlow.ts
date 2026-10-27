@@ -86,7 +86,36 @@ const refreshTableReactions = step<IEndTurnState>('refresh-table-reactions', s =
 
 const clearBraced = step<IEndTurnState>('clear-braced', s => {
   if (!s.cc.Braced) return
-  // The braced turn is over: release the brace and hand the action pool back.
+
+  const now = Date.now()
+  // Se esta mesma transição de fim de turno já foi processada recentemente (ex: chamadas
+  // encadeadas no mesmo clique entre ficha, piloto e activeMech), ignora chamadas redundantes.
+  if (s.cc.LastBraceTransitionTime && now - s.cc.LastBraceTransitionTime < 1000) {
+    return
+  }
+
+  if (s.cc.BracedPenaltyPending || !s.cc.BracedPenaltyActive) {
+    // O turno que está sendo encerrado é o turno onde o Suportar foi gasto (ou ativado).
+    // O efeito do Suportar NÃO deve ser limpo aqui: ele permanece ativo (+1 Dificuldade,
+    // ícone no token) e a penalidade (1 ação rápida) é armada para o PRÓXIMO turno.
+    s.cc.BracedPenaltyPending = false
+    s.cc.BracedPenaltyActive = true
+    s.cc.LastBraceTransitionTime = now
+    s.cc.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+    s.cc.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+    if (s.cc.Counterpart) {
+      s.cc.Counterpart.BracedPenaltyPending = false
+      s.cc.Counterpart.BracedPenaltyActive = true
+      s.cc.Counterpart.LastBraceTransitionTime = now
+      s.cc.Counterpart.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+      s.cc.Counterpart.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+    }
+    return
+  }
+
+  // O turno com a penalidade do Suportar (1 ação rápida) acaba de ser concluído:
+  // agora sim o Suportar é encerrado, o ícone é removido e o pool de ações é restaurado.
+  s.cc.LastBraceTransitionTime = now
   s.cc.SetBraced(false)
   s.cc.ResetCombatActions()
 })
@@ -109,13 +138,20 @@ export const EndTurnFlow = new Flow<IEndTurnState>(
 const braceTeardown = step<IEndRoundState>('brace-teardown', s => {
   s.cc.Turn = 1
   s.cc.ClearBoost()
-  // A character still braced keeps paying for it: no refreshed movement, and
-  // only a single quick action until its turn ends (see clearBraced above).
-  // A character that is not braced gets a clean pool and its speed back.
-  s.cc.CombatActions = s.cc.Braced
-    ? { ...BRACED_COMBAT_ACTIONS }
-    : { ...DEFAULT_COMBAT_ACTIONS }
-  if (!s.cc.Braced) {
+  
+  if (s.cc.Braced) {
+    s.cc.BracedPenaltyActive = true
+    s.cc.BracedPenaltyPending = false
+    s.cc.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+    s.cc.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+    if (s.cc.Counterpart) {
+      s.cc.Counterpart.BracedPenaltyActive = true
+      s.cc.Counterpart.BracedPenaltyPending = false
+      s.cc.Counterpart.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+      s.cc.Counterpart.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+    }
+  } else {
+    s.cc.CombatActions = { ...DEFAULT_COMBAT_ACTIONS }
     s.cc.StatController.setCurrentStat(StatKey.SPEED, s.cc.StatController.getMax(StatKey.SPEED))
   }
 })
@@ -135,9 +171,17 @@ const refillActivations = step<IEndRoundState>('refill-activations', s => {
     StatKey.ACTIVATIONS,
     s.cc.StatController.getMax(StatKey.ACTIVATIONS)
   )
+  if (s.cc.Counterpart) {
+    s.cc.Counterpart.ActionPoolController.ClearReactionUses()
+    s.cc.Counterpart.StatController.setCurrentStat(
+      StatKey.ACTIVATIONS,
+      s.cc.Counterpart.StatController.getMax(StatKey.ACTIVATIONS)
+    )
+  }
   s.cc.ClearUses(ActivePeriod.Round)
   s.cc.Counterpart?.ClearUses(ActivePeriod.Round)
   clearEquipmentUses(s.cc)
+  if (s.cc.Counterpart) clearEquipmentUses(s.cc.Counterpart)
 })
 
 function clearEquipmentUses(cc: CombatController): void {

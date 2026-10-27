@@ -6,10 +6,10 @@
         block
         variant="text"
         color="accent"
-        prepend-icon="mdi-clock-end"
+        :prepend-icon="icon"
         @click="props.onClick($event)"
       >
-        {{ $t('active.endRound.endRound') }}
+        {{ $t(labelKey) }}
       </v-btn>
     </template>
     <template #default="{ isActive }">
@@ -21,11 +21,11 @@
         >
           <div class="heading h3 mt-1">
             <v-icon
-              icon="mdi-clock-end"
+              :icon="icon"
               class="mt-n1 ml-2"
               start
             />
-            {{ $t('active.endRound.confirmEndRound') }}
+            {{ $t(titleKey) }}
           </div>
           <v-spacer />
           <v-btn
@@ -49,5 +49,24 @@
 </template>
 
 <script setup lang="ts">
-  defineProps<{ loading?: boolean }>()
+  /**
+   * Diálogo de fim de rodada OU de turno.
+   *
+   * O pilot-runner não tem encontro (não há iniciativa nem ordem de lado), então o
+   * botão dele encerra o TURNO. Os rótulos vêm de fora para o mesmo diálogo servir
+   * aos dois casos sem duplicar componente.
+   */
+  withDefaults(
+    defineProps<{
+      loading?: boolean
+      labelKey?: string
+      titleKey?: string
+      icon?: string
+    }>(),
+    {
+      labelKey: 'active.endRound.endRound',
+      titleKey: 'active.endRound.confirmEndRound',
+      icon: 'mdi-clock-end',
+    }
+  )
 </script>

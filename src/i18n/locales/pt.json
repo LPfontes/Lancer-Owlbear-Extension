@@ -14,7 +14,18 @@
     "noCardsForFilter": "Nenhum combatente encontrado com este filtro",
     "sideEnemy": "Inimigo",
     "sideAlly": "Aliado",
-    "sideNeutral": "Neutro"
+    "sideNeutral": "Neutro",
+    "joinRequest": "Solicitar Entrada no Combate",
+    "joinRequestShort": "Solicitar Entrada",
+    "joinRequestHint": "Peça ao Mestre para colocar seu piloto na iniciativa.",
+    "joinNotInCombat": "Seu piloto não está neste combate.",
+    "joinSelectPilot": "Piloto",
+    "joinNoMech": "Sem mech ativo",
+    "joinNoSheet": "Abra uma ficha de piloto no Modo Ativo para solicitar entrada no combate.",
+    "joinApproved": "Pedido aprovado! {name} entrou no combate.",
+    "joinDenied": "O pedido de entrada no combate foi recusado ou cancelado.",
+    "joinFailed": "Não foi possível enviar o pedido de entrada no combate.",
+    "openSheet": "Abrir ficha do combatente"
   },
   "common": {
     "appName": "COMP/CON",
@@ -934,6 +945,30 @@
       "d20": "1d20",
       "d20Plus": "1d20 +",
       "until": "Até",
+      "durations": {
+        "startTurnSelf": "o início do seu turno",
+        "startTurnTarget": "o início do turno do alvo",
+        "endTurnSelf": "o final do seu turno",
+        "endTurnTarget": "o final do turno do alvo",
+        "nextTurnEndSelf": "o final do seu próximo turno",
+        "nextTurnEndTarget": "o final do próximo turno do alvo",
+        "nextTurnStartSelf": "o início do seu próximo turno",
+        "nextTurnStartTarget": "o início do próximo turno do alvo",
+        "endOfEncounter": "o final do encontro"
+      },
+      "damageRoll": "Rolagem de Dano",
+      "criticalDamageRoll": "Rolagem Crítica de Dano",
+      "totalDamage": "Dano Total",
+      "applied": "Aplicou",
+      "gained": "Recebeu",
+      "appliedEffect": "Aplicou Efeito",
+      "gainedEffect": "Recebeu Efeito",
+      "targetedBy": "Alvejado por {effect} de {initiator}:",
+      "asAction": "como uma Ação de {action}",
+      "ap": "PF",
+      "irreducible": "Irredutível",
+      "reliable": "Confiável",
+      "incomingAttack": "Ataque recebido",
       "vsStat": "vs {stat}",
       "noTarget": "Nenhum Alvo Selecionado",
       "vs": "VS",
@@ -1595,7 +1630,11 @@
       "map": "Mapa"
     },
     "landing": {
-      "toolkit": "ferramentas de MJ"
+      "toolkit": "ferramentas de MJ",
+      "resumeRound": "retomar {name} (Rodada {n})",
+      "openNpcs": "Abrir PNJs",
+      "quickReference": "Referência Rápida",
+      "openQuickReference": "Abrir Referência Rápida"
     },
     "combatant": {
       "combatants": "Combatentes",
@@ -2033,6 +2072,19 @@
     }
   },
   "active": {
+    "handshake": {
+      "playerWaitingTitle": "Aguardando o Mestre",
+      "playerWaitingText": "Você solicitou entrada no combate. Aguarde a autorização do Mestre...",
+      "cancelRequest": "Cancelar",
+      "gmAuthTitle": "Autorizar Piloto",
+      "wantsToJoin": "deseja entrar no combate com o piloto:",
+      "approve": "Aprovar e Adicionar",
+      "deny": "Recusar"
+    },
+    "contextMenu": {
+      "bindToken": "Vincular Ficha COMP/CON",
+      "openSheet": "Abrir Ficha (Modo Ativo)"
+    },
     "tokenTrackers": {
       "tab": "Trackers do Token",
       "settingsTitle": "Trackers no mapa",
@@ -2043,6 +2095,8 @@
       "maxSquares": "Máximo de quadrados",
       "panelGap": "Distância do token",
       "panelGapHint": "Negativo aproxima o painel do token (pode encostar); positivo afasta.",
+      "movementArm": "Ativar movimento",
+      "movementDisarm": "Parar movimento",
       "slotsLabel": "Trackers exibidos",
       "visibilityLabel": "Jogadores podem ver trackers de",
       "visibilityHint": "O Mestre vê todos os tokens, sempre. Oculta um combatente pelo olho na lista.",
@@ -2269,7 +2323,9 @@
     },
     "landing": {
       "resumeRound": "retomar {name} (Rodada {n})",
-      "openNpcs": "Abrir PNJs"
+      "openNpcs": "Abrir PNJs",
+      "quickReference": "Referência Rápida",
+      "openQuickReference": "Abrir Referência Rápida"
     },
     "endEnc": {
       "endEncounter": "Encerrar Encontro",
@@ -2302,8 +2358,15 @@
       "exitWithoutSaving": "Sair Sem Salvar"
     },
     "endRound": {
-      "endRound": "Encerrar Rodada",
-      "confirmEndRound": "Confirmar Fim da Rodada"
+      "endRound": "Finalizar Turno",
+      "confirmEndRound": "Confirmar Fim do Turno",
+      "endTurn": "Finalizar Turno",
+      "confirmEndTurn": "Confirmar Fim do Turno",
+      "finishTurn": "Finalizar Turno",
+      "confirmFinishTurn": "Confirmar Fim do Turno",
+      "backToChat": "Voltar ao Chat",
+      "turnEndedTitle": "Fim de Turno — {name}",
+      "turnEndedDetail": "Turno encerrado. Ações e movimento renovados para a próxima ativação."
     },
     "actionChips": {
       "protocol": "Protocolo",
@@ -2362,7 +2425,10 @@
       "noSelected": "Nenhum equipamento selecionado."
     },
     "pilotRunner": {
-      "loading": "Carregando ficha do piloto…"
+      "loading": "Carregando ficha do piloto…",
+      "notFoundTitle": "Ficha não encontrada",
+      "notFoundHint": "Esta janela não tem a ficha e a mesa não publicou uma cópia dela. Abra a ficha na janela de quem a criou, ou peça ao jogador para entrar em combate.",
+      "readOnlyBanner": "Somente leitura — visão da ficha sem edição. Nada aqui é enviado à mesa nem salvo."
     },
     "gmOptions": {
       "exportState": "Exportar Estado do Encontro",
@@ -2501,6 +2567,31 @@
       "counters": "Contadores",
       "endActivation": "Terminar Ativação",
       "openSheet": "Abrir ficha"
+    },
+    "damageApply": {
+      "title": "Aplicar Dano",
+      "incoming": "Dano recebido",
+      "dice": "Rolar dados",
+      "type": "Tipo de dano",
+      "kinetic": "Cinético",
+      "energy": "Energia",
+      "explosive": "Explosivo",
+      "heat": "Calor",
+      "burn": "Queimadura",
+      "half": "Metade",
+      "ap": "Perfurante (AP)",
+      "irreducible": "Irredutível",
+      "burnStack": "Pilha de BURN",
+      "preview": "Prévia",
+      "lethal": "Este dano destrói o alvo.",
+      "burnNote": "Também empilha BURN {n} e aplica o dano de queimadura (ignora ARMOR).",
+      "apply": "Aplicar e publicar",
+      "condition": {
+        "resistance": "Resistência",
+        "immunity": "Imunidade",
+        "vulnerable": "Vulnerável",
+        "other": "Condição"
+      }
     },
     "damageMenu": {
       "takeDamage": "Sofrer Dano",
@@ -2659,7 +2750,10 @@
       "cascadeDetail": "Uma PNH instalada entrou em CASCATA e assumiu o controle total do mecha. O mecha está sob controle do Mestre até que o Piloto retome o controle ao escolher Desligar o mecha."
     },
     "scan": {
-      "scan": "Escanear"
+      "scan": "Escanear",
+      "sendToChat": "Enviar para o chat",
+      "reportTitle": "Relatório de Escaneamento",
+      "sentToChat": "Relatório enviado para o chat da mesa"
     },
     "miniPanel": {
       "resetBase": "Redefinir para o Valor Base"
@@ -2869,6 +2963,9 @@
       "clearAnAdjacentAlliedCharacters": "Limpe a condição de um personagem aliado adjacente que não foi causada por um de seus próprios sistemas, talentos, etc."
     },
     "titles": {
+      "openPilotSheetReadOnly": "Abrir ficha do piloto em modo leitura",
+      "trackerSyncedFromTable": "ENCONTRO DA MESA — iniciativa publicada na sala",
+      "adoptRoomEncounter": "Substituir pelo encontro da sala",
       "addPilotFromRoster": "Adicionar Piloto da Lista",
       "noMechDataFound": "Nenhum Dado de Mecha Encontrado",
       "addFromShareCode": "Adicionar por Código de Compartilhamento",
@@ -2913,6 +3010,80 @@
       "ram": "Investida",
       "exposed": "Exposto",
       "shredded": "Dilacerado"
+    },
+    "quickReference": {
+      "title": "Referência Rápida de Combate",
+      "perTurn": "Por Turno",
+      "protocols": "protocolos",
+      "fullActionOr2Quick": "ação completa ou 2 ações rápidas",
+      "movement": "movimento",
+      "overcharge": "sobrecarga",
+      "freeActions": "ações livres",
+      "reactions": "reações",
+      "perTurnNote": "Personagens não podem realizar a mesma ação mais de uma vez por turno, exceto como ação livre ou reação.",
+      "engagement": "Engajamento",
+      "engagementDesc1": "Se um personagem se mover para ficar adjacente a um personagem hostil, ambos ganham <b>ENGAJADO</b> enquanto permanecerem adjacentes. Ataques à distância feitos enquanto <b>ENGAJADO</b> recebem <v-icon icon=\"cc:difficulty\" class=\"mt-n1\" size=\"small\" />.",
+      "engagementDesc2": "Personagens que ficam <b>ENGAJADOS</b> por alvos de <b>TAMANHO maior ou igual</b> durante o movimento param imediatamente e perdem o movimento não utilizado.",
+      "terrain": "Terreno",
+      "terrainDifficult": "Todo movimento através de <b>terreno difícil</b> custa o <b>dobro</b>.",
+      "terrainDangerous": "Quando personagens terminam seu turno em <b>terreno perigoso</b> ou entram nele pela primeira vez na rodada, devem fazer um teste de <b>ENGENHARIA</b>. Em uma falha, sofrem 5 de dano.",
+      "rollModifiers": "Modificadores de Rolagem",
+      "rollModAccuracy": "Cada ponto de <v-icon icon=\"cc:accuracy\" class=\"mt-n1\" size=\"small\" /> adiciona 1d6 a uma rolagem.",
+      "rollModDifficulty": "Cada ponto de <v-icon icon=\"cc:difficulty\" class=\"mt-n1\" size=\"small\" /> subtrai 1d6 de uma rolagem.",
+      "rollModCancel": "<v-icon icon=\"cc:accuracy\" class=\"mt-n1\" size=\"small\" /> e <v-icon icon=\"cc:difficulty\" class=\"mt-n1\" size=\"small\" /> se cancelam na base de 1:1. Nenhuma rolagem pode receber mais que -6 ou +6 de <v-icon icon=\"cc:accuracy\" class=\"mt-n1\" size=\"small\" /> ou <v-icon icon=\"cc:difficulty\" class=\"mt-n1\" size=\"small\" />.",
+      "cover": "Cobertura",
+      "softCover": "<b>Cobertura leve</b> adiciona +1 <v-icon icon=\"cc:difficulty\" class=\"mt-n1\" size=\"small\" /> a qualquer ataque à distância.",
+      "hardCover": "<b>Cobertura pesada</b> adiciona +2 <v-icon icon=\"cc:difficulty\" class=\"mt-n1\" size=\"small\" /> a qualquer ataque à distância. Personagens só se beneficiam de cobertura pesada se estiverem adjacentes ao que estão usando como cobertura e forem do mesmo <b>TAMANHO</b> ou menores.",
+      "coverOneType": "Personagens só podem se beneficiar de um tipo de cobertura por vez.",
+      "attacks": "Ataques",
+      "skirmish": "ALVEJAR",
+      "skirmishDesc": "Ataque com um <b>único encaixe de arma</b>",
+      "barrage": "BARRAGEM",
+      "barrageDesc": "Ataque com <b>dois encaixes de arma</b> <b class=\"text-secondary pl-1\">OU</b> uma <b>arma superpesada</b>",
+      "improvisedAttack": "ATAQUE IMPROVISADO",
+      "improvisedAttackDesc": "Cause 1d6 <v-icon icon=\"cc:kinetic\" color=\"damage--kinetic\" class=\"mt-n1 mx-n1\" />",
+      "ram": "EMPURRAR",
+      "ramDesc": "Alvo recebe <b>CAÍDO</b> e <b>Repulsão 1</b> (opcional)",
+      "grapple": "AGARRAR",
+      "grappleDesc1": "Ataque corpo a corpo contra alvo adjacente. Em um acerto:",
+      "grappleEffect1": "Ambos personagens ficam <b>ENGAJADOS</b>",
+      "grappleEffect2": "Nenhum personagem pode <b>IMPULSIONAR</b> ou realizar reações durante o agarrar",
+      "grappleEffect3": "O personagem menor fica <b>IMOBILIZADO</b> mas se move quando o maior se move, espelhando seu movimento",
+      "grappleEnds": "Um AGARRAR termina quando:",
+      "grappleEnd1": "Qualquer personagem quebra a adjacência",
+      "grappleEnd2": "O atacante escolhe terminar o agarrar como ação livre",
+      "grappleEnd3": "O defensor se liberta com sucesso em um teste contestado de <b>CASCO</b> como ação rápida",
+      "meleeAttacks": "ataques corpo a corpo",
+      "rangedAttacks": "ataques à distância",
+      "techAttacks": "ataques de tecnologia",
+      "meleeRangedFormula": "+ BRIO vs ESQUIVA",
+      "techFormula": "+ ATAQUE TEC. vs DEFESA-E",
+      "meleeRange": "Alvo dentro de <v-icon icon=\"cc:threat\" class=\"mt-n1 ml-n1\" /> <b>AMEAÇA</b> e <b>LOS</b>",
+      "rangedRange": "Alvo dentro de <v-icon icon=\"cc:range\" class=\"mt-n1 ml-n1\" /> <b>ALCANCE</b> e <b>LOS</b>",
+      "techRange": "Alvo dentro de <v-icon icon=\"cc:sensor\" class=\"mt-n1\" /> <b>SENSORES</b> e <b>LOS</b>",
+      "aoePatterns": "Padrões de Área de Efeito",
+      "line": "LINHA X",
+      "lineDesc": "Afeta uma linha reta, X espaços de comprimento.",
+      "cone": "CONE X",
+      "coneDesc": "Afeta um cone, X espaços de comprimento e X espaços de largura no ponto mais distante. Começa com 1 espaço de largura.",
+      "blast": "EXPLOSÃO X",
+      "blastDesc": "Afeta um raio de X espaços, a partir de um ponto dentro de <v-icon icon=\"cc:range\" class=\"mt-n1\" /> e LOS.",
+      "burst": "IRRUPÇÃO X",
+      "burstDesc": "Afeta um raio de X espaços, centrado no usuário (ou alvo).",
+      "aoeNote": "Rolagens de ataque de AdE são feitas para cada alvo. Uma rolagem de dano é aplicada a todos os alvos. Dano bônus é reduzido à metade.",
+      "damageTypes": "tipos de dano",
+      "kinetic": "CINÉTICO",
+      "energy": "ENERGIA",
+      "explosive": "EXPLOSIVO",
+      "heat": "CALOR",
+      "burn": "QUEIMADURA <i>(PF)</i>",
+      "burnDesc": "<i>Aplicada no fim do turno, teste para limpar. Persiste.</i>",
+      "bonusDamage": "dano bônus",
+      "bonusDamageDesc": "Para ataques de AdE, o dano bônus é reduzido à metade.<br />Ataques AUX secundários feitos de um único encaixe causam <b>nenhum dano bônus</b>",
+      "criticalHits": "acertos críticos",
+      "criticalHitsDesc": "<b>20+</b> (total) em uma rolagem de ataque corpo a corpo ou à distância. Todos os dados de dano são rolados duas vezes (incl. dano bônus) e o maior resultado de cada um é usado.",
+      "statuses": "Status",
+      "conditions": "Condições"
     },
     "tooltips": {
       "addAPilotFromYourLocalPilotRoster": "Adicione um piloto da sua Lista de Pilotos local",
@@ -4463,6 +4634,9 @@
     "activeMode": "Modo Ativo",
     "encountersGm": "Encontros (GM)",
     "npcs": "NPCs",
+    "chatAndActions": "Chat & Ações",
+    "combatTracker": "Combat Tracker",
+    "combatTrackerSubtitle": "Iniciativa, rodadas e controle do combate na mesa",
     "options": "Opções",
     "actions": "Ações",
     "characterAndPilot": "Personagem & Piloto",
@@ -4470,6 +4644,12 @@
     "pilotRoster": "Hangar de Pilotos (Roster)",
     "startActiveSheet": "Iniciar Ficha Ativa (Combate)",
     "activeSheets": "Fichas de Combate (Ativas)",
+    "activeSheet": "Ficha Ativa",
+    "openActiveSheet": "Abrir Ficha Ativa",
+    "editHangarSheet": "Editar no Hangar",
+    "generateToken": "Gerar Token",
+    "tokenCreated": "Token criado:",
+    "tokenAlreadyExists": "Token já existe na cena:",
     "newSheet": "Nova Ficha",
     "newEncounter": "Novo Encontro (GM)",
     "npcRoster": "Roster de NPCs",
@@ -4531,6 +4711,9 @@
     "expandWideMode": "Expandir para Modo Amplo (1120px)",
     "compactSideMode": "Modo Compacto / Lateral (520px)",
     "minimizeCompactBar": "Minimizar para barra compacta (48px)",
+    "reloadWindow": "Recarregar a Janela",
+    "reloadWindowConfirm": "Recarregar o iframe da extensão? O estado em memória é descartado; fichas, encontros e logbooks salvos continuam no armazenamento local.",
+    "reloadWindowAction": "Recarregar agora",
     "mainMenuTitle": "Menu Principal",
     "gmSection": "Mestre (GM)",
     "installLcpsFull": "Instalar LCPs (.lcp / .llp)",
@@ -4540,7 +4723,10 @@
     "encounterPrefix": "Encontro",
     "back": "Voltar",
     "centerOnScreen": "Centralizar na Tela",
-    "centerOnScreenDesc": "Centro do mapa"
+    "centerOnScreenDesc": "Centro do mapa",
+    "wsConnected": "Sincronização em Tempo Real Conectada",
+    "wsReconnecting": "Reconectando Sincronização da Mesa...",
+    "wsDisconnected": "Sincronização Offline (Modo Local)"
   },
   "hud": {
     "attack": "Ataque",
@@ -4622,6 +4808,8 @@
     "modifiers": "Modificadores",
     "accNet": "Precisão",
     "diffNet": "Dificuldade",
-    "finish": "Concluir"
+    "finish": "Concluir",
+    "finishImprovisedAttack": "Concluir Ataque Improvisado",
+    "improvisedAttackCompleted": "Ataque Improvisado Concluído!"
   }
 }

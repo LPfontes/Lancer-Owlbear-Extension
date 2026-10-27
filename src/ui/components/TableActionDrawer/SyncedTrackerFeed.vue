@@ -35,6 +35,30 @@
       </div>
     </div>
 
+    <!-- Combate rolando sem o piloto do jogador: atalho para pedir entrada -->
+    <div
+      v-if="canRequestJoin && trackerStore.isActive"
+      class="join-strip px-3 py-2 d-flex align-center ga-2 flex-shrink-0"
+    >
+      <v-icon icon="mdi-account-arrow-right-outline" size="18" color="accent" class="flex-shrink-0" />
+      <div class="text-caption text-grey-lighten-2 flex-grow-1 text-truncate">
+        {{ t('trackerSync.joinNotInCombat') }}
+      </div>
+      <v-btn
+        id="synced-tracker-request-join-strip"
+        size="x-small"
+        height="26"
+        color="accent"
+        variant="flat"
+        class="font-weight-bold text-black rounded-0 px-2 flex-shrink-0"
+        :loading="isWaiting"
+        :disabled="!selectedSheet"
+        @click="sendJoinRequest"
+      >
+        {{ t('trackerSync.joinRequestShort') }}
+      </v-btn>
+    </div>
+
     <!-- Filtro sem combatentes -->
     <div
       v-if="trackerStore.cards.length > 0 && !filteredCards.length"
@@ -47,7 +71,7 @@
     </div>
 
     <!-- Nenhum combatente na iniciativa ainda -->
-    <div v-else-if="trackerStore.isActive" class="empty-state text-center py-10 px-4 my-auto">
+    <div v-else-if="trackerStore.isActive && !trackerStore.cards.length" class="empty-state text-center py-10 px-4 my-auto">
       <v-icon icon="mdi-account-multiple-plus" size="52" color="accent" class="mb-3" />
       <div class="text-subtitle-1 font-weight-bold text-white mb-1">
         {{ t('trackerSync.emptyEncounterTitle') }}
@@ -58,7 +82,7 @@
     </div>
 
     <!-- Aguardando o Mestre iniciar/transmitir o combate -->
-    <div v-else class="empty-state text-center py-10 px-4 my-auto">
+    <div v-else-if="!trackerStore.isActive" class="empty-state text-center py-10 px-4 my-auto">
       <v-icon icon="cc:encounter" size="52" color="accent" class="mb-3" />
       <div class="text-subtitle-1 font-weight-bold text-white mb-1">
         {{ t('trackerSync.waitingTitle') }}
@@ -66,7 +90,76 @@
       <div class="text-caption text-grey-lighten-2" style="max-width: 320px; margin: 0 auto;">
         {{ t('trackerSync.waitingHint') }}
       </div>
+
+      <!-- Pedido de entrada no combate (só jogador) -->
+      <div v-if="!isGM" class="join-request-box mt-5 mx-auto pa-3 text-left">
+        <template v-if="ownSheets.length">
+          <div class="text-caption text-grey-lighten-1 mb-2">
+            {{ t('trackerSync.joinRequestHint') }}
+          </div>
+
+          <v-select
+            v-if="ownSheets.length > 1"
+            id="synced-tracker-join-pilot"
+            v-model="selectedSheetId"
+            :items="sheetOptions"
+            item-title="title"
+            item-value="value"
+            :label="t('trackerSync.joinSelectPilot')"
+            variant="outlined"
+            density="compact"
+            color="accent"
+            hide-details
+            class="mb-2 rounded-0"
+          />
+          <div
+            v-else-if="selectedSheet"
+            class="d-flex align-center ga-2 mb-2 pa-2 bg-grey-darken-4 border border-grey-darken-3"
+          >
+            <v-icon icon="cc:pilot" size="20" color="accent" />
+            <div class="text-truncate">
+              <div class="text-body-2 font-weight-bold text-white text-truncate">
+                {{ sheetLabel(selectedSheet) }}
+              </div>
+              <div class="text-caption text-grey-lighten-1 text-truncate" style="font-size: 0.7rem !important;">
+                {{ selectedSheet.Pilot?.ActiveMech?.Name || t('trackerSync.joinNoMech') }}
+              </div>
+            </div>
+          </div>
+
+          <v-btn
+            id="synced-tracker-request-join"
+            block
+            color="accent"
+            variant="flat"
+            size="small"
+            class="font-weight-bold text-black rounded-0 join-btn"
+            prepend-icon="mdi-account-arrow-right-outline"
+            :loading="isWaiting"
+            :disabled="!selectedSheet || alreadyInCombat"
+            @click="sendJoinRequest"
+          >
+            {{ t('trackerSync.joinRequest') }}
+          </v-btn>
+        </template>
+
+        <div v-else class="text-caption text-grey-lighten-1 d-flex align-center ga-2">
+          <v-icon icon="mdi-information-outline" size="16" color="grey-lighten-1" />
+          <span>{{ t('trackerSync.joinNoSheet') }}</span>
+        </div>
+      </div>
     </div>
+
+    <!-- Retorno do último pedido de entrada -->
+    <v-snackbar
+      v-model="feedbackVisible"
+      :color="feedbackColor"
+      timeout="4000"
+      location="bottom"
+      class="rounded-0"
+    >
+      {{ feedbackText }}
+    </v-snackbar>
 
     <!-- Lista de cards da iniciativa -->
     <div
@@ -162,7 +255,7 @@
         </div>
 
         <!-- Barra de progresso discreta: leitura apenas, sem controles de turno -->
-        <div class="d-flex align-center ga-2 mt-2 pt-1 border-t border-grey-darken-3">
+        <div class="d-flex align-center justify-space-between ga-2 mt-2 pt-1 border-t border-grey-darken-3">
           <v-progress-linear
             :model-value="activationProgress(card)"
             :color="card.activations.current > 0 ? 'accent' : 'grey-darken-2'"
@@ -172,6 +265,21 @@
           <span class="text-caption text-grey-lighten-1" style="font-size: 0.65rem !important;">
             {{ t('trackerSync.readOnly') }}
           </span>
+
+          <v-tooltip :text="t('trackerSync.openSheet')" location="top">
+            <template #activator="{ props: tipProps }">
+              <v-btn
+                v-bind="tipProps"
+                size="small"
+                variant="tonal"
+                color="accent"
+                icon="mdi-book-open-variant"
+                class="rounded-0 ml-1"
+                style="height: 32px; width: 32px;"
+                @click.stop="openCombatantSheet(card)"
+              />
+            </template>
+          </v-tooltip>
         </div>
       </div>
     </div>
@@ -179,10 +287,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTrackerSyncStore } from '@/stores/trackerSyncStore'
+import { useTableActionStore } from '@/stores/tableActionStore'
 import type { SyncedTrackerCard } from '@/types/tracker-sync'
+import { isGmClient } from '@/services/obrRuntime'
+import { roomSyncedSheets } from '@/services/tableSyncSocket'
+import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
+import { usePilotJoinRequest } from '@/composables/usePilotJoinRequest'
 
 const props = withDefaults(
   defineProps<{
@@ -195,6 +309,90 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const trackerStore = useTrackerSyncStore()
+const sheetStore = PilotSheetStore()
+const { isWaiting, requestCombatEntry } = usePilotJoinRequest()
+
+// Reativo ao handshake do SDK (não congela o papel do primeiro render).
+const isGM = computed(() => isGmClient())
+
+// ---- Pedido de entrada no combate (jogador) ----
+
+/** Fichas do Modo Ativo desta janela que podem pedir entrada. */
+const ownSheets = computed<any[]>(() =>
+  (sheetStore.PilotSheets || []).filter(
+    (s: any) => s && !s.Archived && !s.SaveController?.IsDeleted && s.Pilot?.ID
+  )
+)
+
+const selectedSheetId = ref<string>('')
+
+const selectedSheet = computed<any | null>(
+  () => ownSheets.value.find((s: any) => s.ID === selectedSheetId.value) ?? null
+)
+
+function sheetLabel(sheet: any): string {
+  return sheet?.Pilot?.Callsign || sheet?.Name || sheet?.Pilot?.Name || '—'
+}
+
+const sheetOptions = computed(() =>
+  ownSheets.value.map((s: any) => ({
+    title: s.Pilot?.ActiveMech?.Name ? `${sheetLabel(s)} — ${s.Pilot.ActiveMech.Name}` : sheetLabel(s),
+    value: s.ID,
+  }))
+)
+
+// Pré-seleciona a ficha ativa (ou a primeira) e se recupera se a seleção sumir.
+watch(
+  [ownSheets, () => sheetStore.CurrentActiveID],
+  () => {
+    if (selectedSheet.value) return
+    const active = ownSheets.value.find((s: any) => s.ID === sheetStore.CurrentActiveID)
+    selectedSheetId.value = (active ?? ownSheets.value[0])?.ID ?? ''
+  },
+  { immediate: true }
+)
+
+/** O piloto escolhido já está na iniciativa publicada pela mesa? */
+const alreadyInCombat = computed(() => {
+  const pilotId = selectedSheet.value?.Pilot?.ID
+  if (!pilotId) return false
+  const id = String(pilotId).toLowerCase()
+  if (trackerStore.cards.some(card => String(card.id).toLowerCase() === id)) return true
+  return trackerStore.isActive && !!roomSyncedSheets.value?.[pilotId]?.inCombat
+})
+
+/** Mostra o atalho de pedido: só jogador, com ficha, fora da iniciativa. */
+const canRequestJoin = computed(
+  () => !isGM.value && !!selectedSheet.value && !alreadyInCombat.value
+)
+
+const feedbackVisible = ref(false)
+const feedbackText = ref('')
+const feedbackColor = ref<'success' | 'error'>('success')
+
+async function sendJoinRequest() {
+  const sheet = selectedSheet.value
+  if (!sheet || isWaiting.value) return
+
+  try {
+    const approved = await requestCombatEntry(sheet)
+    feedbackColor.value = approved ? 'success' : 'error'
+    feedbackText.value = approved
+      ? t('trackerSync.joinApproved', { name: sheetLabel(sheet) })
+      : t('trackerSync.joinDenied')
+  } catch (err) {
+    console.warn('[SyncedTrackerFeed] Falha ao pedir entrada no combate:', err)
+    feedbackColor.value = 'error'
+    feedbackText.value = t('trackerSync.joinFailed')
+  }
+  feedbackVisible.value = true
+}
+
+onMounted(() => {
+  if (!sheetStore.SheetsLoaded) {
+    void sheetStore.LoadPilotSheets().catch(() => {})
+  }
+})
 
 const filteredCards = computed<SyncedTrackerCard[]>(() => {
   const list = trackerStore.cards
@@ -207,6 +405,28 @@ const filteredCards = computed<SyncedTrackerCard[]>(() => {
   }
   return list
 })
+
+const router = useRouter()
+const tableActionStore = useTableActionStore()
+
+function openCombatantSheet(card: SyncedTrackerCard) {
+  const cardId = card.id
+  if (!cardId) return
+
+  tableActionStore.closeDrawer()
+
+  if (card.kind === 'pilot') {
+    // Se for o próprio piloto ativo do jogador, abre normalmente para edição; se for de outro jogador, em modo leitura
+    const isOwnPilot = ownSheets.value.some(
+      (s: any) => String(s.ID).toLowerCase() === String(cardId).toLowerCase() ||
+                  String(s.Pilot?.ID).toLowerCase() === String(cardId).toLowerCase()
+    )
+    const query = isOwnPilot ? '' : '?readonly=1'
+    router.push(`/active-mode/pilot-runner/${cardId}${query}`).catch(() => {})
+  } else {
+    router.push(`/active-mode/npc-runner/${cardId}`).catch(() => {})
+  }
+}
 
 function activationProgress(card: SyncedTrackerCard): number {
   if (card.activations.max <= 0) return 0
@@ -223,6 +443,39 @@ function getSideLabel(side: string): string {
 <style scoped>
 .tracker-header {
   background: rgba(18, 24, 32, 0.96);
+}
+
+.join-strip {
+  background: linear-gradient(90deg, rgba(var(--v-theme-accent), 0.14), rgba(var(--v-theme-accent), 0.03));
+  border-bottom: 1px solid rgba(var(--v-theme-accent), 0.35);
+}
+
+.join-request-box {
+  max-width: 300px;
+  background: rgba(22, 28, 38, 0.85);
+  border: 1px solid rgba(var(--v-theme-accent), 0.3);
+  border-left: 3px solid rgb(var(--v-theme-accent));
+  animation: join-box-in 0.25s ease-out;
+}
+
+.join-btn {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.join-btn:not(:disabled):hover {
+  box-shadow: 0 0 12px rgba(var(--v-theme-accent), 0.45);
+  transform: translateY(-1px);
+}
+
+@keyframes join-box-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .combatants-list-container::-webkit-scrollbar {

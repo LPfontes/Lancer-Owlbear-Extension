@@ -1,5 +1,5 @@
 <template>
-  <v-row no-gutters>
+  <v-row no-gutters align="center">
     <v-col class="heading h2 text-accent">
       {{ combatant.actor.Callsign }}
       <span class="text-cc-overline text-text">
@@ -10,15 +10,28 @@
     <v-col
       v-if="combatant.actor.PlayerName"
       cols="auto"
+      class="mr-2"
     >
       <span class="text-cc-overline pr-1">{{ $t('active.roster.playedBy') }}</span>
       <b class="text-accent">{{ combatant.actor.PlayerName }}</b>
+    </v-col>
+    <v-col cols="auto">
+      <v-btn
+        size="x-small"
+        color="accent"
+        variant="tonal"
+        prepend-icon="mdi-map-marker-plus-outline"
+        :loading="generatingToken"
+        @click="generateToken"
+      >
+        {{ $t('ow.generateToken') }}
+      </v-btn>
     </v-col>
   </v-row>
 
   <v-row
     dense
-    class="mt-n1"
+    class="mt-n1 view-switcher-row"
   >
     <v-col
       v-if="mech"
@@ -151,6 +164,7 @@
   import MechPanel from './MechPanel.vue'
   import PilotPanel from './PilotPanel.vue'
   import { useDisplay } from 'vuetify'
+  import { obrBridge } from '@/services/obrBridge'
 
   const { smAndDown: mobile, xs: portrait } = useDisplay()
 
@@ -174,6 +188,17 @@
 
   const view = ref('mech')
   const unusedOnly = ref(false)
+  const generatingToken = ref(false)
+
+  async function generateToken(): Promise<void> {
+    if (!props.combatant?.actor) return
+    generatingToken.value = true
+    try {
+      await obrBridge.createTokenForSheet(props.combatant.actor, 'pilot', { force: true })
+    } finally {
+      generatingToken.value = false
+    }
+  }
 
   const mech = computed(() => {
     return props.combatant.actor.ActiveMech

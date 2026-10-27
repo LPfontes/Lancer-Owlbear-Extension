@@ -32,7 +32,7 @@
     />
 
     <template #actions>
-      <npc-actions-panel @deploy="deploy($event)" />
+      <unified-actions-panel is-npc @deploy="deploy($event)" />
     </template>
   </panel-base>
 </template>
@@ -44,7 +44,7 @@
   import { computed, provide } from 'vue'
   import { EncounterContextKey } from './encounterContext'
   import UnitCombatLoadout from './_components/loadouts/UnitCombatLoadout.vue'
-  import NpcActionsPanel from './_components/NpcActionsPanel.vue'
+  import UnifiedActionsPanel from './_components/UnifiedActionsPanel.vue'
   import ScanMenu from './_components/ScanMenu.vue'
   import PanelBase from './_PanelBase.vue'
   import { useI18n } from 'vue-i18n'

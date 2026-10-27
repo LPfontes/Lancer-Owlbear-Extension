@@ -56,12 +56,32 @@
       <v-layout style="height: 100%; flex: 1 1 auto; min-height: 0">
         <v-main
           tabindex="0"
-          style="overflow-y: auto"
+          style="overflow-y: auto; height: 100%; max-height: 100%; min-height: 0;"
         >
           <v-container
             fluid
             class="pb-12"
           >
+            <v-row
+              dense
+              justify="end"
+              align="center"
+              class="mb-1"
+            >
+              <v-col cols="auto">
+                <v-btn
+                  size="small"
+                  color="primary"
+                  variant="tonal"
+                  prepend-icon="mdi-map-marker-plus-outline"
+                  :loading="generatingToken"
+                  @click="generateToken"
+                >
+                  {{ $t('ow.generateToken') }}
+                </v-btn>
+              </v-col>
+            </v-row>
+
             <component
               :is="typeMap[combatant.type]"
               :key="combatant.id"
@@ -72,6 +92,7 @@
             <v-row
               dense
               justify="end"
+              align="center"
             >
               <v-col cols="auto">
                 <actor-logs
@@ -88,6 +109,41 @@
             </v-row>
           </v-container>
         </v-main>
+
+        <v-footer
+          app
+          height="36"
+          class="bg-panel"
+          style="position: fixed !important; bottom: 0px !important; left: 0px !important; right: 0px !important; width: 100% !important; z-index: 1000 !important; border-top: 1px solid rgba(255, 255, 255, 0.1);"
+        >
+          <v-row
+            justify="space-between"
+            align="center"
+            no-gutters
+          >
+            <v-col>
+              <npc-end-turn
+                :combatant="combatant"
+                :encounter-instance="encounterInstance"
+                :sheet-id="npcId"
+              />
+            </v-col>
+            <v-col>
+              <v-btn
+                id="npc-runner-back-to-chat"
+                block
+                flat
+                tile
+                variant="text"
+                color="accent"
+                prepend-icon="mdi-message-text"
+                @click="router.push('/table-chat')"
+              >
+                {{ $t('active.endRound.backToChat') }}
+              </v-btn>
+            </v-col>
+          </v-row>
+        </v-footer>
       </v-layout>
     </div>
 
@@ -107,7 +163,7 @@
 
 <script setup lang="ts">
   import { ref, shallowRef, computed, watch, reactive, onMounted, onUnmounted } from 'vue'
-  import { useRoute } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { NpcStore, EncounterStore } from '@/stores'
   import { Encounter } from '@/classes/encounter/Encounter'
   import { EncounterInstance } from '@/classes/encounter/EncounterInstance'
@@ -121,6 +177,7 @@
   import CombatStatblockExport from '../gm/EncounterPanels/_components/CombatStatblockExport.vue'
   import { combatantCombatVersion } from '../_shared/combatVersion'
   import { combatantMatchesSheetId, findEncounterForNpc, findNpcCombatant } from '../_shared/npcSheetLookup'
+  import NpcEndTurn from './_components/NpcEndTurn.vue'
 
   const typeMap: Record<string, any> = {
     unit: UnitPanel,
@@ -131,6 +188,7 @@
   const props = withDefaults(defineProps<{ id?: string | null }>(), { id: null })
 
   const route = useRoute()
+  const router = useRouter()
   const diceDialog = ref(false)
 
   const npcId = computed(() => (props.id || (route.params.id as string) || '') as string)
@@ -300,16 +358,22 @@
     }
   }
 
+  const generatingToken = ref(false)
+
+  async function generateToken(): Promise<void> {
+    const actor = combatant.value?.actor || NpcStore().getNpcByID(npcId.value)
+    if (!actor) return
+    generatingToken.value = true
+    try {
+      await obrBridge.createTokenForSheet(actor, 'npc', { force: true })
+    } finally {
+      generatingToken.value = false
+    }
+  }
+
   // Garante que as fontes estejam carregadas antes de resolver o combatente
   onMounted(async () => {
     void loadSources()
-
-    // Cria automaticamente o token no Owlbear Rodeo a partir do NPC do roster
-    // (usa o ID estável do NPC, não a instância efêmera do encontro)
-    const npc = NpcStore().getNpcByID(npcId.value)
-    if (npc) {
-      void obrBridge.createTokenForSheet(npc, 'npc').catch(() => {})
-    }
   })
 
   // Trocar de ficha na mesma janela (mesma rota, outro :id) recomeça a busca.
@@ -335,11 +399,24 @@
     () => (combatant.value ? combatantCombatVersion(combatant.value) : 0),
     () => {
       const enc = instanceToSave()
-      if (!enc) return
-      if (syncTimeout) clearTimeout(syncTimeout)
-      syncTimeout = setTimeout(() => {
-        void enc.Save?.()
-      }, 600)
+      if (enc) {
+        if (syncTimeout) clearTimeout(syncTimeout)
+        syncTimeout = setTimeout(() => {
+          void enc.Save?.()
+        }, 600)
+      }
+
+      const sc = combatant.value?.actor?.CombatController?.StatController
+      if (sc && npcId.value) {
+        void obrBridge.syncTokenCombatStats(npcId.value, {
+          hp: { current: Number(sc.getCurrent?.('hp') ?? 0), max: Number(sc.getMax?.('hp') ?? 0) },
+          heat: { current: Number(sc.getCurrent?.('heatcap') ?? 0), max: Number(sc.getMax?.('heatcap') ?? 0) },
+          structure: { current: Number(sc.getCurrent?.('structure') ?? 0), max: Number(sc.getMax?.('structure') ?? 0) },
+          stress: { current: Number(sc.getCurrent?.('stress') ?? 0), max: Number(sc.getMax?.('stress') ?? 0) },
+          overshield: { current: Number(sc.getCurrent?.('overshield') ?? 0), max: Number(sc.getMax?.('overshield') ?? 0) },
+          speed: { current: Number(sc.getCurrent?.('speed') ?? 0), max: Number(sc.getMax?.('speed') ?? 0) },
+        })
+      }
     }
   )
 </script>

@@ -116,6 +116,9 @@ interface CombatData {
   mounted: boolean
   overwatch: boolean
   braced: boolean
+  bracedPenaltyPending?: boolean
+  bracedPenaltyActive?: boolean
+  inTurn?: boolean
   prepared: boolean
   disengaged?: boolean
   boostBonus?: number
@@ -207,6 +210,13 @@ class CombatController implements ICounterContainer, IStatContainer {
   public Overwatch = false
   public Braced = false
   public BraceGranted: string[] = []
+  public InTurn = false
+  public BracedPenaltyPending = false
+  public BracedPenaltyActive = false
+  public get IsBracedTurn(): boolean {
+    return this.Braced && this.BracedPenaltyActive
+  }
+  public LastBraceTransitionTime = 0
   public Prepared = false
   public Disengaged = false
   public Carrying: 'drag' | 'lift' | 'none' = 'none'
@@ -431,14 +441,24 @@ class CombatController implements ICounterContainer, IStatContainer {
   }
 
   public EndTurn(encounter?: any): IFlowResult<IEndTurnState> {
-    return EndTurnFlow.Begin({ cc: this, encounter, burnResolved: false })
+    const res = EndTurnFlow.Begin({ cc: this, encounter, burnResolved: false })
+    if (res.outcome === 'complete') {
+      this.InTurn = false
+      if (this.Counterpart) this.Counterpart.InTurn = false
+    }
+    return res
   }
 
   public ResumeEndTurn(
     result: IFlowResult<IEndTurnState>,
     input?: unknown
   ): IFlowResult<IEndTurnState> {
-    return EndTurnFlow.Resume(result, input)
+    const res = EndTurnFlow.Resume(result, input)
+    if (res.outcome === 'complete') {
+      this.InTurn = false
+      if (this.Counterpart) this.Counterpart.InTurn = false
+    }
+    return res
   }
 
   public RefreshTurnReactions(encounter?: any): void {
@@ -525,15 +545,27 @@ class CombatController implements ICounterContainer, IStatContainer {
 
   public ApplyBraceEffects(): void {
     this.Braced = true
+    this.BracedPenaltyPending = true
+    this.BracedPenaltyActive = false
+    this.LastBraceTransitionTime = 0
     this.BraceGranted = CombatController.BRACE_RESIST.filter(
       t => !this.Resistances.some(r => r.type === t)
     )
     this.BraceGranted.forEach(t => this.AddResist(t, 'resistance'))
-    // Paying for the brace: no reactions from now on, and only a single quick
-    // action on this character's next turn. The action pool survives into that
-    // turn (nothing refills it at turn start) and is handed back by the
-    // 'clear-braced' step when the turn ends.
-    this.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+
+    // Suportar consome a reação imediatamente
+    this.SetCombatAction('reaction', false)
+
+    // Atualiza os marcadores de status do token no Owlbear Rodeo
+    this.StatusController.NotifyStatusChange()
+    if (this.Counterpart) {
+      this.Counterpart.Braced = true
+      this.Counterpart.BracedPenaltyPending = true
+      this.Counterpart.BracedPenaltyActive = false
+      this.Counterpart.LastBraceTransitionTime = 0
+      this.Counterpart.SetCombatAction('reaction', false)
+      this.Counterpart.StatusController.NotifyStatusChange()
+    }
   }
 
   public Brace(force = false): boolean {
@@ -547,7 +579,23 @@ class CombatController implements ICounterContainer, IStatContainer {
     if (value === this.Braced) return false
     if (value) return this.Brace(force)
     this.Braced = false
+    this.BracedPenaltyPending = false
+    this.BracedPenaltyActive = false
+    this.LastBraceTransitionTime = 0
     this.ClearBraceResistance()
+    this.ResetCombatActions()
+    this.StatController.setCurrentStat(StatKey.SPEED, this.StatController.getMax(StatKey.SPEED), { silent: true })
+    this.StatusController.NotifyStatusChange()
+    if (this.Counterpart) {
+      this.Counterpart.Braced = false
+      this.Counterpart.BracedPenaltyPending = false
+      this.Counterpart.BracedPenaltyActive = false
+      this.Counterpart.LastBraceTransitionTime = 0
+      this.Counterpart.ClearBraceResistance()
+      this.Counterpart.ResetCombatActions()
+      this.Counterpart.StatController.setCurrentStat(StatKey.SPEED, this.Counterpart.StatController.getMax(StatKey.SPEED), { silent: true })
+      this.Counterpart.StatusController.NotifyStatusChange()
+    }
     return true
   }
 
@@ -870,6 +918,32 @@ class CombatController implements ICounterContainer, IStatContainer {
   }
 
   public DeniesActivation(action: string, actionId?: string): boolean {
+    const str = (action || '').toLowerCase().replace(/\s+/g, '')
+    const id = (actionId || '').toLowerCase()
+
+    // Suportar ativo: não pode realizar nenhuma reação até o fim do próximo turno
+    if (this.Braced && (str === 'reaction' || id === 'brace' || id === 'overwatch')) {
+      return true
+    }
+
+    // Turno com penalidade de Suportar ativa:
+    // Só pode realizar uma Ação Rápida. Não pode SOBRECARREGAR, mover-se normalmente,
+    // usar ações completas ou ações livres.
+    if (this.IsBracedTurn) {
+      if (
+        str === 'overcharge' ||
+        id === 'act_overcharge' ||
+        str === 'move' ||
+        str === 'full' ||
+        str === 'fulltech' ||
+        str === 'jockey' ||
+        str === 'free' ||
+        str === 'protocol'
+      ) {
+        return true
+      }
+    }
+
     return this.StatusController.DeniesActivation(action, actionId)
   }
 
@@ -1150,6 +1224,29 @@ class CombatController implements ICounterContainer, IStatContainer {
     )
   }
 
+  /** Último estado conhecido do marcador derivado de Zona de Perigo. */
+  private _lastDangerZoneMarker: boolean | undefined
+  /** Último valor conhecido de Queimadura (QMD) para atualização reativa do marcador. */
+  private _lastBurnMarker: number | undefined
+
+  /**
+   * Reavalia os marcadores **derivados de stats** (Zona de Perigo e Queimadura) e avisa
+   * quem desenha o token quando eles mudam.
+   *
+   * A Zona de Perigo e a Queimadura com quantidade (`burn:<N>`) são calculadas dos stats
+   * (`HEAT` e `BURN`) e entram na lista em `StatusController.MarkerStatusIds`. Chamado
+   * a cada escrita de stat (`StatController.bumpCombatVersion`), mas só emite na
+   * TRANSIÇÃO — fora isso é só uma comparação rápida.
+   */
+  public NotifyDerivedMarkers(): void {
+    const inDangerZone = this.IsInDangerZone
+    const currentBurn = Number(this.StatController.getCurrent(StatKey.BURN)) || 0
+    if (inDangerZone === this._lastDangerZoneMarker && currentBurn === this._lastBurnMarker) return
+    this._lastDangerZoneMarker = inDangerZone
+    this._lastBurnMarker = currentBurn
+    this.StatusController.NotifyStatusChange()
+  }
+
   public SetCustomStatus(special: EffectSpecial, expires?: any): void {
     this.StatusController.SetCustomStatus(special, expires)
   }
@@ -1322,10 +1419,25 @@ class CombatController implements ICounterContainer, IStatContainer {
   }
 
   public StartTurn(): void {
+    this.InTurn = true
     this.RollRecharge(this.AllEquipment)
     this.RefreshReactions()
     this.ReleasePrepared()
     this.Disengaged = false
+
+    // Se estiver sob efeito de Suportar (Braced), ativa a penalidade para este turno
+    if (this.Braced) {
+      this.BracedPenaltyPending = false
+      this.BracedPenaltyActive = true
+      this.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+      this.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+      if (this.Counterpart) {
+        this.Counterpart.BracedPenaltyPending = false
+        this.Counterpart.BracedPenaltyActive = true
+        this.Counterpart.CombatActions = { ...BRACED_COMBAT_ACTIONS }
+        this.Counterpart.StatController.setCurrentStat(StatKey.SPEED, 0, { silent: true })
+      }
+    }
   }
 
   public StartRound(): void {
@@ -1363,6 +1475,10 @@ class CombatController implements ICounterContainer, IStatContainer {
     this.Overwatch = false
     this.Braced = false
     this.BraceGranted = []
+    this.InTurn = false
+    this.BracedPenaltyPending = false
+    this.BracedPenaltyActive = false
+    this.LastBraceTransitionTime = 0
     this.Prepared = false
     this.Disengaged = false
     this.Carrying = 'none'
@@ -1428,6 +1544,9 @@ class CombatController implements ICounterContainer, IStatContainer {
     target.mounted = controller.Mounted
     target.overwatch = controller.Overwatch
     target.braced = controller.Braced
+    target.bracedPenaltyPending = controller.BracedPenaltyPending
+    target.bracedPenaltyActive = controller.BracedPenaltyActive
+    target.inTurn = controller.InTurn
     target.braceGranted = [...controller.BraceGranted]
     target.prepared = controller.Prepared
     target.disengaged = controller.Disengaged
@@ -1460,6 +1579,9 @@ class CombatController implements ICounterContainer, IStatContainer {
     controller.Mounted = data?.mounted ?? true
     controller.Overwatch = data?.overwatch || false
     controller.Braced = data?.braced || false
+    controller.BracedPenaltyPending = data?.bracedPenaltyPending || false
+    controller.BracedPenaltyActive = data?.bracedPenaltyActive || false
+    controller.InTurn = data?.inTurn || false
     controller.BraceGranted = data?.braceGranted ? [...data.braceGranted] : []
     controller.Prepared = data?.prepared || false
     controller.Disengaged = data?.disengaged || false

@@ -452,9 +452,25 @@
   const damageTitle = computed(() => t('hud.damageTitle', { name: weaponName.value }))
 
   const rangeString = computed(() => {
-    if (props.item?.Range && props.item.Range.length) {
-      return props.item.Range.map((r: any) => {
-        const typeLabel = r.Type ? enumLabel('rangeType', r.Type) : ''
+    let rangeData = props.item?.Range
+    if (typeof rangeData === 'function') {
+      try { rangeData = rangeData.call(props.item, 1, []) } catch(e) { rangeData = [] }
+    }
+    if (!rangeData || (Array.isArray(rangeData) && rangeData.length === 0)) {
+      const rawRange = (props.item as any)?.RangeData || (props.item as any)?._range
+      if (Array.isArray(rawRange)) {
+        rangeData = rawRange.map((item: any) => {
+          let val = item.Value ?? item.val
+          if (Array.isArray(val)) val = val[0]
+          return { Type: item.Type || item.type, Value: val }
+        })
+      }
+    }
+    if (rangeData && Array.isArray(rangeData) && rangeData.length) {
+      return rangeData.map((r: any) => {
+        let typeLabel = r.Type ? enumLabel('rangeType', r.Type) : ''
+        if (r.Type === 'Threat' || typeLabel === 'Threat') typeLabel = 'Ameaça'
+        if (r.Type === 'Sensors' || typeLabel === 'Sensors') typeLabel = 'Sensores'
         return `${typeLabel ? typeLabel + ' ' : ''}${r.Value}`
       }).join(', ')
     }
@@ -462,9 +478,24 @@
   })
 
   const damageSummaryString = computed(() => {
-    if (props.item?.Damage && props.item.Damage.length) {
-      return props.item.Damage.map((d: any) => {
-        const typeLabel = d.Type ? enumLabel('damageType', d.Type) : ''
+    let damageData = props.item?.Damage
+    if (typeof damageData === 'function') {
+      try { damageData = damageData.call(props.item, 1, []) } catch(e) { damageData = [] }
+    }
+    if (!damageData || (Array.isArray(damageData) && damageData.length === 0)) {
+      const rawDmg = (props.item as any)?.DamageData || (props.item as any)?._damage_data
+      if (Array.isArray(rawDmg)) {
+        damageData = rawDmg.map((item: any) => {
+          let val = item.val || item.damage || item.Value
+          if (Array.isArray(val)) val = val[0]
+          return { Type: item.type || item.Type, Value: val }
+        })
+      }
+    }
+    if (damageData && Array.isArray(damageData) && damageData.length) {
+      return damageData.map((d: any) => {
+        let typeLabel = d.Type ? enumLabel('damageType', d.Type) : ''
+        if (d.Type === 'Heat' || typeLabel?.toLowerCase() === 'heat') typeLabel = 'Calor'
         return `${typeLabel ? typeLabel + ' ' : ''}${d.Value}`
       }).join(' + ')
     }

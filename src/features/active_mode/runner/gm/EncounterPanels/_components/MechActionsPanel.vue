@@ -48,21 +48,6 @@
           </v-col>
         </v-row>
         <v-divider class="my-2" />
-        <v-row dense>
-          <v-col>
-            <mech-skirmish-button
-              :action="getBaseAction('act_skirmish')"
-              @activate="activate($event)"
-            />
-          </v-col>
-          <v-col>
-            <mech-barrage-button
-              :action="getBaseAction('act_barrage')"
-              @activate="activate($event)"
-            />
-          </v-col>
-        </v-row>
-        <v-divider class="my-2" />
 
         <v-row
           align="start"
@@ -150,6 +135,11 @@
                 />
                 <mech-full-tech-button
                   v-else-if="action === 'act_full_tech'"
+                  :action="getBaseAction(action)"
+                  @activate="activate($event)"
+                />
+                <mech-improvised-attack-button
+                  v-else-if="action === 'act_improvised_attack'"
                   :action="getBaseAction(action)"
                   @activate="activate($event)"
                 />
@@ -259,10 +249,9 @@
   import StabilizeButton from './loadouts/action_buttons/stabilizeButton.vue'
   import SkillCheckButton from './loadouts/action_buttons/skillCheckButton.vue'
   import OverchargeButton from './loadouts/action_buttons/overchargeButton.vue'
-  import MechSkirmishButton from './loadouts/action_buttons/mechSkirmishButton.vue'
-  import MechBarrageButton from './loadouts/action_buttons/mechBarrageButton.vue'
   import MechFullTechButton from './loadouts/action_buttons/mechFullTechButton.vue'
   import SearchActionButton from './loadouts/action_buttons/searchActionButton.vue'
+  import MechImprovisedAttackButton from './loadouts/action_buttons/MechImprovisedAttackButton.vue'
 
   const { owner } = useEncounterContext()
 

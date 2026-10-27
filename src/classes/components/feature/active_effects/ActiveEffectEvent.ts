@@ -298,15 +298,25 @@ class ActiveEffectEvent {
   }
 
   public get Summary(): string {
-    return new ActionSummary(ActionSummary.fromActiveEffectEvent(this)).Summarize(
-      this.Initiator.actor.ID
-    )
+    try {
+      return new ActionSummary(ActionSummary.fromActiveEffectEvent(this)).Summarize(
+        this.Initiator.actor.ID
+      )
+    } catch (err) {
+      console.warn('[ActiveEffectEvent] Erro ao gerar Summary:', err)
+      return this.Effect?.Name || ''
+    }
   }
 
   public get ShortSummary(): string {
-    return new ActionSummary(ActionSummary.fromActiveEffectEvent(this)).Summarize(
-      this.Initiator.actor.ID
-    )
+    try {
+      return new ActionSummary(ActionSummary.fromActiveEffectEvent(this)).Summarize(
+        this.Initiator.actor.ID
+      )
+    } catch (err) {
+      console.warn('[ActiveEffectEvent] Erro ao gerar ShortSummary:', err)
+      return this.Effect?.Name || ''
+    }
   }
 
   public Apply(target: ActiveEventTarget) {

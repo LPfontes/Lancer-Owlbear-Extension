@@ -59,3 +59,4 @@ describe('ordem dos marcadores de status', () => {
     expect(cc().StatusController.MarkerStatusIds()).toEqual(['slow', 'impaired'])
   })
 })
+

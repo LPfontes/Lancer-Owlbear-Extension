@@ -522,8 +522,7 @@
   /* Mobile styles */
   .header-container-sm {
     position: absolute;
-    top: 35px;
-    padding-top: 34px;
+    padding-top: 20px;
     padding-left: 8px;
     padding-bottom: 4px;
     left: 0;

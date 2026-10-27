@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   BAR_HEIGHT,
+  BOOST_COLOR,
+  ERROR_COLOR,
   layoutTokenTrackers,
+  movementBadgeColor,
   NUMBER_DIAMETER,
   PANEL_GAP,
   resolveSquares,
@@ -11,8 +14,10 @@ import {
   SQUARE_SIZE,
   SQUARES_ROW_HEIGHT,
   type DrawCommand,
+  type MovementVisualState,
   type TokenTrackerBounds,
 } from '@/services/tokenTrackerLayout'
+import { LANCER_TOKEN_TRACKER_SLOTS } from '@/types/token-tracker'
 import {
   DEFAULT_TOKEN_TRACKER_CONFIG,
   type TokenTrackerConfig,
@@ -78,6 +83,35 @@ describe('layoutTokenTrackers — linhas e visibilidade dos slots', () => {
     expect(icon.cx).toBeLessThan(text.x)
     expect(icon.cx).toBeGreaterThan(badge.x)
     expect(text.x + text.width).toBeLessThanOrEqual(badge.x + badge.width + 0.001)
+  })
+
+  it('pinta o badge do Movimento conforme o estado do turno (§6.1)', () => {
+    // A cor "normal" vem do preset (que é ajustável), não de um literal no teste.
+    const speedColor =
+      LANCER_TOKEN_TRACKER_SLOTS.find(slot => slot.id === 'speed')?.color ?? ''
+    expect(speedColor).not.toBe('')
+
+    const badgeOf = (state?: MovementVisualState) => {
+      const { commands } = layout(FULL_VALUES, {}, state ? { movementState: state } : {})
+      const badge = commands.find(c => c.key === 'speed_badge')
+      if (badge?.kind !== 'rect') throw new Error('esperava o badge')
+      return badge.fill
+    }
+
+    // Sem estado declarado, a cor é a do slot.
+    expect(badgeOf()).toBe(speedColor)
+    expect(badgeOf('normal')).toBe(speedColor)
+    // Boost concedido é destaque, não erro.
+    expect(badgeOf('boosted')).toBe(BOOST_COLOR)
+    // Estouro pendente é erro (aguarda Boost/Desfazer).
+    expect(badgeOf('overflow')).toBe(ERROR_COLOR)
+    expect(ERROR_COLOR).not.toBe(BOOST_COLOR)
+  })
+
+  it('movementBadgeColor é pura e cobre os três estados', () => {
+    expect(movementBadgeColor('normal', '#123456')).toBe('#123456')
+    expect(movementBadgeColor('boosted', '#123456')).toBe(BOOST_COLOR)
+    expect(movementBadgeColor('overflow', '#123456')).toBe(ERROR_COLOR)
   })
 
   it('o Movimento não entra na pilha de baixo', () => {

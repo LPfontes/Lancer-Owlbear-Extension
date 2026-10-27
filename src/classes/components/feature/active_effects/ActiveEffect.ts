@@ -10,7 +10,7 @@ import { BonusDamage, IBonusDamageData } from './BonusDamage'
 import { ByTier } from '@/util/tierFormat'
 import { Action } from '@/classes/Action'
 import { localize } from '@/i18n/localize'
-import { keyPrefixes } from '@/i18n/contentKeys'
+import { keyPrefixes, slug } from '@/i18n/contentKeys'
 import { Frequency } from '@/classes/Frequency'
 import logger from '@/user/logger'
 
@@ -21,6 +21,7 @@ interface IActiveEffectData {
   id?: string
   name: string
   detail: string
+  trigger?: string
   condition?: string
   damage?: IDamageData[]
   range?: IRangeData[]
@@ -51,8 +52,9 @@ class ActiveEffect {
   public readonly Origin: any
   private readonly _name: string
   private readonly _detail: string
-  private readonly _lkey?: string
+  private _lkey?: string
   private readonly _condition: string
+  private readonly _trigger: string
   public readonly Damage: Damage[]
   public readonly Range: Range[]
   public readonly Bonuses: Bonus[]
@@ -97,8 +99,9 @@ class ActiveEffect {
 
     this._name = data.name || fallbackName || 'Unnamed Effect'
     this._detail = data.detail || ''
-    this._lkey = keyPrefixes.get(data as object)
+    this._lkey = keyPrefixes.get(data as object) || data.id
     this._condition = data.condition || ''
+    this._trigger = data.trigger || ''
     this.Accuracy = (data.attack === 'tech' ? data.tech_accuracy : undefined) ?? data.accuracy ?? 0
     this.AttackBonus =
       (data.attack === 'tech' ? data.tech_attack_bonus : undefined) ?? data.attack_bonus ?? 0
@@ -207,16 +210,82 @@ class ActiveEffect {
     return targetedSubtypes.length > 0
   }
 
+  private _localizeField(
+    field: 'name' | 'detail' | 'condition' | 'trigger',
+    fallback: string
+  ): string {
+    if (this._lkey) {
+      const val = localize(this._lkey, field, fallback)
+      if (val !== fallback) return val
+    }
+    if (this.ID && !this.ID.includes('-')) {
+      const val = localize(this.ID, field, fallback)
+      if (val !== fallback) return val
+    }
+    const originKey =
+      typeof this.Origin === 'string'
+        ? this.Origin
+        : this.Origin?._lk || this.Origin?._lkey || this.Origin?.ID || this.Origin?.id
+    if (originKey && this._name) {
+      const triggerMap: Record<string, string> = {
+        'on attack effect': 'on_attack',
+        'on hit effect': 'on_hit',
+        'on crit effect': 'on_crit',
+        'on miss effect': 'on_miss',
+      }
+      const triggerSlug = triggerMap[this._name.toLowerCase()]
+      if (triggerSlug) {
+        const triggerKey = `${originKey}.${triggerSlug}`
+        const triggerVal = localize(triggerKey, field, fallback)
+        if (triggerVal !== fallback) {
+          this._lkey = triggerKey
+          return triggerVal
+        }
+      }
+
+      const effectSlug = slug(this._name)
+
+      // Try active_effect prefix
+      const activeKey = `${originKey}.active_effect_${effectSlug}`
+      const activeVal = localize(activeKey, field, fallback)
+      if (activeVal !== fallback) {
+        this._lkey = activeKey
+        return activeVal
+      }
+
+      // Try passive_effect prefix
+      const passiveKey = `${originKey}.passive_effect_${effectSlug}`
+      const passiveVal = localize(passiveKey, field, fallback)
+      if (passiveVal !== fallback) {
+        this._lkey = passiveKey
+        return passiveVal
+      }
+
+      // Try direct child prefix
+      const directKey = `${originKey}.${effectSlug}`
+      const directVal = localize(directKey, field, fallback)
+      if (directVal !== fallback) {
+        this._lkey = directKey
+        return directVal
+      }
+    }
+    return fallback
+  }
+
   public get Name(): string {
-    return this._lkey ? localize(this._lkey, 'name', this._name) : this._name
+    return this._localizeField('name', this._name)
   }
 
   public get Detail(): string {
-    return this._lkey ? localize(this._lkey, 'detail', this._detail) : this._detail
+    return this._localizeField('detail', this._detail)
   }
 
   public get Condition(): string {
-    return this._lkey ? localize(this._lkey, 'condition', this._condition) : this._condition
+    return this._localizeField('condition', this._condition)
+  }
+
+  public get Trigger(): string {
+    return this._localizeField('trigger', this._trigger)
   }
 
   public getDetail(tier?: number): string {
@@ -226,7 +295,7 @@ class ActiveEffect {
     return ByTier(this.Condition, tier)
   }
   public getTrigger(tier?: number): string {
-    return ByTier((this as any).Trigger || '', tier)
+    return ByTier(this.Trigger, tier)
   }
 }
 export { ActiveEffect }

@@ -165,7 +165,8 @@ class ActiveEventTarget {
     const initiator = this.Event.Initiator?.actor?.CombatController
     const selfInflicted =
       !!initiator && initiator.RootActor?.ID === this.Combatant.actor.CombatController.RootActor?.ID
-    this.Combatant.actor.CombatController.AddStatus(statusEvent.Status.ID, statusEvent.Duration, {
+    const duration = statusEvent.RawDuration || statusEvent.Duration
+    this.Combatant.actor.CombatController.AddStatus(statusEvent.Status.ID, duration, {
       selfInflicted,
     })
   }

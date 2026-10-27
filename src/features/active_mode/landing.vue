@@ -57,106 +57,112 @@
                 v-text="headers[i].subtitle"
               />
             </v-list-item>
-            <div
-              v-for="(e, index) in list"
-              :key="`entry-${index}`"
-            >
-              <v-list-item
-                v-if="!e.small"
-                :key="e.title"
-                lines="two"
-                :title="e.title"
-                :class="e.disabled ? 'bg-panel' : 'bg-primary'"
-                density="compact"
-                class="my-1"
-                :disabled="e.disabled"
-                :subtitle="e.subtitle"
-                :to="e.to"
-              >
-                <template #prepend>
-                  <v-avatar>
-                    <v-icon
-                      size="x-large"
-                      :icon="e.icon"
-                    />
-                  </v-avatar>
-                </template>
-                <template #append>
-                  <v-btn
-                    v-if="(e as any).id === 'npcs'"
-                    size="small"
-                    variant="tonal"
-                    color="accent"
-                    prepend-icon="mdi-book-open-variant"
-                    class="text-none ml-1"
-                    @click.stop="openNpcs()"
-                  >
-                    {{ $t('active.landing.openNpcs') }}
-                  </v-btn>
-                </template>
-              </v-list-item>
-              <div v-else>
-                <v-btn
-                  v-if="(e as any).id === 'last-local' && lastLocalEncounter"
-                  block
-                  size="small"
-                  tile
-                  color="accent"
-                  flat
-                  @click="loadLastLocalEncounter()"
-                >
-                  <v-icon
-                    :icon="e.icon"
-                    start
-                  />
-                  {{
-                    $t('active.landing.resumeRound', {
-                      name: lastLocalEncounter.Encounter.Name,
-                      n: lastLocalEncounter.Round,
-                    })
-                  }}
-                </v-btn>
-                <v-btn
-                  v-else-if="(e as any).id === 'last-sheet' && lastLocalSheet"
-                  block
-                  size="small"
-                  tile
-                  color="accent"
-                  flat
-                  @click="loadLastLocalSheet()"
-                >
-                  <v-icon
-                    :icon="e.icon"
-                    start
-                  />
-                  {{
-                    $t('active.landing.resumeRound', {
-                      name: lastLocalSheet.Combatant.actor.Name,
-                      n: lastLocalSheet.Combatant.actor.CombatController.Round,
-                    })
-                  }}
-                </v-btn>
-                <v-btn
-                  v-else
-                  block
-                  size="small"
-                  tile
-                  flat
-                  color="gray"
-                  disabled
-                  :prepend-icon="e.icon"
-                  :to="e.to"
-                  class="my-1"
-                >
-                  {{ e.subtitle }}
-                </v-btn>
-              </div>
-            </div>
+            <template v-for="(e, index) in list" :key="`entry-${index}`">
+  <!-- Item padrão em lista -->
+  <v-list-item
+    v-if="!e.small"
+    lines="two"
+    density="compact"
+    :title="e.title"
+    :subtitle="e.subtitle"
+    :to="e.to"
+    :disabled="e.disabled"
+    :class="['my-1', e.disabled ? 'bg-panel' : 'bg-primary']"
+  >
+    <template #prepend>
+      <v-avatar>
+        <v-icon size="x-large" :icon="e.icon" />
+      </v-avatar>
+    </template>
+  </v-list-item>
+
+  <!-- Botões compactos (e.small) -->
+  <template v-else>
+    <!-- Retomar Encounter Local -->
+    <v-btn
+      v-if="(e as any).id === 'last-local' && lastLocalEncounter"
+      block
+      size="small"
+      tile
+      flat
+      color="accent"
+      class="my-1"
+      :prepend-icon="e.icon"
+      @click="loadLastLocalEncounter()"
+    >
+      {{
+        $t('active.landing.resumeRound', {
+          name: lastLocalEncounter.Encounter.Name,
+          n: lastLocalEncounter.Round,
+        })
+      }}
+    </v-btn>
+
+    <!-- Retomar Sheet Local -->
+    <v-btn
+      v-else-if="(e as any).id === 'last-sheet' && lastLocalSheet"
+      block
+      size="small"
+      tile
+      flat
+      color="accent"
+      class="my-1"
+      :prepend-icon="e.icon"
+      @click="loadLastLocalSheet()"
+    >
+      {{
+        $t('active.landing.resumeRound', {
+          name: lastLocalSheet.Combatant.actor.Name,
+          n: lastLocalSheet.Combatant.actor.CombatController.Round,
+        })
+      }}
+    </v-btn>
+
+    <!-- Botão Fallback Desabilitado -->
+    <v-btn
+      v-else
+      block
+      size="small"
+      tile
+      flat
+      disabled
+      color="grey"
+      class="my-1"
+      :prepend-icon="e.icon"
+      :to="e.to"
+    >
+      {{ e.subtitle }}
+    </v-btn>
+  </template>
+
+  <!-- Ação Rápida de NPCs -->
+  <v-list-item
+    v-if="(e as any).id === 'npcs'"
+    class="bg-primary my-1"
+    :prepend-icon="e.icon"
+    :title="$t('active.landing.openQuickReference')"
+    @click.stop="quickReferenceDialog = true"
+  />
+</template>
           </v-list>
         </v-card>
       </v-col>
     </v-row>
   </v-container>
+
+  <v-dialog v-model="quickReferenceDialog" max-width="900px">
+    <v-card>
+      <v-card-title class="d-flex justify-space-between align-center">
+        <span class="heading h2">{{ $t('active.landing.quickReference') }}</span>
+        <v-btn variant="text" @click="quickReferenceDialog = false">
+          <v-icon>mdi-close</v-icon>
+        </v-btn>
+      </v-card-title>
+      <v-card-text class="pt-0">
+        <QuickReferencePanel />
+      </v-card-text>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -165,6 +171,8 @@
   import { useDisplay } from 'vuetify'
   import { EncounterStore, PilotSheetStore } from '@/stores'
   import { useI18n } from 'vue-i18n'
+  import { usePilotJoinRequest } from '@/composables/usePilotJoinRequest'
+  import QuickReferencePanel from './runner/gm/InfoPanels/QuickReferencePanel.vue'
   const { t } = useI18n()
   const router = useRouter()
 
@@ -210,12 +218,6 @@
         to: '/pilot_management',
       },
       {
-        title: t('active.titles.activeCharacterSheets'),
-        subtitle: t('active.subtitles.createManageAndRunActivePlayer'),
-        icon: 'mdi-card-account-details-outline',
-        to: '/active-mode/sheet-manager',
-      },
-      {
         id: 'last-sheet',
         small: true,
         subtitle: t('active.subtitles.resumeLast'),
@@ -224,6 +226,13 @@
       },
     ],
     [
+      {
+        id: 'tracker',
+        title: t('ow.combatTracker'),
+        subtitle: t('ow.combatTrackerSubtitle'),
+        icon: 'cc:encounter',
+        to: '/table-chat?tab=tracker',
+      },
       {
         id: 'npcs',
         title: t('gm.titles.npcRoster'),
@@ -237,6 +246,7 @@
   const mobile = computed(() => {
     return _display.mdAndDown.value
   })
+  const quickReferenceDialog = ref<boolean>(false)
   const lastLocalEncounter = computed(() => {
     return EncounterStore().getActiveEncounter(EncounterStore().CurrentActiveID)
   })
@@ -250,12 +260,16 @@
 
   function loadLastLocalEncounter() {
     if (lastLocalEncounter.value) {
-      router.push(`/active-mode/gm-encounter-runner/${lastLocalEncounter.value.ID}`)
+      router.push('/table-chat?tab=tracker')
     }
   }
-  function loadLastLocalSheet() {
+  const { requestPilotJoin } = usePilotJoinRequest()
+  async function loadLastLocalSheet() {
     if (lastLocalSheet.value) {
-      router.push(`/active-mode/pilot-runner/${lastLocalSheet.value.ID}`)
+      const approved = await requestPilotJoin(lastLocalSheet.value)
+      if (approved) {
+        router.push(`/active-mode/pilot-runner/${lastLocalSheet.value.ID}`)
+      }
     }
   }
 </script>

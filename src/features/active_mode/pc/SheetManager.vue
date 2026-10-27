@@ -305,7 +305,9 @@ import type { ILogStream } from '@/classes/components/combat/log/events'
 import logger from '@/user/logger.js'
 import { notify } from '@/util/notify.js'
 import { useI18n } from 'vue-i18n'
+import { usePilotJoinRequest } from '@/composables/usePilotJoinRequest'
 
+const { requestPilotJoin } = usePilotJoinRequest()
 const { t } = useI18n()
 const router = useRouter()
 const showImportDialog = ref(false)
@@ -378,7 +380,9 @@ const activeSheets = computed(() => {
     return archives.sort((a, b) => b.Updated - a.Updated)
 })
 
-function launch(sheet: PilotSheet) {
+async function launch(sheet: PilotSheet) {
+  const approved = await requestPilotJoin(sheet)
+  if (!approved) return
   PilotSheetStore().SetActiveSheet(sheet.ID)
   router.push(`/active-mode/pilot-runner/${sheet.ID}`)
 }
@@ -486,13 +490,16 @@ function organizeRestore(ids: string[]) {
       if (!file) return
 
       const reader = new FileReader()
-      reader.onload = event => {
+      reader.onload = async event => {
         try {
           const json = JSON.parse(event.target?.result as string)
           const sheet = PilotSheet.Deserialize(json)
           PilotSheetStore().PilotSheets.push(sheet)
-          PilotSheetStore().SetActiveSheet(sheet.ID)
-          router.push(`pilot-runner/${sheet.ID}`)
+          const approved = await requestPilotJoin(sheet)
+          if (approved) {
+            PilotSheetStore().SetActiveSheet(sheet.ID)
+            router.push(`pilot-runner/${sheet.ID}`)
+          }
         } catch (error) {
           logger.error('Failed to import sheet:', error)
           notify({ type: 'error', text: t('active.tooltips.failedToImportSheetPleaseEnsure') })

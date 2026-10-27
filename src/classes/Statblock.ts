@@ -355,26 +355,26 @@ class Statblock {
       output += ` ${npc.NpcTemplateController.Templates.map(t => t.Name).join(' ')}`
     output += npcSubtitle(npc)
     output += '\n\n'
-    output += `ACTIVATIONS: ${npc.StatController.getCurrent('activations')} / ${npc.StatController.getMax('activations')}\n`
+    output += `ATIVAÇÕES: ${npc.StatController.getCurrent('activations')} / ${npc.StatController.getMax('activations')}\n`
 
-    output += `STRUCT: ${npc.StatController.getCurrent('structure')} / ${npc.StatController.getMax('structure')} | ARMOR: ${npc.StatController.getMax('armor')} | HP: ${npc.StatController.getCurrent('hp')} / ${npc.StatController.getMax('hp')}\n`
-    output += `STRESS: ${npc.StatController.getCurrent('stress')} / ${npc.StatController.getMax('stress')} | HEAT: ${npc.StatController.getCurrent('heatcap')} / ${npc.StatController.getMax('heatcap')} | SPD: ${npc.StatController.getCurrent('speed')} / ${npc.StatController.getMax('speed')}\n\n`
+    output += `ESTRUTURA: ${npc.StatController.getCurrent('structure')} / ${npc.StatController.getMax('structure')} | BLINDAGEM: ${npc.StatController.getMax('armor')} | PV: ${npc.StatController.getCurrent('hp')} / ${npc.StatController.getMax('hp')}\n`
+    output += `ESTRESSE: ${npc.StatController.getCurrent('stress')} / ${npc.StatController.getMax('stress')} | CALOR: ${npc.StatController.getCurrent('heatcap')} / ${npc.StatController.getMax('heatcap')} | VEL: ${npc.StatController.getCurrent('speed')} / ${npc.StatController.getMax('speed')}\n\n`
 
     output += `${maxStats(npc, [
-      ['H', 'Hull'],
+      ['C', 'Hull'],
       ['A', 'Agi'],
       ['S', 'Sys'],
       ['E', 'Eng'],
     ])}\n`
     output += `${maxStats(npc, [
-      ['SAVE', 'SaveTarget'],
-      ['EVADE', 'Evasion'],
-      ['EDEF', 'EDefense'],
+      ['SALVAGUARDA', 'SaveTarget'],
+      ['EVASÃO', 'Evasion'],
+      ['DEF_ELET', 'EDefense'],
     ])}\n`
     output += `${maxStats(npc, [
-      ['SENS', 'SensorRange'],
-      ['TECH_ATK', 'Tech Attack'],
-      ['SIZE', 'Size'],
+      ['SENSORES', 'SensorRange'],
+      ['ATQ_TEC', 'Tech Attack'],
+      ['TAMANHO', 'Size'],
     ])} \n\n`
 
     output += this.getFeatures(npc, includeFeatures)
@@ -383,7 +383,7 @@ class Statblock {
   }
 
   private static getFeatures(npc: Unit, showFeatureDetails = false): string {
-    let output = '[ FEATURES ]\n'
+    let output = '[ CARACTERÍSTICAS / SISTEMAS ]\n'
     if (showFeatureDetails) {
       output += npc.NpcFeatureController.Features.map(
         item =>
@@ -401,7 +401,7 @@ class Statblock {
   private static generateNarrativeBlock(npc: Unit): string {
     let output = ''
     if (npc.NarrativeController.TextItems.length > 0) {
-      output += '[ ADDITIONAL DETAIL ]\n'
+      output += '[ DETALHES ADICIONAIS ]\n'
       npc.NarrativeController.TextItems.forEach(item => {
         output += `  ${item.header || (item as any).title}\n   ${item.body.replace(
           /<[^>]*>/gi,
@@ -410,7 +410,7 @@ class Statblock {
       })
     }
     if (npc.NarrativeController.Clocks.length > 0) {
-      output += '[ CLOCKS ]\n'
+      output += '[ RELÓGIOS ]\n'
       npc.NarrativeController.Clocks.forEach(clock => {
         output += `  ${clock.Title}: ${'▣'.repeat(clock.Progress)}${'▢'.repeat(
           clock.Segments - clock.Progress
@@ -418,7 +418,7 @@ class Statblock {
       })
     }
     if (npc.NarrativeController.Tables.length > 0) {
-      output += '[ TABLES ]\n'
+      output += '[ TABELAS ]\n'
       npc.NarrativeController.Tables.forEach(table => {
         output += `  ${table.Title} (${table.Mult}D${table.Die})\n`
         table.Results.forEach(result => {
@@ -434,7 +434,7 @@ function mapNpcActions(actions: Action[], tier: number): string {
   let output = ''
   actions.forEach(action => {
     output += `\n    [ ${action.Name} - ${action.Activation} ]\n`
-    if (action.Trigger) output += `    Trigger: ${action.getTrigger(tier)}\n`
+    if (action.Trigger) output += `    Gatilho: ${action.getTrigger(tier)}\n`
     output += `    ${action.getDetail(tier).replace(/<[^>]*>/gi, '')}\n`
   })
   return output
@@ -455,22 +455,22 @@ function mapNpcWeaponStats(feature: NpcWeapon, tier: number): string {
     })
   }
   if (feature.Accuracy && feature.Accuracy(tier)) {
-    output += `${feature.Accuracy(tier)} Accuracy `
+    output += `${feature.Accuracy(tier)} Precisão `
   }
   if (feature.AttackBonus && feature.AttackBonus(tier)) {
-    output += `${feature.AttackBonus(tier)} Attack Bonus `
+    output += `${feature.AttackBonus(tier)} Bônus de Ataque `
   }
   if (feature.Attacks && feature.Attacks[tier - 1]) {
-    output += `${feature.Attacks[tier - 1]} Attacks/Activation `
+    output += `${feature.Attacks[tier - 1]} Ataques/Ativação `
   }
 
   const tags = feature.Tags.filter(t => !t.IsHidden).map(t => t.GetName(0, tier))
   if (tags.length) output += `\n  ${tags.join(', ')}`
 
-  output += mapNpcWeaponEffect('On Attack', feature.OnAttack, tier)
-  output += mapNpcWeaponEffect('On Hit', feature.OnHit, tier)
-  output += mapNpcWeaponEffect('On Crit', feature.OnCrit, tier)
-  output += mapNpcWeaponEffect('On Miss', feature.OnMiss, tier)
+  output += mapNpcWeaponEffect('Ao Atacar', feature.OnAttack, tier)
+  output += mapNpcWeaponEffect('Ao Acertar', feature.OnHit, tier)
+  output += mapNpcWeaponEffect('No Crítico', feature.OnCrit, tier)
+  output += mapNpcWeaponEffect('Ao Errar', feature.OnMiss, tier)
 
   return output
 }

@@ -25,7 +25,7 @@
         </v-btn>
 
         <v-btn
-          v-if="hasRoll"
+          v-if="hasRoll && !readOnly"
           color="error"
           variant="elevated"
           prepend-icon="mdi-dice-multiple"
@@ -38,7 +38,7 @@
         </v-btn>
 
         <v-btn
-          v-else
+          v-else-if="!readOnly"
           :color="color"
           variant="elevated"
           class="font-weight-bold px-4"
@@ -75,7 +75,7 @@
         </v-btn>
 
         <v-btn
-          v-if="!ready"
+          v-if="!ready && !readOnly"
           :color="color"
           variant="elevated"
           class="font-weight-bold px-4"
@@ -95,7 +95,7 @@
         </v-btn>
 
         <v-btn
-          v-else
+          v-else-if="!readOnly"
           :color="color"
           variant="elevated"
           class="font-weight-bold px-4"
@@ -139,6 +139,7 @@
   import CcForceOverride from '@/ui/components/modals/CCForceOverride.vue'
   import { killTargets } from './_shared/killTargets'
   import { broadcastEffectToChat } from './_shared/broadcastEffectToChat'
+  import { isSheetReadOnlySession } from '@/services/sheetReadOnlySession'
 
   const props = withDefaults(
     defineProps<{
@@ -173,6 +174,13 @@
   const isFree = ref(false)
   const isRolling = ref(false)
   const overridePrompt = ref(false)
+
+  /**
+   * Ficha em modo leitura (`?readonly=1`): o diálogo pode até ser aberto (ele traz a
+   * descrição do efeito, que é informação), mas **não** mostra nem executa rolagem ou
+   * ativação — a visão é só de leitura.
+   */
+  const readOnly = computed((): boolean => isSheetReadOnlySession())
 
   const events = computed((): ActiveEffectEvent[] =>
     Array.isArray(props.event) ? (props.event as ActiveEffectEvent[]) : [props.event]
@@ -343,6 +351,7 @@
   )
 
   function stage(asFree: boolean) {
+    if (readOnly.value) return
     events.value.forEach(e => (e.Staged = true))
     isFree.value = asFree || false
     ready.value = true
@@ -355,6 +364,7 @@
   }
 
   function broadcast(close: () => void) {
+    if (readOnly.value) return
     isRolling.value = true
     void broadcastEffectToChat(activeEffect.value, {
       summary: events.value[0]?.Summary,
@@ -366,7 +376,7 @@
   }
 
   function apply(close: () => void, force = false) {
-    if (!ready.value) return
+    if (readOnly.value || !ready.value) return
     if (!force && !isFree.value && noAction.value) {
       overridePrompt.value = true
       return

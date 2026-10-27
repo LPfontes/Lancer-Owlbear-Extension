@@ -71,8 +71,8 @@ class Frame extends LicensedItem implements IFeatureContainer {
     this.YPosition = frameData.y_pos || 30
     this.Mounts = frameData.mounts
     this._stats = frameData.stats
-    this.Traits = frameData.traits.map(x => new FrameTrait(x))
-    this.CoreSystem = new CoreSystem(frameData.core_system)
+    this.Traits = frameData.traits.map(x => new FrameTrait(x, this.ID))
+    this.CoreSystem = new CoreSystem(frameData.core_system, this.ID)
     this.ItemType = ItemType.Frame
     this._image_url = frameData.image_url
     this.Specialty = frameData.specialty || false

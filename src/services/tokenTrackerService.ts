@@ -6,6 +6,7 @@ import {
   LANCER_TOKEN_TRACKER_SLOTS,
   TOKEN_TRACKER_ITEM_SLOT_KEY,
   TOKEN_TRACKER_LOCAL_PREFS_ID,
+  TOKEN_TRACKER_MOVEMENT_KEY,
   TOKEN_TRACKER_SUMMARY_KEY,
   type TokenTrackerConfig,
   type TokenTrackerLocalPrefs,
@@ -27,6 +28,7 @@ import {
   sideFromCards,
   statReaderForActor,
   statReaderOf,
+  toTrackerInt,
   type TokenTrackerBinding,
   type TokenTrackerRenderReason,
   type TokenTrackerStatReader,
@@ -45,7 +47,22 @@ import {
   valuesToSummary,
   writerRank,
 } from '@/services/tokenTrackerSummary'
-import { layoutTokenTrackers } from '@/services/tokenTrackerLayout'
+import { layoutTokenTrackers, type MovementVisualState } from '@/services/tokenTrackerLayout'
+import {
+  movementValueFromRecord,
+  sanitizeMovementRecord,
+} from '@/services/tokenMovementRecord'
+import {
+  dumpRawStats,
+  installTokenTrackerDebugConsole,
+  reportStorage,
+  setTokenTrackerDumpProvider,
+  summarizeBinding,
+  summarizeValues,
+  tokenTrackerLog,
+  tokenTrackerTrace,
+  tokenTrackerWarn,
+} from '@/services/tokenTrackerDebug'
 import { buildTokenTrackerItems, isTokenTrackerItem } from '@/services/tokenTrackerRender'
 import {
   isTokenTracked,
@@ -54,6 +71,7 @@ import {
   saveLocalPrefs,
 } from '@/services/tokenTrackerWatchlist'
 import { i18n } from '@/i18n'
+import { isSheetReadOnlySession } from '@/services/sheetReadOnlySession'
 
 /**
  * Serviço dos token trackers (plano §6.3, §7).
@@ -79,9 +97,38 @@ export const TOKEN_TRACKER_REFRESH_DEBOUNCE_MS = 200
 /** Intervalo mínimo entre duas rodadas de gravação de resumo. */
 export const TOKEN_TRACKER_SUMMARY_DEBOUNCE_MS = 400
 
+/**
+ * Intervalo mínimo entre duas tentativas de recarregar as lojas locais.
+ *
+ * Sem isso, um token vinculado a uma ficha que realmente não está nesta janela
+ * levaria uma releitura do armazenamento a cada gesto/refresh.
+ */
+export const STORES_RETRY_COOLDOWN_MS = 3000
+
 export interface TokenTrackerSource {
   /** Encontro ativo desta janela (só o GM tem). */
   instance: any | null
+}
+
+/**
+ * O que a captura de movimento precisa para debitar no motor (§13.3/§13.4).
+ *
+ * `owner` é o dono do `CombatController` (mecha ou ator): é nele que
+ * `SpendMovement`/`Boost`/`HasStatus` são chamados.
+ */
+export interface MovementTarget {
+  tokenId: string
+  owner: unknown
+  combatController: any
+  statController: any
+  /** Movimento restante agora (`getCurrent(SPEED)`). */
+  remaining: number
+  /** Movimento padrão da ficha (`getMax(SPEED)`, sem Boost). */
+  maxSpeed: number
+  boostBonus: number
+  canBoost: boolean
+  immobilized: boolean
+  binding: TokenTrackerBinding
 }
 
 /** Estado de um token do ponto de vista do painel/lista (§7.4). */
@@ -117,6 +164,11 @@ interface ActorState {
    * o resumo quanto se o resumo do token é mais confiável que os valores locais.
    */
   rank: number
+  /**
+   * Dono do `CombatController` de onde saíram os valores (mecha ou ator). É nele que
+   * a captura de movimento debita (§13.4).
+   */
+  owner: unknown
 }
 
 class TokenTrackerService {
@@ -158,8 +210,21 @@ class TokenTrackerService {
     if (this.started) return
     this.started = true
 
+    installTokenTrackerDebugConsole()
+    setTokenTrackerDumpProvider(() => this.dumpDiagnostics())
+
     this.prefs = await loadLocalPrefs()
     await this.reloadConfig()
+
+    tokenTrackerLog('start', 'serviço iniciado', {
+      papel: this.role,
+      trackersLigados: this.config.enabled,
+      slotsDesligados: Object.entries(this.config.slots)
+        .filter(([, on]) => on === false)
+        .map(([slot]) => slot),
+      distanciaDoToken: this.config.panelGap,
+      politicaParaJogadores: this.config.playerVisibility,
+    })
 
     const onItems = OBR.scene.items.onChange(items => {
       this.onSceneItemsChanged(items)
@@ -184,7 +249,30 @@ class TokenTrackerService {
     if (typeof window !== 'undefined') {
       const listener = (event: Event) => this.onStateChangedEvent(event)
       window.addEventListener(TOKEN_TRACKER_STATE_EVENT, listener)
-      this.unsubscribes.push(() => window.removeEventListener(TOKEN_TRACKER_STATE_EVENT, listener))
+
+      const onPilotSynced = (e: any) => {
+        const id = e?.detail?.pilotId || e?.detail?.characterId
+        if (id) void this.refreshTokensForSheet(id)
+        else void this.scheduleRefreshAll()
+      }
+      const onNpcSynced = (e: any) => {
+        const id = e?.detail?.npcId || e?.detail?.characterId
+        if (id) void this.refreshTokensForSheet(id)
+        else void this.scheduleRefreshAll()
+      }
+
+      window.addEventListener('compcon-pilot-synced', onPilotSynced)
+      window.addEventListener('compcon-npc-synced', onNpcSynced)
+      window.addEventListener('compcon-pilot-join-combat', onPilotSynced)
+      window.addEventListener('compcon-init-sync', onPilotSynced)
+
+      this.unsubscribes.push(
+        () => window.removeEventListener(TOKEN_TRACKER_STATE_EVENT, listener),
+        () => window.removeEventListener('compcon-pilot-synced', onPilotSynced),
+        () => window.removeEventListener('compcon-npc-synced', onNpcSynced),
+        () => window.removeEventListener('compcon-pilot-join-combat', onPilotSynced),
+        () => window.removeEventListener('compcon-init-sync', onPilotSynced)
+      )
     }
 
     if (await OBR.scene.isReady().catch(() => false)) {
@@ -192,8 +280,52 @@ class TokenTrackerService {
     }
   }
 
-  /** Desliga o serviço (testes/desmontagem). */
-  public stop(): void {
+  /**
+   * Tabela de diagnóstico por token vinculado: o que o serviço vê, de onde tirou os
+   * números e por que o painel (não) está desenhado.
+   */
+  public async dumpDiagnostics(): Promise<unknown[]> {
+    if (!(await OBR.scene.isReady().catch(() => false))) {
+      tokenTrackerWarn('dump', 'a cena não está pronta; nada para inspecionar')
+      return []
+    }
+
+    const tokens = await this.getBoundTokens()
+    const rows: unknown[] = []
+
+    for (const token of tokens) {
+      const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
+      if (!binding) continue
+      const state = await this.resolveActorState(binding)
+      const localValues = readTrackerValuesFromStats(state.reader)
+      const summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
+      const merged = mergeTrackerValues(localValues, summary ? summaryToValues(summary) : null)
+      const description = await this.describeToken(token)
+      const attachments = await OBR.scene.local
+        .getItemAttachments([token.id])
+        .catch(() => [] as Item[])
+
+      rows.push({
+        token: token.name || token.id,
+        vinculo: summarizeBinding(binding),
+        lado: state.side,
+        fonteDosValores: state.readerSource,
+        forcaDaFonte: state.rank,
+        chavesLidas: dumpRawStats(state.reader),
+        valoresLocais: summarizeValues(localValues),
+        resumoNoToken: summary ? `${summarizeValues(summaryToValues(summary))} (${summary.w})` : 'nenhum',
+        valoresFinais: summarizeValues(merged.values),
+        naListaDestaJanela: description?.tracked,
+        resultado: description?.reason,
+        estadoDoMovimento: this.movementStateFor(token.id, state.owner),
+        itensNoMapa: attachments.filter(isTokenTrackerItem).length,
+      })
+    }
+
+    return rows
+  }
+
+  /** Desliga o serviço (testes/desmontagem). */  public stop(): void {
     for (const unsubscribe of this.unsubscribes) {
       try {
         unsubscribe()
@@ -279,7 +411,7 @@ class TokenTrackerService {
         this.bumpVersion()
       })
       .catch(err => {
-        console.warn(`[TokenTracker] Falha ao atualizar o token ${tokenId}:`, err)
+        tokenTrackerWarn('refresh', `falha ao atualizar o token ${tokenId}`, err)
       })
       .finally(() => {
         if (this.queues.get(tokenId) === next) this.queues.delete(tokenId)
@@ -296,6 +428,10 @@ class TokenTrackerService {
     await this.ensureLocalStoresLoaded()
 
     const tokens = await this.getBoundTokens()
+    tokenTrackerTrace('refreshAll', `${tokens.length} token(s) vinculado(s) na cena`, {
+      tokens: tokens.map(token => token.name || token.id),
+      papel: this.role,
+    })
 
     await this.prunePrefs(tokens.map(token => token.id))
 
@@ -309,36 +445,98 @@ class TokenTrackerService {
    * Garante que os rosters locais estejam carregados.
    *
    * Sem isso, uma janela que nunca abriu o Hangar/roster de NPCs fica com
-   * `Pilots`/`Npcs` vazios, a ficha não é encontrada e o painel aparece vazio —
-   * que é justamente a queixa mais provável de "sincronização com a ficha".
+   * `Pilots`/`Npcs` vazios, a ficha não é encontrada e o painel aparece vazio.
+   *
+   * `LoadPilots()` também carrega as fichas do modo ativo
+   * (`PilotStore().LoadPilots()` chama `PilotSheetStore().LoadPilotSheets()`), então
+   * esta é a única porta que precisa ser aberta.
+   *
+   * **`force` existe porque a primeira tentativa pode chegar cedo demais:** se o boot
+   * roda antes de o armazenamento/driver responder, `Pilots` fica 0 e — sem retry —
+   * aquela janela fica sem ficha para o resto da sessão (era o "dono: nenhum" no
+   * gesto de movimento). O cooldown evita tempestade quando o vazio é real.
    */
-  private async ensureLocalStoresLoaded(): Promise<void> {
-    if (this.storesLoadAttempted) return
+  private async ensureLocalStoresLoaded(force = false): Promise<void> {
+    const now = Date.now()
+    if (force) {
+      if (now - this.storesLoadAt < STORES_RETRY_COOLDOWN_MS) return
+    } else if (this.storesLoadAttempted) {
+      if (!this.localSourcesAreEmpty() || now - this.storesLoadAt < STORES_RETRY_COOLDOWN_MS) {
+        return
+      }
+    }
+
     this.storesLoadAttempted = true
+    this.storesLoadAt = now
     try {
       const pilotStore = this.pilotStore()
       const npcStore = this.npcStore()
+      const antes = {
+        pilotos: pilotStore?.Pilots?.length ?? 0,
+        fichas: this.pilotSheets().length,
+        npcs: npcStore?.Npcs?.length ?? 0,
+      }
 
-      if (pilotStore && (pilotStore.Pilots?.length ?? 0) === 0 && typeof pilotStore.LoadPilots === 'function') {
+      if (
+        (pilotStore?.Pilots?.length ?? 0) === 0 &&
+        typeof pilotStore?.LoadPilots === 'function'
+      ) {
         await pilotStore.LoadPilots()
       }
-      if (npcStore && (npcStore.Npcs?.length ?? 0) === 0 && typeof npcStore.LoadNpcs === 'function') {
+      if (this.pilotSheets().length === 0) {
+        // As fichas vivem em `pilot_sheets` e guardam o estado do modo ativo
+        await this.loadPilotSheets()
+      }
+      if ((npcStore?.Npcs?.length ?? 0) === 0 && typeof npcStore?.LoadNpcs === 'function') {
         await npcStore.LoadNpcs()
       }
+
+      const depois = {
+        pilotos: this.pilotStore()?.Pilots?.length ?? 0,
+        fichas: this.pilotSheets().length,
+        npcs: this.npcStore()?.Npcs?.length ?? 0,
+      }
+      if (force || antes.pilotos !== depois.pilotos || antes.fichas !== depois.fichas) {
+        tokenTrackerLog('stores', 'lojas locais recarregadas', { antes, depois })
+      }
     } catch (err) {
-      console.warn('[TokenTracker] Falha ao carregar os rosters locais:', err)
+      tokenTrackerWarn('stores', 'falha ao carregar os rosters locais', err)
+    }
+  }
+
+  /** Nenhuma fonte local tem nada? (sinal de armazenamento/driver que não respondeu) */
+  private localSourcesAreEmpty(): boolean {
+    return (
+      (this.pilotStore()?.Pilots?.length ?? 0) === 0 &&
+      this.pilotSheets().length === 0 &&
+      (this.npcStore()?.Npcs?.length ?? 0) === 0
+    )
+  }
+
+  /** `PilotSheetStore().LoadPilotSheets()`, quando o store estiver acessível. */
+  private async loadPilotSheets(): Promise<void> {
+    try {
+      const store = this.pilotSheetStore()
+      if (store && typeof store.LoadPilotSheets === 'function') await store.LoadPilotSheets()
+    } catch (err) {
+      tokenTrackerWarn('stores', 'falha ao carregar as fichas do modo ativo', err)
     }
   }
 
   private storesLoadAttempted = false
+  private storesLoadAt = 0
+  private warnedStorageEmpty = false
 
   /** Redesenha só os tokens que apontam para uma ficha (chamado quando ela muda). */
   public async refreshTokensForSheet(sheetId: string): Promise<void> {
     const tokens = await this.getBoundTokens()
+    const target = (sheetId || '').toLowerCase()
     for (const token of tokens) {
-      const binding = bindingFromMetadata(token.metadata[COMPCON_METADATA_KEY])
+      const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
       if (!binding) continue
-      if (binding.sheetId === sheetId || binding.mechId === sheetId) {
+      const bSheetId = (binding.sheetId || '').toLowerCase()
+      const bMechId = (binding.mechId || '').toLowerCase()
+      if (bSheetId === target || (bMechId && bMechId === target)) {
         await this.refreshToken(token.id)
       }
     }
@@ -427,11 +625,33 @@ class TokenTrackerService {
     const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
     if (!binding) return null
 
+    if (this.localSourcesAreEmpty()) {
+      await this.ensureLocalStoresLoaded(true)
+    }
+
     const state = await this.resolveActorState(binding)
     const localValues = readTrackerValuesFromStats(state.reader)
-    const summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
+    let summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
+    if (!summary) {
+      const compConMeta = token.metadata?.[COMPCON_METADATA_KEY] as any
+      if (compConMeta?.stats) {
+        summary = valuesToSummary(
+          {
+            pv: compConMeta.stats.hp,
+            heat: compConMeta.stats.heat,
+            structure: compConMeta.stats.structure,
+            stress: compConMeta.stats.stress,
+            overshield: compConMeta.stats.overshield,
+            speed: compConMeta.stats.speed,
+          },
+          'token/metadata',
+          compConMeta.lastUpdated || Date.now()
+        )
+      }
+    }
     const fromToken = summary ? summaryToValues(summary) : null
-    const merged = mergeTrackerValues(localValues, fromToken)
+    const summaryWins = !!summary && (writerRank(summary.w) > state.rank || (state.rank === 0 && !!fromToken))
+    const merged = mergeTrackerValues(summaryWins ? null : localValues, fromToken)
 
     const tracked = isTokenTracked({
       tokenId: token.id,
@@ -495,21 +715,54 @@ class TokenTrackerService {
 
     const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
     if (!binding) {
+      tokenTrackerTrace('refresh', `token ${tokenId}: sem vínculo; limpando itens`)
       await this.clearItems(tokenId)
       this.signatures.delete(tokenId)
       return
     }
 
+    if (this.localSourcesAreEmpty()) {
+      await this.ensureLocalStoresLoaded(true)
+    }
+
     const state = await this.resolveActorState(binding)
     const localValues = readTrackerValuesFromStats(state.reader)
-    const summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
+    let summary = sanitizeTokenTrackerSummary(token.metadata?.[TOKEN_TRACKER_SUMMARY_KEY])
+    if (!summary) {
+      const compConMeta = token.metadata?.[COMPCON_METADATA_KEY] as any
+      if (compConMeta?.stats) {
+        summary = valuesToSummary(
+          {
+            pv: compConMeta.stats.hp,
+            heat: compConMeta.stats.heat,
+            structure: compConMeta.stats.structure,
+            stress: compConMeta.stats.stress,
+            overshield: compConMeta.stats.overshield,
+            speed: compConMeta.stats.speed,
+          },
+          'token/metadata',
+          compConMeta.lastUpdated || Date.now()
+        )
+      }
+    }
     const fromToken = summary ? summaryToValues(summary) : null
 
     // O resumo veio de uma fonte mais forte (o encontro ativo, tipicamente em outra
-    // janela)? Então ele MANDA, e os valores locais — que são o estado de fora do
-    // combate — não podem sobrescrevê-lo no desenho.
-    const summaryWins = !!summary && writerRank(summary.w) > state.rank
+    // janela) ou de um token já com stats de combate contra um template de Hangar (rank 0)?
+    // Então ele MANDA, e os valores locais — que são o estado de fora do combate —
+    // não podem sobrescrevê-lo no desenho.
+    const summaryWins = !!summary && (writerRank(summary.w) > state.rank || (state.rank === 0 && !!fromToken))
     const merged = mergeTrackerValues(summaryWins ? null : localValues, fromToken)
+
+    // O MOVIMENTO não é derivado da ficha: ele é gravado no próprio token pelo arrasto
+    // (§13 — revisão da captura). Quando existe, é ele que manda no slot `speed`, em
+    // qualquer janela — inclusive numa que não tenha a ficha e sem esperar o resumo.
+    const movementRecord = sanitizeMovementRecord(token.metadata?.[TOKEN_TRACKER_MOVEMENT_KEY])
+    if (movementRecord) {
+      merged.values.speed = movementValueFromRecord(movementRecord)
+      merged.origins.speed = 'token'
+      merged.hasValues = true
+    }
 
     const tracked = isTokenTracked({
       tokenId,
@@ -517,10 +770,39 @@ class TokenTrackerService {
       prefs: this.getPrefs(),
     })
 
+    const movementState = this.movementStateFor(tokenId, state.owner)
+
+    tokenTrackerTrace('refresh', `"${token.name || tokenId}"`, {
+      vinculo: summarizeBinding(binding),
+      papel: this.role,
+      lado: state.side,
+      fonteDosValores: state.readerSource,
+      forcaDaFonte: state.rank,
+      resumoDeQuem: summary ? `${summary.w}` : 'nenhum',
+      desenhandoDoResumo: summaryWins,
+      chavesLidas: dumpRawStats(state.reader),
+      valoresLocais: summarizeValues(localValues),
+      resumoNoToken: summary ? summarizeValues(summaryToValues(summary)) : 'nenhum',
+      valoresFinais: summarizeValues(merged.values),
+      estadoDoMovimento: movementState,
+      naListaDestaJanela: tracked,
+    })
+
+    if (!merged.hasValues) {
+      tokenTrackerWarn(
+        'refresh',
+        `"${token.name || tokenId}": NENHUM valor — nem ficha local (${state.readerSource}) nem resumo no token; o painel fica vazio`,
+        { chavesLidas: dumpRawStats(state.reader) }
+      )
+    }
+
     // A escrita do resumo independe de o painel aparecer nesta janela: o número
     // precisa existir para as OUTRAS janelas desenharem. A força da fonte vai no
     // escritor para uma fonte fraca não passar por cima de uma forte.
-    this.queueSummaryIfWriter(tokenId, binding, localValues, state.rank)
+    // Nunca sobrescreve com valores zerados se o resumo existente do token venceu.
+    if (!summaryWins && state.rank >= 1) {
+      this.queueSummaryIfWriter(tokenId, binding, localValues, state.rank)
+    }
 
     const decision = evaluateTokenRender({
       role: this.role,
@@ -533,6 +815,12 @@ class TokenTrackerService {
     })
 
     if (!decision.render) {
+      tokenTrackerTrace('refresh', `"${token.name || tokenId}": não desenha (${decision.reason})`, {
+        lado: state.side,
+        naLista: tracked,
+        ocultoNoEncontro: state.hiddenFromPlayers,
+        politica: this.config.playerVisibility,
+      })
       await this.clearItems(tokenId)
       this.signatures.delete(tokenId)
       return
@@ -540,6 +828,7 @@ class TokenTrackerService {
 
     const bounds = await OBR.scene.items.getItemBounds([tokenId]).catch(() => null)
     if (!bounds) {
+      tokenTrackerWarn('refresh', `"${token.name || tokenId}" sem bounds; nada a desenhar`)
       await this.clearItems(tokenId)
       return
     }
@@ -548,14 +837,21 @@ class TokenTrackerService {
       bounds,
       values: merged.values,
       config: this.config,
+      movementState,
     })
 
     const signature = [
       buildTrackerSignature(merged.values, this.config),
+      // O estado do movimento muda a COR do badge sem mudar valores: sem ele aqui, um
+      // Boost concedido não repintaria o badge.
+      movementState,
       [bounds.min.x, bounds.min.y, bounds.max.x, bounds.max.y].join(','),
     ].join('|')
 
-    if (this.signatures.get(tokenId) === signature) return
+    if (this.signatures.get(tokenId) === signature) {
+      tokenTrackerTrace('refresh', `"${token.name || tokenId}": assinatura igual, itens intactos`)
+      return
+    }
     this.signatures.set(tokenId, signature)
 
     const wanted = buildTokenTrackerItems(tokenId, commands, {
@@ -570,8 +866,39 @@ class TokenTrackerService {
     this.version.value++
   }
 
+  /**
+   * Quem sabe se um gesto está com estouro pendente (§13.5) — a captura registra.
+   *
+   * É um resolvedor registrado de fora, e não um `import`, para não criar ciclo entre
+   * o serviço e a captura (a captura já importa o serviço).
+   */
+  public setMovementOverflowResolver(resolver: ((tokenId: string) => boolean) | null): void {
+    this.movementOverflowResolver = resolver
+  }
+
+  private movementOverflowResolver: ((tokenId: string) => boolean) | null = null
+
+  /**
+   * Estado visual do Movimento para o badge (§6.1): estouro pendente ganha de Boost,
+   * que ganha do normal.
+   */
+  private movementStateFor(tokenId: string, owner: unknown): MovementVisualState {
+    try {
+      if (this.movementOverflowResolver?.(tokenId)) return 'overflow'
+    } catch {
+      // resolvedor quebrado não pode derrubar o desenho
+    }
+    const boostBonus = toTrackerInt(
+      (owner as { CombatController?: { BoostBonus?: unknown } } | null)?.CombatController?.BoostBonus
+    )
+    return boostBonus > 0 ? 'boosted' : 'normal'
+  }
+
   /** Aplica a diferença entre o que existe no token e o que deveria existir. */
   private async syncItems(tokenId: string, wanted: Item[]): Promise<void> {
+    // Ficha em modo leitura nesta janela: nenhum desenho de tracker no token.
+    if (isSheetReadOnlySession()) return
+
     const existing = await OBR.scene.local.getItemAttachments([tokenId]).catch(() => [] as Item[])
     const ours = existing.filter(isTokenTrackerItem)
     const desiredById = new Map(wanted.map(item => [item.id, item]))
@@ -581,9 +908,21 @@ class TokenTrackerService {
     const toUpdate = ours.filter(item => desiredById.has(item.id)).map(item => item.id)
     const toAdd = wanted.filter(item => !existingIds.has(item.id))
 
+    // Contagem por slot: responde "faltam os quadrados de Estresse" sem achismo — se
+    // `stress` vier 0 aqui, a linha foi descartada na montagem.
+    const porSlot: Record<string, number> = {}
+    for (const item of wanted) {
+      const slot = String(item.metadata?.[TOKEN_TRACKER_ITEM_SLOT_KEY] ?? '?')
+      porSlot[slot] = (porSlot[slot] ?? 0) + 1
+    }
+    tokenTrackerTrace('items', `token ${tokenId}: +${toAdd.length} ~${toUpdate.length} -${toDelete.length}`, {
+      desejados: wanted.length,
+      porSlot,
+    })
+
     if (toDelete.length) {
       await OBR.scene.local.deleteItems(toDelete).catch(err => {
-        console.warn('[TokenTracker] Falha ao remover itens do painel:', err)
+        tokenTrackerWarn('items', 'falha ao remover itens do painel', err)
       })
     }
 
@@ -596,13 +935,13 @@ class TokenTrackerService {
           }
         })
         .catch(err => {
-          console.warn('[TokenTracker] Falha ao atualizar itens do painel:', err)
+          tokenTrackerWarn('items', 'falha ao atualizar itens do painel', err)
         })
     }
 
     if (toAdd.length) {
       await OBR.scene.local.addItems(toAdd).catch(err => {
-        console.warn('[TokenTracker] Falha ao criar itens do painel:', err)
+        tokenTrackerWarn('items', 'falha ao criar itens do painel', err)
       })
     }
   }
@@ -637,6 +976,7 @@ class TokenTrackerService {
       const resolved = statReaderForActor(combatant.actor ?? combatant.npc, binding)
       return {
         reader: resolved.reader,
+        owner: resolved.owner,
         side: normalizeSide(combatant.side),
         hiddenFromPlayers: combatant.hiddenFromPlayers === true,
         readerSource: `encontro ativo desta janela → ${resolved.source}`,
@@ -653,6 +993,7 @@ class TokenTrackerService {
       const resolved = statReaderForActor(storedCombatant.actor ?? storedCombatant.npc, binding)
       return {
         reader: resolved.reader,
+        owner: resolved.owner,
         side: normalizeSide(storedCombatant.side),
         hiddenFromPlayers: storedCombatant.hiddenFromPlayers === true,
         readerSource: `encontro "${encounterName}" lido do storage → ${resolved.source}`,
@@ -660,15 +1001,180 @@ class TokenTrackerService {
       }
     }
 
-    const local = this.readerFromLocalStores(binding)
+    let local = this.readerFromLocalStores(binding)
+    if (!local.reader) {
+      const fromStorage = await this.actorFromLocalStorage(binding)
+      if (fromStorage.reader) {
+        local = fromStorage
+        this.rememberReader(binding, local)
+      }
+    }
+
     return {
       reader: local.reader,
+      owner: local.owner,
       side: this.sideFromLocalSnapshot(binding),
       hiddenFromPlayers: false,
       readerSource: local.source,
-      // Ficha do modo ativo / stores locais: é o estado FORA do combate. Se o
-      // encontro ativo existir em outra janela, o resumo do token é mais confiável.
-      rank: 1,
+      // Ficha do modo ativo (rank 1) vs template de Hangar/Roster fora do combate (rank 0).
+      // Se o token já tiver resumo salvo de combate, um template fora de combate não pode sobrescrever.
+      rank: (local as any).isCombatSheet ? 1 : 0,
+    }
+  }
+
+  /**
+   * Busca a ficha diretamente no armazenamento local (IndexedDB) como salvaguarda
+   * quando os stores em memória desta janela ainda não foram populados.
+   */
+  private async actorFromLocalStorage(binding: TokenTrackerBinding): Promise<{
+    reader: TokenTrackerStatReader | null
+    owner: unknown
+    source: string
+    isCombatSheet?: boolean
+  }> {
+    try {
+      const { GetItem, GetAll } = await import('@/io/Storage')
+      const targetId = (binding.sheetId || '').toLowerCase()
+      const targetMechId = (binding.mechId || '').toLowerCase()
+      const kind = sheetKindForBinding(binding)
+
+      // 1. Tenta em 'pilot_sheets' (fichas do modo ativo salvas com estado de combate)
+      if (kind !== 'npc') {
+        const allSheets = (await GetAll('pilot_sheets').catch(() => [])) as any[]
+        const rawSheet = allSheets.find((s: any) => {
+          const sId = (s.id || s.ID || '').toLowerCase()
+          const actorId = (s.combatant?.actor?.id || s.combatant?.actor?.ID || '').toLowerCase()
+          return sId === targetId || actorId === targetId || (targetMechId && (sId === targetMechId || actorId === targetMechId))
+        })
+        if (rawSheet) {
+          const PilotSheet = (await import('@/features/pilot_management/store/PilotSheet')).default
+          const sheetInstance = PilotSheet.Deserialize(rawSheet)
+          if (sheetInstance) {
+            const resolved = statReaderForActor(sheetInstance.Pilot ?? sheetInstance.Combatant?.actor, binding)
+            return {
+              reader: resolved.reader,
+              owner: resolved.owner,
+              source: `IndexedDB(pilot_sheets) → ${resolved.source}`,
+              isCombatSheet: true,
+            }
+          }
+        }
+      }
+
+      // 2. Tenta buscar em 'pilots' (caso fallback: hangar/builder fora de combate)
+      if (kind !== 'npc') {
+        let rawPilot: any = await GetItem('pilots', binding.sheetId).catch(() => null)
+        if (!rawPilot && targetMechId) {
+          rawPilot = await GetItem('pilots', binding.mechId!).catch(() => null)
+        }
+        if (!rawPilot) {
+          const allPilots = (await GetAll('pilots').catch(() => [])) as any[]
+          rawPilot = allPilots.find((p: any) => {
+            const pId = (p.id || p.ID || '').toLowerCase()
+            if (pId === targetId || (targetMechId && pId === targetMechId)) return true
+            if (Array.isArray(p.Mechs)) {
+              return p.Mechs.some((m: any) => {
+                const mId = (m.id || m.ID || '').toLowerCase()
+                return mId === targetId || (targetMechId && mId === targetMechId)
+              })
+            }
+            return false
+          })
+        }
+
+        if (rawPilot) {
+          const { Pilot } = await import('@/classes/pilot/Pilot')
+          const pilotInstance = Pilot.Deserialize(rawPilot)
+          if (pilotInstance) {
+            if (!pilotInstance.ActiveMech && pilotInstance.Mechs?.length) {
+              pilotInstance.ActiveMech = pilotInstance.Mechs[0]
+            }
+            if (typeof pilotInstance.SetStats === 'function') {
+              pilotInstance.SetStats()
+            }
+            if (pilotInstance.ActiveMech && typeof pilotInstance.ActiveMech.SetStats === 'function') {
+              pilotInstance.ActiveMech.SetStats()
+            }
+
+            const pilotStore = this.pilotStore()
+            if (pilotStore && Array.isArray(pilotStore.Pilots)) {
+              const existingIdx = pilotStore.Pilots.findIndex(
+                (p: any) => (p.ID || p.id || '').toLowerCase() === ((pilotInstance as any).ID || (pilotInstance as any).id || '').toLowerCase()
+              )
+              if (existingIdx !== -1) {
+                pilotStore.Pilots.splice(existingIdx, 1, pilotInstance)
+              } else {
+                pilotStore.Pilots.push(pilotInstance)
+              }
+            }
+
+            const resolved = statReaderForActor(pilotInstance, binding)
+            return {
+              reader: resolved.reader,
+              owner: resolved.owner,
+              source: `IndexedDB(pilots) → ${resolved.source}`,
+              isCombatSheet: false,
+            }
+          }
+        }
+      }
+
+      // 3. Se não achou ou for NPC, tenta em 'npcs'
+      let rawNpc: any = await GetItem('npcs', binding.sheetId).catch(() => null)
+      if (!rawNpc) {
+        const allNpcs = (await GetAll('npcs').catch(() => [])) as any[]
+        rawNpc = allNpcs.find((n: any) => (n.id || n.ID || '').toLowerCase() === targetId)
+      }
+
+      if (rawNpc) {
+        let npcInstance: any = null
+        if (rawNpc.npcType === 'doodad') {
+          const { Doodad } = await import('@/classes/npc/doodad/Doodad')
+          npcInstance = Doodad.Deserialize(rawNpc)
+        } else if (rawNpc.npcType === 'eidolon') {
+          const { Eidolon } = await import('@/classes/npc/eidolon/Eidolon')
+          npcInstance = Eidolon.Deserialize(rawNpc)
+        } else {
+          const { Unit } = await import('@/classes/npc/unit/Unit')
+          npcInstance = Unit.Deserialize(rawNpc)
+        }
+
+        if (npcInstance) {
+          const npcStore = this.npcStore()
+          if (npcStore && Array.isArray(npcStore.Npcs)) {
+            const existingIdx = npcStore.Npcs.findIndex(
+              (n: any) => (n.ID || n.id || '').toLowerCase() === (npcInstance.ID || npcInstance.id || '').toLowerCase()
+            )
+            if (existingIdx !== -1) {
+              npcStore.Npcs.splice(existingIdx, 1, npcInstance)
+            } else {
+              npcStore.Npcs.push(npcInstance)
+            }
+          }
+
+          return {
+            reader: statReaderOf(npcInstance),
+            owner: npcInstance,
+            source: 'IndexedDB(npcs)',
+            isCombatSheet: false,
+          }
+        }
+      }
+
+      return {
+        reader: null,
+        owner: null,
+        source: 'não encontrado no IndexedDB (pilots, npcs, pilot_sheets)',
+        isCombatSheet: false,
+      }
+    } catch (err) {
+      tokenTrackerWarn('stores', 'falha ao buscar ator no IndexedDB', err)
+      return {
+        reader: null,
+        owner: null,
+        source: `erro ao consultar IndexedDB: ${String(err)}`,
+        isCombatSheet: false,
+      }
     }
   }
 
@@ -716,7 +1222,7 @@ class TokenTrackerService {
       this.storedEncountersCache = { at: now, instances }
       return instances
     } catch (err) {
-      console.warn('[TokenTracker] Falha ao ler os encontros ativos do storage:', err)
+      tokenTrackerWarn('stores', 'falha ao ler os encontros ativos do storage', err)
       this.storedEncountersCache = { at: now, instances: [] }
       return []
     }
@@ -727,10 +1233,123 @@ class TokenTrackerService {
     this.storedEncountersCache = null
   }
 
+  /**
+   * Tudo que a captura de movimento (§13.3) precisa saber do token: o
+   * `CombatController` do dono da ficha e os números do turno.
+   *
+   * Devolve `null` quando o token não tem vínculo, não tem ficha resolvida nesta
+   * janela, ou o dono não tem `CombatController` — nos três casos não há o que
+   * debitar, e a captura prefere não tocar em nada.
+   */
+  public async getMovementTarget(tokenId: string): Promise<MovementTarget | null> {
+    try {
+      const token = (await OBR.scene.items.getItems([tokenId]).catch(() => [] as Item[]))[0]
+      if (!token) {
+        tokenTrackerWarn('movimento', `token ${tokenId} não existe mais na cena`)
+        return null
+      }
+
+      const binding = bindingFromMetadata(token.metadata?.[COMPCON_METADATA_KEY])
+      if (!binding) {
+        // Esperado ao arrastar cenário: a captura já filtra isso, então chegar aqui
+        // significa que o vínculo sumiu entre o gesto e o settle.
+        tokenTrackerTrace(
+          'movimento',
+          `"${token.name || tokenId}": sem vínculo em metadata["${COMPCON_METADATA_KEY}"]`
+        )
+        return null
+      }
+
+      // Janela sem NENHUMA fonte (nem piloto, nem ficha, nem NPC): a tentativa de
+      // carga do boot pode ter chegado antes de o armazenamento responder. Tenta de
+      // novo — com cooldown — antes de concluir que a ficha não existe aqui.
+      if (this.localSourcesAreEmpty()) {
+        await this.ensureLocalStoresLoaded(true)
+        // Continuou vazio: o problema não é timing, é esta janela não enxergar o
+        // armazenamento (origem diferente ou driver em memória). Vale dizer isso uma
+        // vez, com o retrato que responde a pergunta.
+        if (this.localSourcesAreEmpty() && !this.warnedStorageEmpty) {
+          this.warnedStorageEmpty = true
+          const report = await reportStorage()
+          tokenTrackerWarn(
+            'stores',
+            'esta janela não enxerga NENHUMA ficha: ou o token não está vinculado a uma ficha que exista aqui, ou o armazenamento/ origem desta janela é outro (compare `__ccTokenTracker.storage()` nas duas janelas)',
+            report ?? undefined
+          )
+        }
+      }
+
+      const state = await this.resolveActorState(binding)
+      const owner = state.owner as { CombatController?: any } | null
+      const combat = owner?.CombatController
+      if (!combat || typeof combat.SpendMovement !== 'function') {
+        tokenTrackerWarn(
+          'movimento',
+          `"${token.name || tokenId}": ficha resolvida mas o dono não tem CombatController com SpendMovement — nada debitado`,
+          {
+            vinculo: summarizeBinding(binding),
+            fonteDosValores: state.readerSource,
+            temStatController: !!state.reader,
+            dono: describeOwner(owner),
+          }
+        )
+        return null
+      }
+
+      const values = readTrackerValuesFromStats(state.reader)
+      const remaining = values.speed?.current ?? 0
+      const maxSpeed = toTrackerInt(combat.StatController?.getMax?.('speed'))
+
+      tokenTrackerTrace('movimento', `alvo de movimento de "${token.name || tokenId}"`, {
+        vinculo: summarizeBinding(binding),
+        fonte: state.readerSource,
+        dono: describeOwner(owner),
+        restante: remaining,
+        capDoTurno: toTrackerInt(combat.BoostedSpeed),
+        boostBonus: toTrackerInt(combat.BoostBonus),
+      })
+
+      return {
+        tokenId,
+        owner,
+        combatController: combat,
+        statController: combat.StatController ?? null,
+        remaining,
+        maxSpeed,
+        boostBonus: toTrackerInt(combat.BoostBonus),
+        canBoost: this.canBoost(combat),
+        immobilized: this.hasStatus(combat, 'immobilized'),
+        binding,
+      }
+    } catch (err) {
+      tokenTrackerWarn('movimento', 'falha ao resolver o alvo de movimento', err)
+      return null
+    }
+  }
+
+  /** `CanActivate('boost')` do motor, sem deixar uma ficha estranha derrubar a captura. */
+  private canBoost(combat: any): boolean {
+    try {
+      return combat?.CanActivate?.('boost') === true
+    } catch {
+      return false
+    }
+  }
+
+  private hasStatus(combat: any, status: string): boolean {
+    try {
+      return combat?.HasStatus?.(status) === true
+    } catch {
+      return false
+    }
+  }
+
   /** Ficha local desta janela (o jogador tem a própria; o GM tem todas que foram sincronizadas). */
   private readerFromLocalStores(binding: TokenTrackerBinding): {
     reader: TokenTrackerStatReader | null
+    owner: unknown
     source: string
+    isCombatSheet?: boolean
   } {
     try {
       const pilotStore = this.pilotStore()
@@ -740,74 +1359,128 @@ class TokenTrackerService {
       const kind = sheetKindForBinding(binding)
 
       if (!pilotStore && !npcStore) {
-        return { reader: null, source: 'sem acesso aos stores (setStoreAccessors não foi chamado)' }
+        return {
+          reader: null,
+          owner: null,
+          source: 'sem acesso aos stores (setStoreAccessors não foi chamado)',
+          isCombatSheet: false,
+        }
       }
 
       const npcCount = npcStore?.Npcs?.length ?? 0
       const pilotCount = pilotStore?.Pilots?.length ?? 0
       const kindLabel = kind === 'npc' ? 'ficha de NPC' : kind === 'mech' ? 'ficha de MECHA' : 'ficha de PILOTO (a pé)'
 
-      // Candidatos em ordem de prioridade, e do TIPO certo: vínculo com `mechId` lê o
-      // MECHA (`ActiveMech`/`Mechs[mechId]`), vínculo sem ele lê o PRÓPRIO piloto.
-      // Nunca misturar: o StatController do piloto não tem calor/estrutura/estresse de
-      // mecha, e o mecha do Hangar pode estar com os máximos pela metade.
-      const candidates: Array<{ reader: TokenTrackerStatReader | null; source: string }> = []
-      const readerFor = (actor: unknown): TokenTrackerStatReader | null =>
-        kind === 'mech' ? statReaderForActor(actor, binding).reader : statReaderOf(actor)
+      const candidates: Array<{
+        reader: TokenTrackerStatReader | null
+        owner: unknown
+        source: string
+        isCombatSheet: boolean
+      }> = []
+      const readerFor = (actor: unknown): { reader: TokenTrackerStatReader | null; owner: unknown } =>
+        kind === 'mech'
+          ? statReaderForActor(actor, binding)
+          : { reader: statReaderOf(actor), owner: actor }
+
+      const targetId = (binding.sheetId || '').toLowerCase()
+      const targetMechId = (binding.mechId || '').toLowerCase()
 
       if (kind === 'npc') {
-        const npc = npcStore?.getNpcByID?.(binding.sheetId)
+        const npc =
+          npcStore?.Npcs?.find((n: any) => (n.ID || n.id || '').toLowerCase() === targetId) ||
+          npcStore?.getNpcByID?.(binding.sheetId)
         if (npc) {
-          candidates.push({ reader: readerFor(npc), source: `NpcStore(${npcCount} npcs) por sheetId` })
+          candidates.push({ ...readerFor(npc), source: `NpcStore(${npcCount} npcs) por sheetId`, isCombatSheet: false })
         }
       } else {
         if (activeSheet && sheetMatchesBinding(activeSheet, binding)) {
           candidates.push({
-            reader: readerFor(activeSheet?.Pilot ?? activeSheet?.Combatant?.actor),
+            ...readerFor(activeSheet?.Pilot ?? activeSheet?.Combatant?.actor),
             source: `ficha ATIVA desta janela [${kindLabel}]`,
+            isCombatSheet: true,
           })
         }
 
         const sheet = sheets.find((candidate: any) => sheetMatchesBinding(candidate, binding))
         if (sheet) {
           candidates.push({
-            reader: readerFor(sheet?.Pilot ?? sheet?.Combatant?.actor),
+            ...readerFor(sheet?.Pilot ?? sheet?.Combatant?.actor),
             source: `PilotSheetStore(${sheets.length} fichas) [${kindLabel}]`,
+            isCombatSheet: true,
           })
         }
 
-        const pilot = pilotStore?.getPilotByID?.(binding.sheetId)
+        const pilot =
+          pilotStore?.Pilots?.find((p: any) => {
+            const pId = (p.ID || p.id || '').toLowerCase()
+            if (pId === targetId || (targetMechId && pId === targetMechId)) return true
+            if (Array.isArray(p.Mechs)) {
+              return p.Mechs.some((m: any) => {
+                const mId = (m.ID || m.id || '').toLowerCase()
+                return mId === targetId || (targetMechId && mId === targetMechId)
+              })
+            }
+            return false
+          }) || pilotStore?.getPilotByID?.(binding.sheetId)
+
         if (pilot) {
           const resolved = statReaderForActor(pilot, binding)
           candidates.push({
-            reader: readerFor(pilot),
+            ...readerFor(pilot),
             source:
               kind === 'mech'
                 ? `PilotStore(${pilotCount} pilotos) → ${resolved.source} [${kindLabel}]`
                 : `PilotStore(${pilotCount} pilotos) [${kindLabel}]`,
+            isCombatSheet: false,
           })
         }
       }
 
-      const npc = npcStore?.getNpcByID?.(binding.sheetId)
+      const npc =
+        npcStore?.Npcs?.find((n: any) => (n.ID || n.id || '').toLowerCase() === targetId) ||
+        npcStore?.getNpcByID?.(binding.sheetId)
       if (npc) {
-        candidates.push({ reader: readerFor(npc), source: `NpcStore(${npcCount} npcs) por fallback` })
+        candidates.push({ ...readerFor(npc), source: `NpcStore(${npcCount} npcs) por fallback`, isCombatSheet: false })
+      }
+
+      const synced = this.syncedSheets()
+      if (synced) {
+        const syncedMatch = Object.values(synced).find((s: any) => {
+          const cId = (s.characterId || s.data?.id || s.data?.ID || '').toLowerCase()
+          if (cId === targetId || (targetMechId && cId === targetMechId)) return true
+          if (Array.isArray(s.data?.Mechs)) {
+            return s.data.Mechs.some((m: any) => {
+              const mId = (m.ID || m.id || '').toLowerCase()
+              return mId === targetId || (targetMechId && mId === targetMechId)
+            })
+          }
+          return false
+        })
+        if (syncedMatch?.data) {
+          const resolved = statReaderForActor(syncedMatch.data, binding)
+          if (resolved.reader) {
+            candidates.push({
+              ...readerFor(syncedMatch.data),
+              source: `roomSyncedSheets → ${resolved.source} [${kindLabel}]`,
+              isCombatSheet: true,
+            })
+          }
+        }
       }
 
       if (!candidates.length) {
         return this.withCachedReader(binding, {
           reader: null,
+          owner: null,
           source: `ficha ${binding.sheetId} não está no PilotStore(${pilotCount} pilotos), no PilotSheetStore(${sheets.length} fichas) nem no NpcStore(${npcCount} npcs)`,
+          isCombatSheet: false,
         })
       }
 
-      // A escolha é por PONTUAÇÃO (quantos stats a fonte tem preenchidos), não por
-      // ordem nem por "tem algum valor": o mecha do Hangar pode ter PV e estrutura e
-      // zero de estresse, e venceria a ficha do modo ativo — que é quem passou por
-      // `SetStats()`. Empate fica com a primeira da ordem de prioridade.
+      // Candidatos de combate (activeSheet, pilot_sheets) têm prioridade sobre templates fora de combate (hangar)
       const scored = candidates.map(candidate => ({
         ...candidate,
-        score: scoreTrackerValues(readTrackerValuesFromStats(candidate.reader)),
+        score: scoreTrackerValues(readTrackerValuesFromStats(candidate.reader)) + (candidate.isCombatSheet ? 100 : 0),
       }))
       const bestScore = Math.max(...scored.map(candidate => candidate.score))
       const best = scored.find(candidate => candidate.score === bestScore) ?? scored[0]
@@ -819,19 +1492,31 @@ class TokenTrackerService {
             : `${candidate.source}=${candidate.score}`
         )
         .join(' | ')
+      tokenTrackerTrace('resolve', `disputa de fontes para ${summarizeBinding(binding)}`, {
+        candidatos: scored.map(candidate => `${candidate.source}=${candidate.score}`),
+        escolhida: best.source,
+        pontuacao: best.score,
+      })
 
       if (best.score > 0) {
-        this.rememberReader(binding, { reader: best.reader, source: `(${best.score}) ${best.source}` })
-        return { reader: best.reader, source: overview }
+        this.rememberReader(binding, {
+          reader: best.reader,
+          owner: best.owner,
+          source: `(${best.score}) ${best.source}`,
+          isCombatSheet: best.isCombatSheet,
+        })
+        return { reader: best.reader, owner: best.owner, source: overview, isCombatSheet: best.isCombatSheet }
       }
 
       return this.withCachedReader(binding, {
         reader: best.reader,
+        owner: best.owner,
         source: `${overview} (nenhuma fonte tinha valores)`,
+        isCombatSheet: best.isCombatSheet,
       })
     } catch (err) {
-      console.warn('[TokenTracker] Falha ao resolver a ficha local:', err)
-      return { reader: null, source: `erro: ${String(err)}` }
+      tokenTrackerWarn('resolve', 'falha ao resolver a ficha local', err)
+      return { reader: null, owner: null, source: `erro: ${String(err)}` }
     }
   }
 
@@ -850,7 +1535,7 @@ class TokenTrackerService {
    */
   private resolvedReaders = new Map<
     string,
-    { reader: TokenTrackerStatReader; source: string; score: number }
+    { reader: TokenTrackerStatReader; owner: unknown; source: string; score: number; isCombatSheet?: boolean }
   >()
 
   private bindingKey(binding: TokenTrackerBinding): string {
@@ -859,7 +1544,7 @@ class TokenTrackerService {
 
   private rememberReader(
     binding: TokenTrackerBinding,
-    resolved: { reader: TokenTrackerStatReader | null; source: string }
+    resolved: { reader: TokenTrackerStatReader | null; owner: unknown; source: string; isCombatSheet?: boolean }
   ): void {
     if (!resolved.reader) return
     const key = this.bindingKey(binding)
@@ -868,22 +1553,35 @@ class TokenTrackerService {
     // Um controlador mais completo nunca é trocado por um parcial que apareceu
     // depois (o mecha do Hangar tem os máximos pela metade).
     if (previous && previous.score > score) return
-    this.resolvedReaders.set(key, { reader: resolved.reader, source: resolved.source, score })
+    this.resolvedReaders.set(key, {
+      reader: resolved.reader,
+      owner: resolved.owner,
+      source: resolved.source,
+      score,
+      isCombatSheet: resolved.isCombatSheet,
+    })
   }
 
   /** Usa o controlador memorizado quando a resolução fresca não achou valores. */
   private withCachedReader(
     binding: TokenTrackerBinding,
-    fallback: { reader: TokenTrackerStatReader | null; source: string }
-  ): { reader: TokenTrackerStatReader | null; source: string } {
+    fallback: { reader: TokenTrackerStatReader | null; owner: unknown; source: string; isCombatSheet?: boolean }
+  ): { reader: TokenTrackerStatReader | null; owner: unknown; source: string; isCombatSheet?: boolean } {
     const cached = this.resolvedReaders.get(this.bindingKey(binding))
     if (!cached) return fallback
 
     const freshScore = scoreTrackerValues(readTrackerValuesFromStats(fallback.reader))
     if (cached.score > freshScore) {
+      tokenTrackerLog(
+        'resolve',
+        'usando o controlador memorizado (as fontes desta janela esvaziaram)',
+        { fonteMemorizada: cached.source, pontuacaoAtual: freshScore, pontuacaoMemorizada: cached.score }
+      )
       return {
         reader: cached.reader,
+        owner: cached.owner,
         source: `memorizado (${cached.source}) porque as fontes atuais têm ${freshScore} contra ${cached.score}`,
+        isCombatSheet: cached.isCombatSheet,
       }
     }
 
@@ -930,6 +1628,15 @@ class TokenTrackerService {
     }
   }
 
+  /** O STORE de fichas (não a lista): é ele que sabe recarregar do armazenamento. */
+  private pilotSheetStore(): any {
+    try {
+      return this.stores?.sheetsStore?.() ?? null
+    } catch {
+      return null
+    }
+  }
+
   /** Injetado no boot por `useTokenTrackerBridge` (mantém os specs leves). */
   public setStoreAccessors(accessors: {
     pilot: () => any
@@ -938,6 +1645,10 @@ class TokenTrackerService {
     sheets?: () => any[]
     /** A ficha do modo ativo aberta nesta janela. */
     activeSheet?: () => any
+    /** O store de fichas, dono do `LoadPilotSheets()`. */
+    sheetsStore?: () => any
+    /** Fichas sincronizadas via WebSocket Go da sala. */
+    syncedSheets?: () => Record<string, any>
   }): void {
     this.stores = accessors
   }
@@ -948,7 +1659,17 @@ class TokenTrackerService {
     cards: () => unknown[]
     sheets?: () => any[]
     activeSheet?: () => any
+    sheetsStore?: () => any
+    syncedSheets?: () => Record<string, any>
   } | null = null
+
+  private syncedSheets(): Record<string, any> | null {
+    try {
+      return this.stores?.syncedSheets?.() ?? null
+    } catch {
+      return null
+    }
+  }
 
   /** Ids da ficha desta janela (o jogador escreve resumo só da própria). */
   public setOwnSheetIdsResolver(resolver: () => string[]): void {
@@ -993,7 +1714,18 @@ class TokenTrackerService {
       binding,
       config: this.config,
     })
-    if (!allowed || Object.keys(localValues).length === 0) return
+    if (!allowed || Object.keys(localValues).length === 0) {
+      tokenTrackerTrace('resumo', `token ${tokenId}: esta janela não grava o resumo`, {
+        papel: this.role,
+        trackersLigados: this.config.enabled,
+        fonteEscolhida: allowed,
+        valores: summarizeValues(localValues),
+      })
+      return
+    }
+    tokenTrackerTrace('resumo', `token ${tokenId}: agendado para gravar (${writer})`, {
+      valores: summarizeValues(localValues),
+    })
     this.pendingSummaries.set(tokenId, { values: localValues, writer })
     if (this.summaryTimer) return
     this.summaryTimer = setTimeout(() => {
@@ -1036,7 +1768,20 @@ class TokenTrackerService {
       .updateItems([...byId.keys()], items => {
         for (const item of items) {
           const summary = byId.get(item.id)
-          if (summary) item.metadata[TOKEN_TRACKER_SUMMARY_KEY] = summary as unknown as Metadata
+          if (summary) {
+            item.metadata[TOKEN_TRACKER_SUMMARY_KEY] = summary as unknown as Metadata
+            const currentMeta = (item.metadata[COMPCON_METADATA_KEY] as any) || {}
+            currentMeta.stats = {
+              hp: { current: summary.pv[0], max: summary.pv[1] },
+              heat: { current: summary.heat[0], max: summary.heat[1] },
+              structure: { current: summary.st[0], max: summary.st[1] },
+              stress: { current: summary.ss[0], max: summary.ss[1] },
+              overshield: { current: summary.ov, max: summary.ov },
+              speed: { current: summary.sp[0], max: summary.sp[1] },
+            }
+            currentMeta.lastUpdated = now
+            item.metadata[COMPCON_METADATA_KEY] = currentMeta
+          }
         }
       })
       .catch(err => {
@@ -1069,3 +1814,16 @@ class TokenTrackerService {
 export const TOKEN_TRACKER_STATE_EVENT = 'compcon-token-trackers-changed'
 
 export const tokenTrackerService = new TokenTrackerService()
+
+/**
+ * Identifica o dono do `CombatController` no log: `Mech id=…`, `Pilot id=…` ou o tipo
+ * cru quando é um objeto sem constructor claro (o caso de uma cópia deserializada).
+ */
+function describeOwner(owner: unknown): string {
+  if (!owner || typeof owner !== 'object') return String(owner ?? 'nenhum')
+  const participant = owner as { ID?: unknown; Name?: unknown; constructor?: { name?: string } }
+  const kind = participant.constructor?.name ?? 'objeto'
+  const id = typeof participant.ID === 'string' ? participant.ID : 'sem-id'
+  const name = typeof participant.Name === 'string' && participant.Name ? ` "${participant.Name}"` : ''
+  return `${kind} id=${id}${name}`
+}

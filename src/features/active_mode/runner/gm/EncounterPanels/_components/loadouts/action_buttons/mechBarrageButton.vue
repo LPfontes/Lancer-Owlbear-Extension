@@ -416,9 +416,12 @@
   const mobile = computed(() => _display.mdAndDown.value)
 
   const activeMech = computed(() => {
+    const root = ownerController.value?.RootActor || owner.value?.actor
+    if (root?.ActiveMech) return root.ActiveMech
+    if (root?.MechLoadoutController) return root
     return (
-      ownerController.value?.RootActor?.ActiveMech ||
-      owner.value?.actor?.ActiveMech ||
+      activeController.value?.RootActor?.ActiveMech ||
+      activeController.value?.Parent ||
       null
     )
   })
@@ -468,15 +471,33 @@
   }
 
   const availableMounts = computed<MountOption[]>(() => {
-    if (!activeMech.value) return []
-    const loadout = activeMech.value.MechLoadoutController.ActiveLoadout
-    const rawMounts = loadout.AllActiveMounts(activeMech.value)
+    if (!activeMech.value) {
+      console.warn('[MechBarrageButton] activeMech.value é nulo!')
+      return []
+    }
+    const loadout = activeMech.value.MechLoadoutController?.ActiveLoadout
+    if (!loadout) {
+      console.warn('[MechBarrageButton] ActiveLoadout não encontrado no activeMech!')
+      return []
+    }
 
-    return rawMounts.map((m: any, idx: number) => {
+    let rawMounts = []
+    try {
+      rawMounts = loadout.AllActiveMounts(activeMech.value)
+    } catch (e) {
+      console.warn('[MechBarrageButton] Erro em AllActiveMounts:', e)
+      rawMounts = []
+    }
+
+    if (!rawMounts || rawMounts.length === 0) {
+      rawMounts = (loadout.Mounts || []).filter((m: any) => m?.Weapons?.length)
+    }
+
+    const result = rawMounts.map((m: any, idx: number) => {
       const weapons = (m.Weapons || []).filter((w: any) => !!w) as MechWeapon[]
       const isSuperheavy =
         m.Type === 'Superheavy' ||
-        weapons.some((w: any) => w.Size === 'Superheavy' || w.Type === 'Superheavy')
+        weapons.some((w: any) => w.Size === 'Superheavy' || w.Type === 'Superheavy' || (w as any).IsSuperheavy)
       const friendlyName = getMountTypeFriendlyName(m.Type, m.Name)
       const weaponsNames = weapons.map((w: any) => w.Name).join(' + ')
 
@@ -493,6 +514,36 @@
         disabledReason: weapons.length === 0 ? 'Sem armas' : undefined,
       }
     })
+
+    // Se ainda não encontrou encaixes formais, mas há uma arma de preset ou armas no mech, cria uma montagem sintética
+    if (result.length === 0) {
+      const allWeapons: MechWeapon[] = []
+      if (props.presetWeapon) allWeapons.push(props.presetWeapon)
+      const mechWeapons = (activeMech.value?.Weapons || activeMech.value?.MechLoadoutController?.ActiveLoadout?.Weapons || []) as MechWeapon[]
+      for (const w of mechWeapons) {
+        if (!allWeapons.some(x => x.InstanceID === w.InstanceID || x.ID === w.ID)) {
+          allWeapons.push(w)
+        }
+      }
+      for (let i = 0; i < allWeapons.length; i++) {
+        const w = allWeapons[i]
+        const isSH = Boolean(w.Size === 'Superheavy' || (w as any).Type === 'Superheavy' || (w as any).IsSuperheavy)
+        result.push({
+          id: w.InstanceID || w.ID || `weapon_mount_${i}`,
+          title: isSH ? 'Encaixe Superpesado' : 'Encaixe de Arma',
+          mount: null as any,
+          type: isSH ? 'Superheavy' : 'Main',
+          weapons: [w],
+          weaponsText: w.Name,
+          weaponCount: 1,
+          isSuperheavy: isSH,
+          disabled: false,
+          disabledReason: undefined,
+        })
+      }
+    }
+
+    return result
   })
 
   const selectedMount1Id = ref<string>('')

@@ -19,7 +19,9 @@
     "i18n:llp": "node scripts/build-llp.mjs",
     "i18n:lcps": "node scripts/inject-llp-into-lcps.mjs",
     "i18n:check": "node scripts/check-lcp-translations.mjs",
-    "i18n:verify": "node scripts/check-lcp-translations.mjs --check=95 && node scripts/inject-llp-into-lcps.mjs --check"
+    "i18n:verify": "node scripts/check-lcp-translations.mjs --check=95 && node scripts/inject-llp-into-lcps.mjs --check",
+    "server:sync": "cd server/sync-server && go run ./cmd/server",
+    "server:test": "cd server/sync-server && go test -v ./..."
   },
   "dependencies": {
     "@kyvg/vue3-notification": "3.4.2",

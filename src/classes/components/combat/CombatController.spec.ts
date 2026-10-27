@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { DamageType } from '@/classes/enums'
 import { StatKey } from './stats/Stats'
+import { CoverType } from './CombatController'
 import { makePilot, makeMech } from '@/__tests__/factories'
 import type { Mech } from '@/classes/mech/Mech'
 
@@ -282,11 +283,90 @@ describe('CombatController.EndRound', () => {
     expect(cc().CombatActions.Reaction).toBe(false)
     expect(cc().CanActivate('quick')).toBe(true)
 
+    cc().LastBraceTransitionTime = Date.now() - 2000
     cc().EndTurn()
 
     expect(cc().Braced).toBe(false)
     expect(cc().CombatActions.Full).toBe(true)
     expect(cc().CombatActions.Reaction).toBe(true)
+  })
+
+  it('applies brace penalty on the next turn, not on the current turn when braced during turn', () => {
+    // Inicia o turno atual
+    cc().StartTurn()
+    expect(cc().InTurn).toBe(true)
+    expect(cc().CanActivate('full')).toBe(true)
+    expect(cc().CanActivate('quick')).toBe(true)
+
+    // Suporta durante o turno atual
+    cc().Brace()
+    expect(cc().Braced).toBe(true)
+    expect(cc().BracedPenaltyPending).toBe(true)
+
+    // No turno atual, as ações NÃO foram destruídas: o efeito de restrição é para o próximo turno
+    expect(cc().CanActivate('full')).toBe(true)
+    expect(cc().CanActivate('quick')).toBe(true)
+
+    // Encerra o turno atual: o Brace NÃO deve ser limpo aqui
+    cc().EndTurn()
+    expect(cc().Braced).toBe(true)
+    expect(cc().BracedPenaltyPending).toBe(false)
+    expect(cc().BracedPenaltyActive).toBe(true)
+
+    // Chamadas encadeadas no mesmo clique (ex: piloto + mech) não limpam o brace
+    cc().EndTurn()
+    expect(cc().Braced).toBe(true)
+
+    // Simula a passagem do tempo para o próximo turno (> 1000ms)
+    cc().LastBraceTransitionTime = Date.now() - 2000
+
+    // Inicia o PRÓXIMO turno do jogador: aqui o efeito do brace é aplicado
+    cc().StartTurn()
+    expect(cc().IsBracedTurn).toBe(true)
+    expect(cc().CombatActions.Full).toBe(false)
+    expect(cc().CombatActions.Reaction).toBe(false)
+    expect(cc().CombatActions.Overcharge).toBe(false)
+    expect(cc().CanActivate('full')).toBe(false)
+    expect(cc().CanActivate('quick')).toBe(true)
+    expect(cc().CanActivate('overcharge')).toBe(false)
+    expect(cc().InOvercharge).toBe(false)
+    expect(cc().CanActivate('move')).toBe(false)
+    expect(cc().StatController.getCurrent(StatKey.SPEED)).toBe(0)
+    expect(cc().CanActivate('free')).toBe(false)
+    expect(cc().CanActivate('reaction')).toBe(false)
+    expect(cc().CanUseReaction('brace')).toBe(false)
+    expect(cc().CanUseReaction('overwatch')).toBe(false)
+    expect(cc().CanTakeAction('act_overcharge', 'free')).toBe(false)
+
+    // Encerra o próximo turno (que sofreu a restrição): o Brace é limpo e ações restauradas
+    cc().EndTurn()
+    expect(cc().Braced).toBe(false)
+    expect(cc().IsBracedTurn).toBe(false)
+    expect(cc().CanActivate('full')).toBe(true)
+    expect(cc().CanActivate('overcharge')).toBe(true)
+    expect(cc().CanActivate('move')).toBe(true)
+    expect(cc().StatController.getCurrent(StatKey.SPEED)).toBeGreaterThan(0)
+    expect(cc().CanActivate('free')).toBe(true)
+    expect(cc().CanActivate('reaction')).toBe(true)
+  })
+
+  it('notifies token status update when bracing and clearing brace', () => {
+    const events: any[] = []
+    const listener = (e: any) => events.push(e.detail)
+    window.addEventListener('compcon-combatant-statuses-changed', listener)
+
+    try {
+      cc().Brace()
+      expect(events.length).toBeGreaterThan(0)
+      const lastEvent = events[events.length - 1]
+      expect(lastEvent.statuses).toContain('braced')
+
+      cc().SetBraced(false)
+      const clearedEvent = events[events.length - 1]
+      expect(clearedEvent.statuses).not.toContain('braced')
+    } finally {
+      window.removeEventListener('compcon-combatant-statuses-changed', listener)
+    }
   })
 })
 
@@ -362,5 +442,91 @@ describe('the combat log recorder', () => {
 
     expect(fresh.CombatLog.Events.map(e => e.seq)).toEqual([0, 1])
     expect((fresh.CombatLog.Events[1].payload as any).text).toBe('second')
+  })
+})
+
+/**
+ * Regressão: a Zona de Perigo é um marcador DERIVADO do calor, e a lista de marcadores
+ * do token só era reenviada quando um status de verdade (ou a cobertura) mudava — então
+ * o badge de Zona de Perigo só aparecia/sumia depois de outro status ser acionado.
+ */
+describe('CombatController marcadores derivados de stats', () => {
+  function watchStatusMarkers() {
+    const events: string[][] = []
+    const handler = (e: Event) => events.push((e as CustomEvent).detail?.statuses ?? [])
+
+    window.addEventListener('compcon-combatant-statuses-changed', handler)
+    return {
+      events,
+      last: () => events[events.length - 1],
+      stop: () => window.removeEventListener('compcon-combatant-statuses-changed', handler),
+    }
+  }
+
+  it('emite o marcador de Zona de Perigo quando o calor cruza a metade', () => {
+    const markers = watchStatusMarkers()
+    try {
+      const cap = cc().StatController.getMax(StatKey.HEATCAP)
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, 0, { silent: true })
+
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, Math.ceil(cap / 2), { silent: true })
+      expect(markers.last()).toContain('dangerzone')
+
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, 0, { silent: true })
+      expect(markers.last()).not.toContain('dangerzone')
+    } finally {
+      markers.stop()
+    }
+  })
+
+  it('não reemite enquanto o calor muda sem cruzar o limiar', () => {
+    const markers = watchStatusMarkers()
+    try {
+      // A primeira escrita só estabelece o estado conhecido do marcador.
+      cc().StatController.setCurrentStat(StatKey.HEATCAP, 0, { silent: true })
+      const afterFirstWrite = markers.events.length
+
+      cc().StatController.setCurrentStat(StatKey.HP, stat(StatKey.HP) - 1, { silent: true })
+      expect(markers.events.length).toBe(afterFirstWrite)
+    } finally {
+      markers.stop()
+    }
+  })
+
+  it('emite o marcador de Queimadura (burn:<N>) de forma reativa quando o stat BURN é alterado', () => {
+    const markers = watchStatusMarkers()
+    try {
+      cc().StatController.setCurrentStat(StatKey.BURN, 0, { silent: true })
+      expect(markers.last()?.some(s => s.startsWith('burn'))).toBeFalsy()
+
+      // Define Queimadura = 3
+      cc().StatController.setCurrentStat(StatKey.BURN, 3, { silent: true })
+      expect(markers.last()).toContain('burn:3')
+
+      // Atualiza Queimadura = 5
+      cc().StatController.setCurrentStat(StatKey.BURN, 5, { silent: true })
+      expect(markers.last()).toContain('burn:5')
+      expect(markers.last()).not.toContain('burn:3')
+
+      // Remove Queimadura (volta a 0)
+      cc().StatController.setCurrentStat(StatKey.BURN, 0, { silent: true })
+      expect(markers.last()?.some(s => s.startsWith('burn'))).toBe(false)
+    } finally {
+      markers.stop()
+    }
+  })
+
+  it('StatusController.MarkerStatusIds inclui burn:N quando BURN > 0 e respeita a ordem', () => {
+    cc().Cover = CoverType.Soft
+    cc().AddStatus('impaired')
+    cc().StatController.setCurrentStat(StatKey.BURN, 3, { silent: true })
+
+    const ids = cc().StatusController.MarkerStatusIds()
+    expect(ids).toEqual(['softcover', 'impaired', 'burn:3'])
+
+    cc().StatController.setCurrentStat(StatKey.BURN, 0, { silent: true })
+    const cleared = cc().StatusController.MarkerStatusIds()
+    expect(cleared).toEqual(['softcover', 'impaired'])
+    expect(cleared.some(s => s.startsWith('burn'))).toBe(false)
   })
 })

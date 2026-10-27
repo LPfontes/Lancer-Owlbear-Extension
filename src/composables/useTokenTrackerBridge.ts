@@ -3,6 +3,8 @@ import { EncounterStore } from '@/stores'
 import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
 import { isGmClient, obrReady } from '@/services/obrRuntime'
 import { TOKEN_TRACKER_STATE_EVENT, tokenTrackerService } from '@/services/tokenTrackerService'
+import { summarizeValues, tokenTrackerLog, tokenTrackerTrace } from '@/services/tokenTrackerDebug'
+import { readTrackerValuesFromStats } from '@/services/tokenTrackerModel'
 
 /**
  * Ponte entre o estado de combate desta janela e o serviço de token trackers
@@ -62,6 +64,7 @@ export function useTokenTrackerBridge(): void {
     const instance = activeEncounter()
     return instance ? { instance } : null
   })
+  tokenTrackerLog('ponte', 'composable montado (fonte do encontro + assinatura reativa)')
 
   /**
    * Assinatura de TUDO que o painel desenha nesta janela: os combatentes do
@@ -74,8 +77,9 @@ export function useTokenTrackerBridge(): void {
     const instance = activeEncounter()
     if (instance?.Combatants) {
       for (const combatant of instance.Combatants as any[]) {
+        const sc = (combatant?.actor?.ActiveMech ?? combatant?.actor)?.CombatController?.StatController
         parts.push(
-          `${combatant?.id ?? ''}=${statSignature(combatant?.actor?.CombatController?.StatController)}`
+          `${combatant?.id ?? ''}=${statSignature(sc)}`
         )
       }
     }
@@ -89,7 +93,14 @@ export function useTokenTrackerBridge(): void {
     return parts.join('|')
   })
 
-  watch(combatStateKey, () => {
+  watch(combatStateKey, (value, previous) => {
+    tokenTrackerTrace('ponte', 'estado de combate mudou → pedindo redesenho', {
+      combatentesNoEncontro: (activeEncounter()?.Combatants ?? []).length,
+      fichaPropria:
+        summarizeValues(readTrackerValuesFromStats(selfStatController())) || '(sem ficha ativa)',
+      assinaturaAnterior: previous,
+      assinaturaNova: value,
+    })
     dispatchChange()
   })
 

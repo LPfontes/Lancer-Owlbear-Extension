@@ -13,6 +13,8 @@ import { deployToCombatant } from '@/classes/components/feature/deployable/Deplo
 import { buildStream } from '@/classes/components/combat/log/stream'
 import { actorRef } from '@/classes/components/combat/log/refs'
 import type { ILogStream } from '@/classes/components/combat/log/events'
+import { StatKey } from '@/classes/components/combat/stats/Stats'
+import { ActivePeriod } from '@/classes/Frequency'
 
 type PilotSheetData = {
   id: string
@@ -80,14 +82,27 @@ class PilotSheet implements ISaveable, ICloudSyncable {
     return this.Combatant.actor.ID
   }
 
-  public static FromPilot(pilot: Pilot, campaign?: string) {
+  /**
+   * Monta o container de uma ficha a partir de um piloto.
+   *
+   * `preserveCombatState` existe para a VISÃO de leitura: sem ele o `SetStats()` +
+   * `ResetForEncounter()` abaixo zeram PV/calor/estrutura (é o estado inicial de um
+   * encontro novo), e quem só quer olhar a ficha veria os máximos em vez do estado real.
+   */
+  public static FromPilot(
+    pilot: Pilot,
+    campaign?: string,
+    options: { preserveCombatState?: boolean } = {}
+  ) {
     const combatPilot = Pilot.Deserialize(JSON.parse(JSON.stringify(Pilot.Serialize(pilot))))
-    combatPilot.SetStats()
-    combatPilot.FeatureController.BonusController.applyToStats(
-      combatPilot.CombatController.StatController
-    )
-    combatPilot.CombatController.ResetForEncounter()
-    combatPilot.CombatController.Record('encounter.start', { name: combatPilot.Callsign })
+    if (!options.preserveCombatState) {
+      combatPilot.SetStats()
+      combatPilot.FeatureController.BonusController.applyToStats(
+        combatPilot.CombatController.StatController
+      )
+      combatPilot.CombatController.ResetForEncounter()
+      combatPilot.CombatController.Record('encounter.start', { name: combatPilot.Callsign })
+    }
     const data = {
       id: crypto.randomUUID(),
       combatant: {
@@ -158,6 +173,48 @@ class PilotSheet implements ISaveable, ICloudSyncable {
   public async EndRound(): Promise<void> {
     await this.Combatant.actor.CombatController.EndRound(this)
     await this.Pilot.ActiveMech!.CombatController.EndRound(this, true)
+
+    if (this.Autosave) {
+      this.Save()
+    }
+  }
+
+  /**
+   * Encerra o TURNO desta ficha — **sem encontro**.
+   *
+   * Diferente do `EndRound` acima (que recebe `this` como contexto de mesa), aqui
+   * `EndTurn()` vai sem argumento de propósito: o pilot-runner não tem instância de
+   * encontro, então não há iniciativa, ordem de lado nem reações de mesa para mexer.
+   * O que interessa do turno continua valendo, porque vem do próprio
+   * `EndTurnFlow`: burn, checagens pendentes, gasto de ativação, usos de turno e —
+   * via `Reset(ActivePeriod.Turn)` — o **movimento de volta ao máximo**.
+   */
+  public async EndTurn(): Promise<void> {
+    const pilotCc = this.Combatant?.actor?.CombatController
+    const mechCc = this.Pilot?.ActiveMech?.CombatController
+
+    pilotCc?.EndTurn()
+    mechCc?.EndTurn()
+
+    pilotCc?.ResetCombatActions()
+    pilotCc?.ClearBoost()
+    if (pilotCc) {
+      const pSpeed = (pilotCc.Braced && pilotCc.BracedPenaltyActive) ? 0 : pilotCc.StatController.getMax(StatKey.SPEED)
+      pilotCc.StatController.setCurrentStat(StatKey.SPEED, pSpeed, { silent: true })
+      pilotCc.ClearUses(ActivePeriod.Turn)
+      pilotCc.ActionPoolController.ClearReactionUses()
+      pilotCc.CombatLogVersion++
+    }
+
+    mechCc?.ResetCombatActions()
+    mechCc?.ClearBoost()
+    if (mechCc) {
+      const mSpeed = (mechCc.Braced && mechCc.BracedPenaltyActive) ? 0 : mechCc.StatController.getMax(StatKey.SPEED)
+      mechCc.StatController.setCurrentStat(StatKey.SPEED, mSpeed, { silent: true })
+      mechCc.ClearUses(ActivePeriod.Turn)
+      mechCc.ActionPoolController.ClearReactionUses()
+      mechCc.CombatLogVersion++
+    }
 
     if (this.Autosave) {
       this.Save()

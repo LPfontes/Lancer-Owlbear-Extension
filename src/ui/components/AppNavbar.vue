@@ -13,14 +13,14 @@
     <v-container
       v-if="windowManager.isMinimized.value"
       fluid
-      class="d-flex align-center py-0 px-2 justify-space-between fill-height"
+      class="d-flex align-center py-0 px-1 justify-space-between fill-height"
       style="user-select: none;"
     >
-      <div class="d-flex align-center ga-2">
+      <div class="d-flex align-center ga-1">
         <v-avatar size="24" color="primary" class="rounded-0">
           <v-icon icon="cc:lancer" size="16" color="white" />
         </v-avatar>
-        <span class="text-caption font-weight-bold text-accent text-uppercase text-truncate" style="letter-spacing: 1px; max-width: 160px;">
+        <span class="minimized-brand-text text-caption font-weight-bold text-accent text-uppercase text-truncate" style="letter-spacing: 1px; max-width: 160px;">
           {{ activePilotSheet ? (activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name) : (activeEncounter ? activeEncounter.Encounter.Name : 'COMP/CON') }}
         </span>
         <v-chip
@@ -28,7 +28,7 @@
           size="x-small"
           color="accent"
           variant="tonal"
-          class="font-weight-bold text-truncate"
+          class="minimized-brand-text font-weight-bold text-truncate"
           style="max-width: 120px;"
         >
           {{ activePilotSheet.Combatant.actor.ActiveMech.Name }}
@@ -40,7 +40,7 @@
           size="x-small"
           color="accent"
           variant="flat"
-          class="font-weight-bold text-black ml-1"
+          class="minimized-brand-text font-weight-bold text-black ml-1"
         >
           <v-icon icon="mdi-dice-multiple" size="14" class="mr-1" />
           Rolando...
@@ -48,12 +48,24 @@
       </div>
 
       <div class="d-flex align-center ga-1 no-drag">
+        <!-- Real-time Table Sync Status (Minimized) -->
+        <v-btn
+          icon
+          variant="text"
+          size="x-small"
+          :color="syncStatusColor"
+          :title="syncStatusTooltip"
+          @click="reconnectSync"
+        >
+          <v-icon :icon="syncStatusIcon" size="14" :class="{ 'sync-pulsing': tableSyncStatus === 'reconnecting' || tableSyncStatus === 'connecting' }" />
+        </v-btn>
+
         <!-- Ações da Mesa e Chat (Minimized) -->
         <v-btn
           icon
           variant="text"
           size="x-small"
-          :color="isChatWindowOpen ? 'accent' : 'grey-lighten-1'"
+          :color="isRouteActive('/table-chat') ? 'accent' : 'grey-lighten-1'"
           :title="`Ações da Mesa e Chat (${tableActionStore.unreadCount} novas)`"
           @click="handleToggleChat"
         >
@@ -144,23 +156,6 @@
           {{ $t('ow.hangar') }}
         </v-btn>
 
-        <v-btn
-          to="/active-mode/sheet-manager"
-          variant="text"
-          :class="isRouteActive('/active-mode/sheet-manager') ? 'nav-link-active text-accent' : 'text-grey-lighten-2'"
-          class="nav-btn font-weight-bold rounded-0"
-          prepend-icon="mdi-card-account-details-outline"
-        >
-          {{ $t('ow.activeMode') }}
-          <v-badge
-            v-if="activeSheetsCount > 0"
-            :content="activeSheetsCount"
-            color="accent"
-            inline
-            class="ml-1"
-          />
-        </v-btn>
-
 
         <v-btn
           to="/active-mode/npcs"
@@ -178,6 +173,23 @@
             class="ml-1"
           />
         </v-btn>
+
+        <v-btn
+          to="/table-chat"
+          variant="text"
+          :class="isRouteActive('/table-chat') ? 'nav-link-active text-accent' : 'text-grey-lighten-2'"
+          class="nav-btn font-weight-bold rounded-0"
+          prepend-icon="mdi-message-text-clock-outline"
+        >
+          {{ $t('ow.chatAndActions') }}
+          <v-badge
+            v-if="tableActionStore.unreadCount > 0"
+            :content="tableActionStore.unreadCount"
+            color="accent"
+            inline
+            class="ml-1"
+          />
+        </v-btn>
       </div>
 
       <v-spacer />
@@ -186,44 +198,47 @@
       <div v-if="!mobile" class="d-flex align-center ga-2 mr-2">
         <v-chip
           v-if="activePilotSheet"
-          color="accent"
-          variant="outlined"
+          :color="isOnActivePilotSheet ? 'accent' : 'warning'"
+          :variant="isOnActivePilotSheet ? 'outlined' : 'flat'"
           size="small"
           class="cursor-pointer font-weight-bold resume-chip"
-          prepend-icon="mdi-restart"
+          :prepend-icon="isOnActivePilotSheet ? 'mdi-account' : 'mdi-play-circle-outline'"
+          :title="isOnActivePilotSheet ? 'Ficha Ativa' : 'Voltar para a Ficha Ativa (Em combate)'"
           @click="resumePilot"
         >
-          <span class="text-truncate" style="max-width: 120px;">
-            {{ activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name }}
+          <span class="text-truncate" style="max-width: 140px;">
+            {{ isOnActivePilotSheet ? (activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name) : `Retomar: ${activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name}` }}
           </span>
         </v-chip>
 
         <v-chip
           v-if="activeEncounter"
-          color="primary"
-          variant="outlined"
+          :color="isOnActiveEncounter ? 'primary' : 'warning'"
+          :variant="isOnActiveEncounter ? 'outlined' : 'flat'"
           size="small"
           class="cursor-pointer font-weight-bold resume-chip"
           prepend-icon="cc:encounter"
+          :title="isOnActiveEncounter ? 'Encontro Ativo' : 'Voltar para o Encontro Ativo'"
           @click="resumeEncounter"
         >
-          <span class="text-truncate" style="max-width: 120px;">
-            {{ activeEncounter.Encounter.Name }}
+          <span class="text-truncate" style="max-width: 140px;">
+            {{ isOnActiveEncounter ? activeEncounter.Encounter.Name : `Retomar: ${activeEncounter.Encounter.Name}` }}
           </span>
         </v-chip>
       </div>
 
-      <!-- Owlbear Room Sync Button -->
+      <!-- Real-time WebSocket Sync Status Button -->
       <v-btn
-        icon="mdi-cloud-sync"
+        icon
         variant="text"
-        color="accent"
+        :color="syncStatusColor"
         size="small"
         class="nav-btn rounded-0 mr-1"
-        :loading="isSyncingOwlbear"
-        title="Sincronizar Pilotos e NPCs com a Sala Owlbear"
-        @click="syncWithOwlbearRoom"
-      />
+        :title="syncStatusTooltip"
+        @click="reconnectSync"
+      >
+        <v-icon :icon="syncStatusIcon" size="20" :class="{ 'sync-pulsing': tableSyncStatus === 'reconnecting' || tableSyncStatus === 'connecting' }" />
+      </v-btn>
 
       <!-- 3D Dice (dddice) Shortcut Button -->
       <v-btn
@@ -240,7 +255,7 @@
       <v-btn
         icon
         variant="text"
-        :color="isChatWindowOpen ? 'accent' : 'grey-lighten-2'"
+        :color="isRouteActive('/table-chat') ? 'accent' : 'grey-lighten-2'"
         size="small"
         class="nav-btn rounded-0 mr-1"
         :title="`Ações da Mesa e Chat (${tableActionStore.unreadCount} novas)`"
@@ -271,6 +286,16 @@
 
       <!-- Window Control Cluster (Minimize) -->
       <div class="window-controls d-flex align-center border-l border-grey-darken-3 pl-2 ga-1">
+        <!-- Reload Extension Window -->
+        <v-btn
+          icon="mdi-reload"
+          variant="text"
+          size="small"
+          color="grey-lighten-2"
+          :title="$t('ow.reloadWindow')"
+          @click="askReloadWindow"
+        />
+
         <!-- Minimize Window -->
         <v-btn
           icon="mdi-window-minimize"
@@ -307,6 +332,26 @@
     </div>
 
     <v-list density="comfortable" nav class="pa-2">
+      <!-- Ficha Ativa no Drawer Mobile -->
+      <v-list-item
+        v-if="activePilotSheet"
+        prepend-icon="mdi-card-account-details-star"
+        :title="activePilotSheet.Combatant.actor.Callsign || activePilotSheet.Name"
+        subtitle="Ficha Ativa (Retomar)"
+        class="my-1 rounded-0 bg-accent text-black font-weight-bold"
+        @click="drawer = false; resumePilot()"
+      />
+
+      <!-- Encontro Ativo no Drawer Mobile -->
+      <v-list-item
+        v-if="activeEncounter"
+        prepend-icon="cc:encounter"
+        :title="activeEncounter.Encounter.Name"
+        subtitle="Encontro Ativo (Retomar)"
+        class="my-1 rounded-0 bg-primary text-white font-weight-bold"
+        @click="drawer = false; resumeEncounter()"
+      />
+
       <v-list-item
         to="/active-mode"
         prepend-icon="mdi-home"
@@ -336,21 +381,6 @@
         color="accent"
         @click="drawer = false"
       />
-
-      <v-list-item
-        to="/active-mode/sheet-manager"
-        prepend-icon="mdi-card-account-details-outline"
-        :title="$t('ow.activeSheets')"
-        class="my-1 rounded-0"
-        :active="isRouteActive('/active-mode/sheet-manager')"
-        color="accent"
-        @click="drawer = false"
-      >
-        <template #append v-if="activeSheetsCount > 0">
-          <v-badge :content="activeSheetsCount" color="accent" inline />
-        </template>
-      </v-list-item>
-
 
       <v-list-item
         to="/active-mode/npcs"
@@ -386,11 +416,14 @@
       />
 
       <v-list-item
+        to="/table-chat"
         prepend-icon="mdi-message-text-clock-outline"
-        title="Ações da Mesa & Chat"
-        subtitle="Janela flutuante de ações e mensagens"
-        class="my-1 rounded-0 text-accent font-weight-bold"
-        @click="drawer = false; handleToggleChat()"
+        :title="$t('ow.chatAndActions')"
+        subtitle="Combat tracker e feed de mensagens"
+        class="my-1 rounded-0"
+        :active="isRouteActive('/table-chat')"
+        color="accent"
+        @click="drawer = false"
       >
         <template #append v-if="tableActionStore.unreadCount > 0">
           <v-badge :content="tableActionStore.unreadCount" color="accent" inline />
@@ -455,6 +488,23 @@
 
   <!-- Global Options Dialog (LCPs, Translation, Settings) -->
   <AppOptionsDialog v-model="showOptionsDialog" :initial-tab="optionsTab" />
+
+  <!-- Reload Extension Window Confirmation -->
+  <v-dialog v-model="reloadDialog" max-width="440">
+    <v-card class="rounded-0 border border-grey-darken-3">
+      <v-card-title class="text-cc-overline text-accent">{{ $t('ow.reloadWindow') }}</v-card-title>
+      <v-card-text class="text-body-2">{{ $t('ow.reloadWindowConfirm') }}</v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" size="small" class="rounded-0" @click="reloadDialog = false">
+          {{ $t('common.cancel') }}
+        </v-btn>
+        <v-btn variant="flat" size="small" color="accent" class="rounded-0" @click="reloadWindow">
+          {{ $t('ow.reloadWindowAction') }}
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -469,7 +519,13 @@ import ImportDialog from '@/features/active_mode/_components/ImportDialog.vue'
 import AppOptionsDialog from './AppOptionsDialog.vue'
 import { dddiceService } from '@/services/dddiceService'
 import { useTableActionStore } from '@/stores/tableActionStore'
-import { toggleTableChatWindow, isChatWindowOpen, isTableChatOpen } from '@/services/tableChatWindow'
+import { tableSyncSocket, tableSyncStatus } from '@/services/tableSyncSocket'
+import { reloadExtensionWindow } from '@/services/windowReload'
+import { useI18n } from 'vue-i18n'
+import { usePilotJoinRequest } from '@/composables/usePilotJoinRequest'
+
+const { requestPilotJoin } = usePilotJoinRequest()
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -477,35 +533,70 @@ const { mdAndDown: mobile } = useDisplay()
 const tableActionStore = useTableActionStore()
 
 function handleToggleChat() {
-  void toggleTableChatWindow()
+  if (windowManager.isMinimized.value) {
+    void windowManager.restore()
+  }
+  if (route.path === '/table-chat') {
+    if (window.history.length > 1) {
+      router.back()
+    } else {
+      router.push('/active-mode')
+    }
+  } else {
+    router.push('/table-chat')
+  }
 }
 
 const drawer = ref(false)
 const showImportDialog = ref(false)
 const showOptionsDialog = ref(false)
 const optionsTab = ref<'lcps' | 'language' | 'settings' | 'dddice'>('lcps')
-const isSyncingOwlbear = ref(false)
 
-async function syncWithOwlbearRoom() {
-  if (isSyncingOwlbear.value) return
-  isSyncingOwlbear.value = true
-  try {
-    const pushedPilots = await obrBridge.pushAllLocalPilotsToRoom()
-    const pushedNpcs = await obrBridge.pushAllLocalNpcsToRoom()
-    const { pilotsCount, npcsCount } = await obrBridge.syncFromRoom()
-    if (OBR.isAvailable) {
-      await OBR.notification.show(`Sincronização Owlbear: ${pushedPilots} pilotos e ${pushedNpcs} NPCs salvos na sala.`)
-    }
-  } catch (e) {
-    console.error('[AppNavbar] Erro ao sincronizar com sala Owlbear:', e)
-  } finally {
-    isSyncingOwlbear.value = false
+const syncStatusColor = computed(() => {
+  if (tableSyncStatus.value === 'connected') return 'success'
+  if (tableSyncStatus.value === 'reconnecting' || tableSyncStatus.value === 'connecting') return 'warning'
+  return 'grey-lighten-1'
+})
+
+const syncStatusIcon = computed(() => {
+  if (tableSyncStatus.value === 'connected') return 'mdi-access-point'
+  if (tableSyncStatus.value === 'reconnecting' || tableSyncStatus.value === 'connecting') return 'mdi-access-point-network-off'
+  return 'mdi-access-point-off'
+})
+
+const syncStatusTooltip = computed(() => {
+  if (tableSyncStatus.value === 'connected') return t('ow.wsConnected')
+  if (tableSyncStatus.value === 'reconnecting' || tableSyncStatus.value === 'connecting') return t('ow.wsReconnecting')
+  return t('ow.wsDisconnected')
+})
+
+function reconnectSync() {
+  if (tableSyncStatus.value !== 'connected') {
+    tableSyncSocket.connect()
   }
 }
 
 function openOptions(tab: 'lcps' | 'language' | 'settings' | 'dddice' = 'lcps') {
   optionsTab.value = tab
   showOptionsDialog.value = true
+}
+
+const reloadDialog = ref(false)
+
+function askReloadWindow() {
+  reloadDialog.value = true
+}
+
+/**
+ * Recarrega o iframe desta janela da extensão.
+ *
+ * O aviso aos listeners e a espera antes do reload vivem em `windowReload`: quem tem
+ * timer pendente (deltas da ficha, autosave do encontro) grava nesse intervalo, porque
+ * um reload de página não desmonta os componentes.
+ */
+function reloadWindow() {
+  reloadDialog.value = false
+  reloadExtensionWindow()
 }
 
 const isHome = computed(() => {
@@ -534,6 +625,20 @@ const activeEncounter = computed(() => {
   return EncounterStore().getActiveEncounter(EncounterStore().CurrentActiveID)
 })
 
+const isOnActivePilotSheet = computed(() => {
+  if (!activePilotSheet.value) return false
+  const path = route.path || ''
+  return path.startsWith('/active-mode/pilot-runner') &&
+    (!route.params.id || route.params.id === activePilotSheet.value.ID) &&
+    String(route.query.readonly ?? '') !== '1'
+})
+
+const isOnActiveEncounter = computed(() => {
+  if (!activeEncounter.value) return false
+  const path = route.path || ''
+  return path === '/table-chat' && route.query.tab === 'tracker'
+})
+
 function isRouteActive(targetPath: string, exact: boolean = false): boolean {
   if (exact) {
     return route.path === targetPath || route.path === targetPath + '/'
@@ -549,7 +654,7 @@ function goBack() {
   }
 }
 
-function resumePilot() {
+async function resumePilot() {
   if (activePilotSheet.value) {
     router.push(`/active-mode/pilot-runner/${activePilotSheet.value.ID}`)
   }
@@ -557,7 +662,7 @@ function resumePilot() {
 
 function resumeEncounter() {
   if (activeEncounter.value) {
-    router.push(`/active-mode/gm-encounter-runner/${activeEncounter.value.ID}`)
+    router.push('/table-chat?tab=tracker')
   }
 }
 
@@ -567,7 +672,6 @@ function handleOpenImportDialog() {
 
 onMounted(() => {
   window.addEventListener('compcon-open-import-dialog', handleOpenImportDialog)
-  void isTableChatOpen()
 })
 
 onUnmounted(() => {
@@ -668,5 +772,15 @@ onUnmounted(() => {
 
 .window-controls {
   flex-shrink: 0;
+}
+
+@keyframes syncPulse {
+  0% { opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+.sync-pulsing {
+  animation: syncPulse 1.2s infinite ease-in-out;
 }
 </style>

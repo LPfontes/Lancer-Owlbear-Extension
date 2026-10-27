@@ -8,6 +8,7 @@
   import MenuInput from '@/ui/components/chips/_activeeffect/_ae_menu_input.vue'
   import { useTableActionStore } from '@/stores/tableActionStore'
   import { enumLabel } from '@/i18n/enumLabel'
+  import { resolveActionCategory } from '@/types/table-actions'
 
   const { owner, encounterInstance, activeController, ownerController } = useEncounterContext()
   const { t } = useI18n()
@@ -60,12 +61,12 @@
       (owner.value?.actor as any)?.Name ||
       activeMech.value?.Name ||
       'Piloto'
-    const activation = (props.action.Activation || 'Quick').toLowerCase()
-    const cat = activation === 'full' ? 'full_action' : activation === 'protocol' ? 'protocol' : 'quick_action'
+    const cat = resolveActionCategory(props.action.Activation, props.action.ID)
     void useTableActionStore().broadcastCombatAction({
       actorName,
       actionName: props.action.Name,
       actionType: cat,
+      actionId: props.action.ID,
     })
     emit('activate', props.action.ID)
   }
@@ -129,11 +130,12 @@
       (owner.value?.actor as any)?.Name ||
       activeMech.value?.Name ||
       'Piloto'
-    const cat = activation === 'full' ? 'full_action' : activation === 'protocol' ? 'protocol' : 'quick_action'
+    const cat = resolveActionCategory(props.action.Activation, props.action.ID)
     void useTableActionStore().broadcastCombatAction({
       actorName,
       actionName: props.action.Name,
       actionType: cat,
+      actionId: props.action.ID,
     })
 
     emit('activate', props.action.ID)

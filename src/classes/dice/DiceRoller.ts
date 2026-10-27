@@ -1,3 +1,5 @@
+import { i18n } from '@/i18n'
+
 declare interface Id20RollResult {
   total: number
   rawDieRoll: number
@@ -245,7 +247,10 @@ class DamageRollResult implements IDamageRollResult {
       return `Error parsing dice string: ${this.diceString}`
     }
 
-    let out = this._critical ? 'Critical Damage Roll: ' : 'Damage Roll: '
+    const rollLabel = this._critical
+      ? (i18n?.global?.te?.('ui.combat.criticalDamageRoll') ? i18n.global.t('ui.combat.criticalDamageRoll') : 'Critical Damage Roll')
+      : (i18n?.global?.te?.('ui.combat.damageRoll') ? i18n.global.t('ui.combat.damageRoll') : 'Damage Roll')
+    let out = `${rollLabel}: `
     for (let i = 0; i < this.rawDieRolls.length; i++) {
       if (i > 0) out += '+ '
       const rc = this.rollClassifications[i]

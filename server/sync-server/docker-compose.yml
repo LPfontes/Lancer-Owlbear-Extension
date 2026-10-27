@@ -1,0 +1,13 @@
+services:
+  sync-server:
+    build: .
+    container_name: lancer-owlbear-sync
+    restart: unless-stopped
+    ports:
+      # Expõe na porta 8086 do host (casando com o proxy_pass do Nginx)
+      - "127.0.0.1:8086:8080"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data

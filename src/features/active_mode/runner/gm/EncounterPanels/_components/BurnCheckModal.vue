@@ -25,6 +25,7 @@
         <cc-button
           size="x-small"
           prepend-icon="mdi-dice-d20"
+          :loading="isRolling"
           @click="roll"
         >
           {{ $t('active.structureCheck.rollCheck', { check: 'ENGINEERING' }) }}
@@ -94,7 +95,7 @@
 
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
-  import { DiceRoller } from '@/classes/dice/DiceRoller'
+  import { DiceRoller, D20RollResult } from '@/classes/dice/DiceRoller'
   import AccuracyDifficultyRow from '@/ui/components/chips/_activeeffect/_shared/AccuracyDifficultyRow.vue'
   import { StatKey } from '@/classes/components/combat/stats/Stats'
   import type { CombatController } from '@/classes/components/combat/CombatController'
@@ -119,6 +120,7 @@
   const detail = ref('')
   const outcome = ref<'success' | 'fail' | undefined>(undefined)
   const rolled = ref<number | undefined>(undefined)
+  const isRolling = ref(false)
 
   function seed() {
     bonus.value = props.cc.getCheckBonus('Eng')
@@ -126,36 +128,90 @@
     detail.value = ''
     outcome.value = undefined
     rolled.value = undefined
+    isRolling.value = false
   }
 
-  function roll() {
-    const r = DiceRoller.rollSkillCheck(Number(bonus.value) || 0, acc.value || 0)
-    detail.value = r.toString()
-    rolled.value = r.total
-    outcome.value = r.total >= 10 ? 'success' : 'fail'
+  async function roll() {
+    if (isRolling.value) return
+    isRolling.value = true
 
-    void dddiceService.rollDice({
-      diceString: '1d20',
-      flatBonus: Number(bonus.value) || 0,
-      accuracy: acc.value || 0,
-      label: `Burn Check [${props.cc.CombatName || 'Combatant'}]`,
-      external_id: props.cc.CombatName || undefined,
-    })
+    const finalBonus = Number(bonus.value) || 0
+    const finalAcc = Number(acc.value) || 0
+    let r: any = null
 
-    const actorName = props.cc.CombatName || 'Combatente'
-    void useTableActionStore().postAction({
-      senderName: actorName,
-      category: 'roll',
-      title: 'Teste de Engenharia (Queimadura / Burn)',
-      detail: r.toString ? r.toString() : String(r.total),
-      roll: {
-        total: Number(r.total) || 0,
-        formula: `1d20${Number(bonus.value) >= 0 ? '+' : ''}${bonus.value || 0}`,
-        isCrit: false,
-        accuracy: acc.value || 0,
-      },
-      tags: ['Queimadura', outcome.value === 'success' ? 'Sucesso' : 'Falha'],
-    })
+    try {
+      if (dddiceService.config.enabled) {
+        try {
+          const rollRes = await dddiceService.rollDice({
+            diceString: '1d20',
+            flatBonus: finalBonus,
+            accuracy: finalAcc,
+            label: `Teste de Engenharia [${props.cc.CombatName || 'Combatente'}]`,
+            external_id: props.cc.CombatName || undefined,
+          })
+
+          if (rollRes && rollRes.values && rollRes.values.length > 0) {
+            const d20Die = rollRes.values.find((v: any) => v.type?.toLowerCase() === 'd20' || v.type === '20')
+            const rawD20 = d20Die && typeof d20Die.value !== 'undefined' ? Number(d20Die.value) : DiceRoller.rollDie(20)
+
+            const d6Dice = rollRes.values.filter((v: any) => (v.type?.toLowerCase() === 'd6' || v.type === '6') && !v.is_dropped) || []
+            const neededAcc = Math.abs(finalAcc)
+            const rawAccuracyRolls: number[] = []
+
+            for (let i = 0; i < neededAcc; i++) {
+              if (i < d6Dice.length && typeof d6Dice[i].value !== 'undefined') {
+                rawAccuracyRolls.push(Number(d6Dice[i].value))
+              } else {
+                rawAccuracyRolls.push(DiceRoller.rollDie(6))
+              }
+            }
+
+            let accuracyResult = 0
+            if (finalAcc > 0 && rawAccuracyRolls.length > 0) {
+              accuracyResult = Math.max(...rawAccuracyRolls)
+            } else if (finalAcc < 0 && rawAccuracyRolls.length > 0) {
+              accuracyResult = -Math.max(...rawAccuracyRolls)
+            }
+
+            const total = rawD20 + finalBonus + accuracyResult
+            r = new D20RollResult(total, rawD20, finalBonus, finalAcc, rawAccuracyRolls, accuracyResult)
+          }
+        } catch (e) {
+          console.warn('[BurnCheckModal] Erro ao rolar com dddice:', e)
+        }
+      }
+
+      // Se a rolagem da extensão não estiver habilitada ou falhar, rola localmente
+      if (!r) {
+        r = DiceRoller.rollSkillCheck(finalBonus, finalAcc)
+      }
+
+      detail.value = r.toString()
+      rolled.value = Number(r.total) || 0
+      outcome.value = Number(r.total) >= 10 ? 'success' : 'fail'
+
+      const isCritical = Number(r.total) >= 20 || Number(r.rawDieRoll) === 20
+      const actorName = props.cc.CombatName || 'Combatente'
+      const formulaStr = `1d20${finalBonus >= 0 ? '+' : ''}${finalBonus}${finalAcc !== 0 ? (finalAcc > 0 ? ` +${finalAcc}A` : ` ${finalAcc}D`) : ''}`
+      const tags = ['Queimadura', outcome.value === 'success' ? 'Sucesso' : 'Falha']
+      if (isCritical) tags.push('CRÍTICO')
+
+      void useTableActionStore().postAction({
+        senderName: actorName,
+        category: 'roll',
+        title: 'Teste de Engenharia (Queimadura / Burn)',
+        detail: r.toString ? r.toString() : String(r.total),
+        roll: {
+          total: Number(r.total) || 0,
+          formula: formulaStr,
+          isCrit: isCritical,
+          accuracy: finalAcc,
+        },
+        tags,
+      })
+    } finally {
+      isRolling.value = false
+    }
   }
 
   watch(

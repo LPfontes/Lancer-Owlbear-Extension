@@ -393,6 +393,12 @@ describe('action economy defects', () => {
 
     // The +1 difficulty lasts until the end of the braced character's next
     // turn, not until the end of the round.
+    // O fim do turno onde o Suportar foi gasto mantém a dificuldade +1:
+    cc().EndTurn()
+    expect(cc().DifficultyAgainst()).toBe(1)
+
+    // O fim do próximo turno do personagem encerra a dificuldade +1:
+    cc().LastBraceTransitionTime = Date.now() - 2000
     cc().EndTurn()
     expect(cc().DifficultyAgainst()).toBe(0)
   })
@@ -424,6 +430,13 @@ describe('action economy defects', () => {
     expect(cc().GetResistance('energy')).toBe('resistance')
 
     // Released at the end of the braced character's next turn, not end of round.
+    // O fim do turno onde foi gasto mantém a resistência:
+    cc().EndTurn()
+    expect(cc().GetResistance('kinetic')).toBe('immunity')
+    expect(cc().GetResistance('energy')).toBe('resistance')
+
+    // O fim do próximo turno encerra a resistência concedida:
+    cc().LastBraceTransitionTime = Date.now() - 2000
     cc().EndTurn()
     expect(cc().GetResistance('kinetic')).toBe('immunity')
     expect(cc().GetResistance('energy')).toBe('none')

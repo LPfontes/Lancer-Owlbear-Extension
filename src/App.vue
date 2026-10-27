@@ -1,22 +1,47 @@
 <template>
-  <v-app id="app" :theme="activeTheme" :class="{ 'app-minimized': windowManager.isMinimized.value && !isStandaloneView }">
+  <v-app id="app" :theme="activeTheme" :class="{ 'app-minimized': windowManager.isMinimized.value }">
     <cc-notify />
-    <AppNavbar v-if="!isStandaloneView" />
+    <AppNavbar />
     <TokenLinkDialog />
-    <v-main id="main-content" v-show="isStandaloneView || !windowManager.isMinimized.value">
-      <router-view :key="route.fullPath" />
+    <PlayerJoinWaitDialog />
+    <GmJoinAuthorizationDialog />
+    <v-main id="main-content" v-show="!windowManager.isMinimized.value" class="main-content-layout">
+      <div class="main-viewport-wrapper">
+        <!-- Camada Base Persistente da Ficha Ativa do Piloto -->
+        <div
+          v-if="hasActiveRunner"
+          class="persistent-runner-base"
+          :class="{ 'is-behind-overlay': isOverlayActive }"
+        >
+          <PilotRunner
+            v-if="activePilotSheetId"
+            :id="activePilotSheetId"
+            :key="activePilotSheetId"
+          />
+        </div>
+
+        <!-- Camada Superior (Overlay) para as demais abas (desenhadas em cima da ficha ativa) -->
+        <div
+          v-if="isOverlayActive"
+          class="overlay-tab-layer"
+        >
+          <router-view :key="route.fullPath" />
+        </div>
+      </div>
     </v-main>
   </v-app>
 </template>
 
 <script setup lang="ts">
-import { provide, onMounted, onUnmounted, computed } from 'vue'
+import { provide, onMounted, onUnmounted, computed, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { GetValue } from '@/io/Storage'
 import CcNotify from '@/ui/notification/CCNotify.vue'
 import AppNavbar from '@/ui/components/AppNavbar.vue'
 import TokenLinkDialog from '@/ui/components/Owlbear/TokenLinkDialog.vue'
+import PlayerJoinWaitDialog from '@/ui/components/Owlbear/PlayerJoinWaitDialog.vue'
+import GmJoinAuthorizationDialog from '@/ui/components/Owlbear/GmJoinAuthorizationDialog.vue'
 import { windowManager } from '@/services/windowManager'
 import {
   bootSheetWindow,
@@ -24,8 +49,6 @@ import {
   isSheetWindowContext,
 } from '@/services/mainWindow'
 import { useTableActionStore } from '@/stores/tableActionStore'
-import { preloadTableChatWindow } from '@/services/tableChatWindow'
-import { isActiveModePrewarm } from '@/services/prewarmContext'
 import { useTokenTrackerBridge } from '@/composables/useTokenTrackerBridge'
 import { UserStore, CompendiumStore } from './stores'
 
@@ -37,6 +60,10 @@ import {
   type UserDataProvider,
 } from '@/ui/providers'
 
+const PilotRunner = defineAsyncComponent(
+  () => import('@/features/active_mode/runner/pilot/PilotRunner.vue')
+)
+
 const theme = useTheme()
 const userStore = UserStore()
 
@@ -45,25 +72,9 @@ const activeTheme = computed(() => {
 })
 
 const route = useRoute()
-const isStandaloneView = computed(() => {
-  return (
-    route.path === '/table-chat' ||
-    route.path.startsWith('/table-chat')
-  )
-})
 
-// Iframe oculto de pré-aquecimento do Modo Ativo (ver `services/prewarmContext.ts`).
-// É uma segunda instância do app: carrega stores e sincronização, mas não mexe na
-// janela do usuário nem cria a janela persistente da ficha.
-const isPrewarmView = isActiveModePrewarm()
-
-// Trackers dos tokens no mapa (PV, Blindagem, Calor, Movimento, Estrutura,
-// Estresse). Precisa ser chamado no setup (e não no `onMounted`) por causa do
-// `onScopeDispose` lá dentro. O iframe de pré-aquecimento não participa: ele não
-// desenha nada.
-if (!isPrewarmView) {
-  useTokenTrackerBridge()
-}
+// Trackers dos tokens no mapa (PV, Blindagem, Calor, Movimento, Estrutura, Estresse).
+useTokenTrackerBridge()
 
 provide<CompendiumDataProvider>(CompendiumDataKey, {
   get Statuses() {
@@ -110,8 +121,28 @@ provide<UserDataProvider>(UserDataKey, {
 
 import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
 import { PilotStore } from '@/features/pilot_management/store'
+import { tableSyncSocket } from '@/services/tableSyncSocket'
 
 const router = useRouter()
+
+const activePilotSheetId = computed(() => PilotSheetStore().CurrentActiveID)
+const hasActiveRunner = computed(() => !!activePilotSheetId.value)
+
+const isOverlayActive = computed(() => {
+  if (!hasActiveRunner.value) return true
+
+  if (activePilotSheetId.value) {
+    const path = route.path || ''
+    const isPilotRunnerPath = path.startsWith('/active-mode/pilot-runner')
+    const isMatchingId = !route.params.id || route.params.id === activePilotSheetId.value
+    const isReadOnly = String(route.query.readonly ?? '') === '1'
+    if (isPilotRunnerPath && isMatchingId && !isReadOnly) {
+      return false
+    }
+  }
+
+  return true
+})
 
 /**
  * Navegação sem reload: a mesma janela persistente troca de ficha atendendo ao
@@ -142,7 +173,7 @@ function handleNavigateMessage(event: MessageEvent) {
 }
 
 async function handleOpenSheetRequested(event: Event) {
-  const customEvent = event as CustomEvent<{ sheetType: 'pilot' | 'npc'; sheetId: string; npcType?: string }>
+  const customEvent = event as CustomEvent<{ sheetType: 'pilot' | 'npc'; sheetId: string; npcType?: string; readOnly?: boolean }>
   const detail = customEvent.detail
   if (!detail) return
 
@@ -155,6 +186,13 @@ async function handleOpenSheetRequested(event: Event) {
   // Reexibe a janela persistente (mesmo iframe) antes de navegar para a ficha.
   void windowManager.reopenWindow()
   if (detail.sheetType === 'pilot') {
+    // Modo leitura: nada de criar/ativar ficha nesta janela (isso zeraria o estado de
+    // combate e mexeria na ficha ativa). O runner monta uma cópia efêmera do piloto.
+    if (detail.readOnly) {
+      router.push(`/active-mode/pilot-runner/${detail.sheetId}?readonly=1`).catch(() => {})
+      return
+    }
+
     try {
       const pilotSheetStore = PilotSheetStore()
       const pilotStore = PilotStore()
@@ -183,11 +221,25 @@ async function handleOpenSheetRequested(event: Event) {
           await pilotStore.LoadPilots()
           pilot = pilotStore.Pilots.find((p: any) => p.ID === detail.sheetId)
         }
+
+        // Nem a ficha nem o piloto estão nesta janela: pede a cópia viva à sala
+        // (TableSyncSocket). Sem isso a ficha abria vazia em "Carregando…" com o erro
+        // "No pilot sheet found with ID … (0 carregadas)".
+        let fromRoom: any = null
+        if (!pilot) {
+          fromRoom = await tableSyncSocket.requestSheet(detail.sheetId)
+          const roomId = fromRoom?.id || fromRoom?.ID
+          pilot = pilotStore.Pilots.find((p: any) => p.ID === (roomId || detail.sheetId))
+        }
+
         if (pilot) {
           if (!pilot.ActiveMech && pilot.Mechs?.length) {
             pilot.ActiveMech = pilot.Mechs[0]
           }
-          await pilotSheetStore.AddPilotSheet(pilot as any)
+          // A cópia da sala é o estado vivo do combate: o container não pode zerar PV/calor.
+          await pilotSheetStore.AddPilotSheet(pilot as any, undefined, {
+            preserveCombatState: !!fromRoom,
+          })
           targetSheet = pilotSheetStore.GetSheet(pilotSheetStore.CurrentActiveID)
         }
       }
@@ -209,6 +261,12 @@ async function handleOpenSheetRequested(event: Event) {
 
 
 onMounted(async () => {
+  const pilotSheetStore = PilotSheetStore()
+  if (!pilotSheetStore.SheetsLoaded) {
+    void pilotSheetStore.LoadPilotSheets()
+  }
+
+
   window.addEventListener('compcon-open-sheet-requested', handleOpenSheetRequested)
   window.addEventListener('compcon-navigate', handleNavigateRequested)
   window.addEventListener('message', handleNavigateMessage)
@@ -227,23 +285,14 @@ onMounted(async () => {
     })
   }
 
-  // Garante que a janela persistente da ficha exista desde a abertura da sala —
-  // inclusive a partir da janela de chat/ações, que é a que o Owlbear carrega
-  // sozinho. Uma vez criada, ela nunca é destruída: "fechar" apenas oculta via CSS.
-  // O iframe de pré-aquecimento não participa: quem cria janela é a janela visível.
-  if (!isPrewarmView) {
-    void ensureSheetWindowOnRoomJoin()
-  }
+  // Garante que a janela persistente da ficha exista desde a abertura da sala.
+  void ensureSheetWindowOnRoomJoin()
 
-  // Janelas standalone (como o chat /table-chat) nunca devem reposicionar a janela principal da ficha
-  if (!isStandaloneView.value && !isPrewarmView) {
-    try {
-      await windowManager.init()
-    } catch {
-      // ignore
-    }
-    // Pré-carrega o chat em segundo plano em seu próprio iframe do Owlbear Rodeo
-    void preloadTableChatWindow()
+  // Janela única gerencia o tamanho e posicionamento inicial
+  try {
+    await windowManager.init()
+  } catch {
+    // ignore
   }
 
   try {
@@ -267,6 +316,55 @@ document.documentElement.setAttribute('data-font', 'inter')
 </script>
 
 <style>
+.main-content-layout {
+  position: relative !important;
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-viewport-wrapper {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.persistent-runner-base {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.persistent-runner-base.is-behind-overlay {
+  pointer-events: none;
+  user-select: none;
+}
+
+.overlay-tab-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  background: rgb(var(--v-theme-background));
+  overflow-y: auto;
+}
+
 body {
   margin: 0;
   overflow-x: hidden;
@@ -304,11 +402,23 @@ body.sheet-window-hidden {
   pointer-events: none !important;
 }
 
+/* Espelha `BAR_WIDTH`/`BAR_HEIGHT` de `services/obrLayout.ts` (a barra é
+ * redimensionada pelo windowManager; aqui é só o conteúdo não estourar). */
 .app-minimized {
   min-height: 48px !important;
   height: 48px !important;
+  width: 100px !important;
   overflow: hidden !important;
   background: transparent !important;
+}
+
+/*
+ * Na barra compacta (100px) só cabem o logo e os botões de ação: o título da
+ * ficha, o nome do mech e o chip de rolagem são ocultados para que nada seja
+ * cortado pela largura reduzida.
+ */
+.app-minimized .minimized-brand-text {
+  display: none !important;
 }
 
 .app-minimized .v-application__wrap {

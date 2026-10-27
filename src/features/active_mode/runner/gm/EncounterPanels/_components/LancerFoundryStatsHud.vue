@@ -279,7 +279,7 @@
                 type="button"
                 v-bind="tooltipProps"
                 class="hase-hex-btn hase-grit"
-                @click="handleHaseClick($event, 'grit', Number(gritVal) || 0)"
+                @click="handleHaseClick($event, 'grit', gritVal)"
               >
                 <svg
                   viewBox="0 0 54 62"
@@ -298,7 +298,7 @@
               </button>
             </template>
             <div class="tooltip-box">
-              <div class="tooltip-header">BRIO (+{{ gritVal }})</div>
+              <div class="tooltip-header">BRIO ({{ formatMod(gritVal) }})</div>
               <div class="tooltip-body">
                 Clique para rolar teste de Brio<br>
                 <span class="text-caption text-grey-lighten-2" style="font-size: 10px;">(Shift+Clique: rola direto)</span>
@@ -316,7 +316,7 @@
                 type="button"
                 v-bind="tooltipProps"
                 class="hase-hex-btn hase-hull"
-                @click="handleHaseClick($event, 'hull', Number(hullVal) || 0)"
+                @click="handleHaseClick($event, 'hull', hullVal)"
               >
                 <svg
                   viewBox="0 0 46 54"
@@ -335,7 +335,7 @@
               </button>
             </template>
             <div class="tooltip-box">
-              <div class="tooltip-header">CASCO (+{{ hullVal }})</div>
+              <div class="tooltip-header">CASCO ({{ formatMod(hullVal) }})</div>
               <div class="tooltip-body">
                 Clique para rolar teste de Casco<br>
                 <span class="text-caption text-grey-lighten-2" style="font-size: 10px;">(Shift+Clique: rola direto)</span>
@@ -353,7 +353,7 @@
                 type="button"
                 v-bind="tooltipProps"
                 class="hase-hex-btn hase-agi"
-                @click="handleHaseClick($event, 'agility', Number(agiVal) || 0)"
+                @click="handleHaseClick($event, 'agility', agiVal)"
               >
                 <svg
                   viewBox="0 0 46 54"
@@ -372,7 +372,7 @@
               </button>
             </template>
             <div class="tooltip-box">
-              <div class="tooltip-header">AGILIDADE (+{{ agiVal }})</div>
+              <div class="tooltip-header">AGILIDADE ({{ formatMod(agiVal) }})</div>
               <div class="tooltip-body">
                 Clique para rolar teste de Agilidade<br>
                 <span class="text-caption text-grey-lighten-2" style="font-size: 10px;">(Shift+Clique: rola direto)</span>
@@ -390,7 +390,7 @@
                 type="button"
                 v-bind="tooltipProps"
                 class="hase-hex-btn hase-sys"
-                @click="handleHaseClick($event, 'systems', Number(sysVal) || 0)"
+                @click="handleHaseClick($event, 'systems', sysVal)"
               >
                 <svg
                   viewBox="0 0 46 54"
@@ -409,7 +409,7 @@
               </button>
             </template>
             <div class="tooltip-box">
-              <div class="tooltip-header">SISTEMAS (+{{ sysVal }})</div>
+              <div class="tooltip-header">SISTEMAS ({{ formatMod(sysVal) }})</div>
               <div class="tooltip-body">
                 Clique para rolar teste de Sistemas<br>
                 <span class="text-caption text-grey-lighten-2" style="font-size: 10px;">(Shift+Clique: rola direto)</span>
@@ -427,7 +427,7 @@
                 type="button"
                 v-bind="tooltipProps"
                 class="hase-hex-btn hase-eng"
-                @click="handleHaseClick($event, 'engineering', Number(engVal) || 0)"
+                @click="handleHaseClick($event, 'engineering', engVal)"
               >
                 <svg
                   viewBox="0 0 46 54"
@@ -446,7 +446,7 @@
               </button>
             </template>
             <div class="tooltip-box">
-              <div class="tooltip-header">ENGENHARIA (+{{ engVal }})</div>
+              <div class="tooltip-header">ENGENHARIA ({{ formatMod(engVal) }})</div>
               <div class="tooltip-body">
                 Clique para rolar teste de Engenharia<br>
                 <span class="text-caption text-grey-lighten-2" style="font-size: 10px;">(Shift+Clique: rola direto)</span>
@@ -750,8 +750,11 @@
         </div>
       </div>
 
-      <!-- Bottom Controls: Damage Menu Button -->
-      <div class="hud-controls-row mt-3">
+      <!-- Bottom Controls: Damage Menu Button (o slot pode estar vazio na ficha de leitura) -->
+      <div
+        v-if="$slots.dmg"
+        class="hud-controls-row mt-3"
+      >
         <div class="w-100">
           <slot name="dmg" />
         </div>
@@ -892,54 +895,68 @@
   })
 
   // HASE
+  const isNpc = computed(() => {
+    return (
+      Boolean(props.item.CombatController?.IsNpc) ||
+      props.item.ItemType?.toLowerCase() === 'npc' ||
+      ['unit', 'doodad', 'eidolon'].includes((props.item as any).npcType || (props.item as any).Type || '')
+    )
+  })
+
+  function getHaseStat(statKey: 'hull' | 'agi' | 'sys' | 'eng'): number {
+    void props.item.CombatController?.CombatLogVersion
+    const sc = props.item.CombatController?.StatController || (props.item as any).StatController
+    if (isNpc.value) {
+      const v = sc?.getCurrent?.(statKey) ?? sc?.getMax?.(statKey) ?? sc?.MaxStats?.[statKey]
+      if (v !== undefined && v !== null && !isNaN(Number(v))) {
+        return Number(v)
+      }
+    }
+    const pilot = (props.item as any).Pilot || props.item
+    const capitalized = (statKey.charAt(0).toUpperCase() + statKey.slice(1)) as 'Hull' | 'Agi' | 'Sys' | 'Eng'
+    const v =
+      pilot.MechSkillsController?.MechSkills?.[capitalized] ??
+      pilot[capitalized] ??
+      (props.item as any)[capitalized]
+    if (v !== undefined && v !== null && !isNaN(Number(v))) {
+      return Number(v)
+    }
+    const fallback = sc?.getCurrent?.(statKey) ?? sc?.getMax?.(statKey) ?? sc?.MaxStats?.[statKey]
+    if (fallback !== undefined && fallback !== null && !isNaN(Number(fallback))) {
+      return Number(fallback)
+    }
+    return 0
+  }
+
+  function formatMod(val: number | string): string {
+    const num = Number(val) || 0
+    return num >= 0 ? `+${num}` : `${num}`
+  }
+
   const gritVal = computed(() => {
+    void props.item.CombatController?.CombatLogVersion
+    const sc = props.item.CombatController?.StatController || (props.item as any).StatController
+    if (isNpc.value) {
+      const v = sc?.getCurrent?.('grit') ?? sc?.getMax?.('grit') ?? sc?.MaxStats?.['grit'] ?? (props.item as any).Grit
+      if (v !== undefined && v !== null && !isNaN(Number(v))) {
+        return Number(v)
+      }
+      return 0
+    }
     return (
       (props.item as any).Grit ??
       (props.item as any).Pilot?.Grit ??
       (props.item as any).Parent?.Grit ??
+      sc?.getCurrent?.('grit') ??
+      sc?.getMax?.('grit') ??
       0
     )
   })
 
-  const hullVal = computed(() => {
-    const pilot = (props.item as any).Pilot || props.item
-    return (
-      pilot.MechSkillsController?.MechSkills?.Hull ??
-      pilot.Hull ??
-      (props.item as any).Hull ??
-      0
-    )
-  })
-
-  const agiVal = computed(() => {
-    const pilot = (props.item as any).Pilot || props.item
-    return (
-      pilot.MechSkillsController?.MechSkills?.Agi ??
-      pilot.Agi ??
-      (props.item as any).Agi ??
-      0
-    )
-  })
-
-  const sysVal = computed(() => {
-    const pilot = (props.item as any).Pilot || props.item
-    return (
-      pilot.MechSkillsController?.MechSkills?.Sys ??
-      pilot.Sys ??
-      (props.item as any).Sys ??
-      0
-    )
-  })
-
-  const engVal = computed(() => {
-    const pilot = (props.item as any).Pilot || props.item
-    return (
-      pilot.MechSkillsController?.MechSkills?.Eng ??
-      pilot.Eng ??
-      (props.item as any).Eng ??
-      0
-    )
-  })
+  const hullVal = computed(() => getHaseStat('hull'))
+  const agiVal = computed(() => getHaseStat('agi'))
+  const sysVal = computed(() => getHaseStat('sys'))
+  const engVal = computed(() => getHaseStat('eng'))
 
   // Combat Stats
   const armorVal = computed(() => {
@@ -1240,11 +1257,11 @@
   const selectedHaseStat = ref('grit')
 
   const haseStatsObject = computed(() => ({
-    grit: Number(gritVal.value) || 0,
-    hull: Number(hullVal.value) || 0,
-    agility: Number(agiVal.value) || 0,
-    systems: Number(sysVal.value) || 0,
-    engineering: Number(engVal.value) || 0,
+    grit: Number.isFinite(Number(gritVal.value)) ? Number(gritVal.value) : 0,
+    hull: Number.isFinite(Number(hullVal.value)) ? Number(hullVal.value) : 0,
+    agility: Number.isFinite(Number(agiVal.value)) ? Number(agiVal.value) : 0,
+    systems: Number.isFinite(Number(sysVal.value)) ? Number(sysVal.value) : 0,
+    engineering: Number.isFinite(Number(engVal.value)) ? Number(engVal.value) : 0,
   }))
 
   function handleHaseClick(e: MouseEvent, statKey: string, bonusVal: number) {

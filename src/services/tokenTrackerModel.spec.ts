@@ -40,6 +40,11 @@ function reader2(current: Record<string, unknown>, max: Record<string, unknown>)
   }
 }
 
+/** Leitor com o cap do turno (`CombatController.BoostedSpeed`) exposto. */
+function withBoostedSpeed(reader: TokenTrackerStatReader, boostedSpeed: unknown): TokenTrackerStatReader {
+  return { ...reader, getBoostedSpeed: () => boostedSpeed }
+}
+
 function config(patch: Partial<TokenTrackerConfig> = {}): TokenTrackerConfig {
   return { ...DEFAULT_TOKEN_TRACKER_CONFIG, ...patch }
 }
@@ -126,6 +131,27 @@ describe('readTrackerValuesFromStats', () => {
     expect(values.structure).toEqual({ current: 4, max: 4 })
     expect(values.stress).toEqual({ current: 4, max: 4 })
     expect(values.speed).toEqual({ current: 6, max: 6 })
+  })
+
+  it('o máximo do Movimento é o cap do turno com Boost, não getMax(speed)', () => {
+    // Depois de um Boost de 5 num mecha speed 5: restante 10 e cap 10 (não 5/5).
+    const boosted = withBoostedSpeed(reader2({ speed: 10 }, { speed: 5 }), 10)
+    expect(readTrackerValuesFromStats(boosted).speed).toEqual({ current: 10, max: 10 })
+
+    // Antes do Boost os dois coincidem.
+    const semBoost = withBoostedSpeed(reader2({ speed: 4 }, { speed: 5 }), 5)
+    expect(readTrackerValuesFromStats(semBoost).speed).toEqual({ current: 4, max: 5 })
+
+    // Sem `getBoostedSpeed` (leitor simples), cai no getMax(speed) de sempre.
+    expect(readTrackerValuesFromStats(reader2({ speed: 4 }, { speed: 5 })).speed).toEqual({
+      current: 4,
+      max: 5,
+    })
+  })
+
+  it('Movimento é clampado no cap (restante não passa do turno)', () => {
+    const values = readTrackerValuesFromStats(withBoostedSpeed(reader2({ speed: 99 }, { speed: 5 }), 10))
+    expect(values.speed).toEqual({ current: 10, max: 10 })
   })
 
   it('não trava quando o máximo é desconhecido (0)', () => {
@@ -484,7 +510,8 @@ describe('statReaderForActor — mecha em vez de piloto', () => {
 
   it('usa o MECHA do piloto (o StatController do piloto não tem calor/estrutura)', () => {
     const resolved = statReaderForActor(pilot, { sheetId: 'pilot-1' })
-    expect(resolved.reader).toBe(mechController)
+    // O leitor é um invólucro: o que importa é para QUEM ele delega.
+    expect(resolved.reader?.getCurrent('hp')).toBe('mecha')
     expect(resolved.source).toBe('mecha ativo')
   })
 
@@ -499,19 +526,38 @@ describe('statReaderForActor — mecha em vez de piloto', () => {
       ],
     }
     const resolved = statReaderForActor(multi, { sheetId: 'pilot-1', mechId: 'mech-2' })
-    expect(resolved.reader).toBe(otherController)
+    expect(resolved.reader?.getCurrent('hp')).toBe('outro')
     expect(resolved.source).toBe('mecha por mechId')
   })
 
   it('sem mecha nenhum, cai no ator (NPC, doodad, eidolon)', () => {
     const npc = { ID: 'npc-1', CombatController: { StatController: mechController } }
-    expect(statReaderForActor(npc, { sheetId: 'npc-1' }).reader).toBe(mechController)
+    expect(statReaderForActor(npc, { sheetId: 'npc-1' }).reader?.getCurrent('hp')).toBe('mecha')
     expect(statReaderForActor(npc, { sheetId: 'npc-1' }).source).toBe('ator (sem mecha)')
+  })
+
+  it('o leitor expõe o cap do turno (BoostedSpeed) do CombatController do ator certo', () => {
+    const boosted = {
+      ID: 'pilot-2',
+      CombatController: { StatController: pilotController, BoostedSpeed: 99 },
+      ActiveMech: {
+        ID: 'mech-2',
+        CombatController: { StatController: mechController, BoostedSpeed: 10 },
+      },
+    }
+    const resolved = statReaderForActor(boosted, { sheetId: 'pilot-2' })
+    // Do MECHA (10), não do piloto (99): é o cap que a ficha mostra.
+    expect(resolved.reader?.getBoostedSpeed?.()).toBe(10)
   })
 
   it('sem controller devolve leitor nulo em vez de estourar', () => {
     expect(statReaderForActor({ ID: 'x' }, { sheetId: 'x' }).reader).toBeNull()
     expect(statReaderForActor(null, { sheetId: 'x' }).reader).toBeNull()
+  })
+
+  it('ignora controller sem getCurrent/getMax (não estoura depois)', () => {
+    const quebrado = { ID: 'x', CombatController: { StatController: { algo: 1 } } }
+    expect(statReaderForActor(quebrado, { sheetId: 'x' }).reader).toBeNull()
   })
 })
 

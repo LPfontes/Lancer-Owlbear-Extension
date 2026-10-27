@@ -227,13 +227,29 @@
   const route = useRoute()
   const router = useRouter()
 
+  import { PilotStore } from '@/features/pilot_management/store'
+  import { PilotSheetStore } from '@/features/pilot_management/store/PilotSheetStore'
+
   const loading = ref(false)
   const deleteDialog = ref(false)
   const menu = ref(false)
 
-  function delete_pilot(close?: () => void) {
+  async function delete_pilot(close?: () => void) {
     menu.value = false
-    ;(props.pilot as any).SaveController.Delete()
+    const pilotId = props.pilot.ID || (props.pilot as any)._id
+    
+    // 1. Remove quaisquer fichas ativas (pilot_sheets) associadas a este piloto do IndexedDB
+    const sheetStore = PilotSheetStore()
+    const sheetsToRemove = (sheetStore.PilotSheets || []).filter(
+      (s: any) => s.Pilot?.ID === pilotId || s.Combatant?.actor?.ID === pilotId || s.PilotID === pilotId
+    )
+    for (const sheet of sheetsToRemove) {
+      await sheetStore.RemovePilotSheet(sheet as any)
+    }
+
+    // 2. Remove o piloto permanentemente do store e do IndexedDB
+    await PilotStore().DeletePilotPermanent(props.pilot)
+
     if (close) close()
     if (route.path !== '/pilot_management') router.push('/pilot_management')
   }

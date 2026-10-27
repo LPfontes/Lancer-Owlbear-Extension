@@ -140,17 +140,24 @@ export async function loadEncounterFromJsonOrSharecode(
   const encounter = Encounter.Deserialize(data)
   encounter.save()
 
-  const instance = new EncounterInstance(undefined, encounter, pilots, placeholders)
-  instance.Combatants.forEach(c => {
-    // Um combatente de tipo conhecido mas com dados incompletos não pode derrubar a
-    // importação inteira: sem o controller, seguimos com o ator que veio do arquivo.
-    c.actor?.CombatController?.ResetForEncounter?.()
-    c.actor?.CombatController?.StartEncounter?.()
-  })
-  instance.RecordEncounterStart()
+  const encStore = EncounterStore()
+  let instance: EncounterInstance
+  if (encStore.CurrentActive) {
+    instance = await encStore.updateContinuousEncounterWithTemplate(encounter)
+  } else {
+    instance = new EncounterInstance(undefined, encounter, pilots, placeholders)
+    instance.IsActive = true
+    instance.Combatants.forEach(c => {
+      // Um combatente de tipo conhecido mas com dados incompletos não pode derrubar a
+      // importação inteira: sem o controller, seguimos com o ator que veio do arquivo.
+      c.actor?.CombatController?.ResetForEncounter?.()
+      c.actor?.CombatController?.StartEncounter?.()
+    })
+    instance.RecordEncounterStart()
 
-  await EncounterStore().AddEncounterInstance(instance)
-  await EncounterStore().SetActiveEncounter(instance.ID)
+    await encStore.AddEncounterInstance(instance)
+    await encStore.SetActiveEncounter(instance.ID)
+  }
 
   // Antes de qualquer coisa depender do encontro: os NPCs do arquivo passam a
   // existir no roster local (ver `materializeEncounterNpcs`).
@@ -158,7 +165,7 @@ export async function loadEncounterFromJsonOrSharecode(
 
   if (navigate) {
     const { default: router } = await import('@/router')
-    router.push('gm-encounter-runner')
+    router.push('/table-chat?tab=tracker')
   }
 
   return { instance, encounter, importedNpcs }

@@ -19,6 +19,13 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       if (!state.PilotSheets.length) return []
       return state.PilotSheets
     },
+    CurrentActive: (state): PilotSheet | undefined => {
+      if (!state.CurrentActiveID) return undefined
+      const found = state.PilotSheets.find(
+        ps => ps.ID === state.CurrentActiveID || ps.Combatant?.id === state.CurrentActiveID
+      )
+      return found as unknown as PilotSheet | undefined
+    },
   },
   actions: {
     async LoadPilotSheets(): Promise<void> {
@@ -28,9 +35,20 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       await this.LoadSheetId()
       this.SheetsLoaded = true
     },
-    async AddPilotSheet(pilot: Pilot, campaign?: string): Promise<void> {
-      const newSheet = PilotSheet.FromPilot(pilot, campaign)
-      newSheet.Combatant.actor.CombatController.Reset()
+    /**
+     * Cria o container de ficha a partir de um piloto e o torna ativo.
+     *
+     * `options.preserveCombatState` é para fichas que vêm da SALA (cópia viva do
+     * combate): sem ele o container nasce zerado — PV cheio, calor 0 — e a janela
+     * mostraria um estado que ninguém tem.
+     */
+    async AddPilotSheet(
+      pilot: Pilot,
+      campaign?: string,
+      options: { preserveCombatState?: boolean } = {}
+    ): Promise<void> {
+      const newSheet = PilotSheet.FromPilot(pilot, campaign, options)
+      if (!options.preserveCombatState) newSheet.Combatant.actor.CombatController.Reset()
       this.PilotSheets.push(newSheet)
       await SetItem('pilot_sheets', PilotSheet.Serialize(newSheet))
       await this.SetActiveSheet(newSheet.ID)
@@ -69,10 +87,9 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       if (!id) return null
       const sheet = this.PilotSheets.find((ps: any) => ps.ID === id)
       if (sheet) return sheet as PilotSheet
-      // Ainda não carregamos do storage: um "não encontrado" aqui é transitório,
-      // não uma ficha perdida.
-      if (!this.SheetsLoaded) return null
-      logger.error(`No pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
+      // Ainda não carregamos do storage ou a lista está vazia: não é erro fatal.
+      if (!this.SheetsLoaded || !this.PilotSheets.length) return null
+      logger.warn(`No pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
       return null
     },
     GetActiveSheet(): PilotSheet | null {
@@ -81,12 +98,46 @@ export const PilotSheetStore = defineStore('pilot_sheet', {
       const activeSheet = this.PilotSheets.find((ps: any) => ps.ID === id)
       if (activeSheet) return activeSheet as PilotSheet
       if (!this.SheetsLoaded) return null
-      logger.error(`No active pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
+      if (!this.PilotSheets.length) {
+        // Se a lista de fichas está vazia, o CurrentActiveID salvo é obsoleto
+        this.CurrentActiveID = ''
+        void SetValue('current_active_sheet', '')
+        return null
+      }
+      logger.warn(`No active pilot sheet found with ID "${id}" (${this.PilotSheets.length} carregadas)`)
       return null
     },
     async AssignActiveSheet(payload: PilotSheet): Promise<void> {
       this.CurrentActiveID = payload.ID
       await SetValue('current_active_sheet', payload.ID)
+    },
+    /**
+     * Garante que exista uma ficha ativa para o piloto especificado.
+     * Se já existir, ativa-a; se não existir, cria o container e o torna ativo.
+     */
+    async ensureActiveSheetForPilot(pilot: Pilot): Promise<PilotSheet> {
+      if (!this.SheetsLoaded) {
+        await this.LoadPilotSheets()
+      }
+      const pilotId = pilot?.ID || (pilot as any)?.id
+      let existing = this.PilotSheets.find(
+        (ps: any) =>
+          !ps.SaveController?.IsDeleted &&
+          (ps.PilotID === pilotId || ps.Combatant?.actor?.ID === pilotId || ps.ID === pilotId)
+      )
+      if (existing) {
+        if (existing.Archived) {
+          existing.Unarchive()
+        }
+        await this.SetActiveSheet(existing.ID)
+        return existing as unknown as PilotSheet
+      }
+
+      if (!pilot.ActiveMech && pilot.Mechs?.length) {
+        pilot.ActiveMech = pilot.Mechs[0]
+      }
+      await this.AddPilotSheet(pilot)
+      return (this.GetSheet(this.CurrentActiveID) ?? this.PilotSheets[this.PilotSheets.length - 1]) as PilotSheet
     },
   },
 })

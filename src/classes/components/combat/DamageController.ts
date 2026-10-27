@@ -120,6 +120,12 @@ class DamageController {
 
     this.ApplyDamage(type, damage.total, direct)
 
+    // O efeito do Suportar (Brace) concede Resistência apenas contra o ataque disparador.
+    // Após absorver esse dano, as resistências temporárias são limpas, mantendo o estado Braced (+1 Dif, restrições) até o fim do próximo turno.
+    if (this._parent.Braced && this._parent.BraceGranted?.length > 0) {
+      this._parent.ClearBraceResistance()
+    }
+
     if (wasDestroyed || !this._parent.IsDestroyed) return
 
     const deployable: any =

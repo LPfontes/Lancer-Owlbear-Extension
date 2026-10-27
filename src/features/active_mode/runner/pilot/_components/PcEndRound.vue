@@ -1,5 +1,9 @@
 <template>
-  <end-round-dialog>
+  <end-round-dialog
+    label-key="active.endRound.finishTurn"
+    title-key="active.endRound.confirmFinishTurn"
+    icon="mdi-check-all"
+  >
     <template #default="{ isActive }">
       <v-card-text>
         <cc-alert
@@ -97,8 +101,7 @@
           </div>
 
           <div
-            v-for="(b, index) in braced"
-            :key="`braced-${index}`"
+            v-if="braced"
             class="my-1 mx-4 px-2 text-text bg-panel"
           >
             <i18n-t
@@ -167,9 +170,9 @@
           block
           prepend-icon="mdi-check-all"
           :disabled="hasBurn && !burnHandled"
-          @click="endRound(isActive)"
+          @click="endTurn(isActive)"
         >
-          {{ $t('active.endRound.endRound') }}
+          {{ $t('active.endRound.finishTurn') }}
         </cc-button>
         <div
           v-if="hasBurn && !burnHandled"
@@ -190,14 +193,18 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import * as _ from 'lodash-es'
   import PilotSheet from '@/features/pilot_management/store/PilotSheet'
   import EndRoundDialog from '../../_shared/_EndRoundDialog.vue'
   import EndRoundActionChips from '../../_components/EndRoundActionChips.vue'
   import BurnCheckModal from '../../gm/EncounterPanels/_components/BurnCheckModal.vue'
   import { StatKey } from '@/classes/components/combat/stats/Stats'
+  import { ActivePeriod } from '@/classes/Frequency'
+  import { EncounterStore } from '@/stores'
+  import { useTableActionStore } from '@/stores/tableActionStore'
   import DOMPurify from 'dompurify'
+  import { tokenMovementCapture } from '@/services/tokenMovementCapture'
 
   defineOptions({ name: 'PcEndRoundPanel' })
 
@@ -206,19 +213,27 @@
   }>()
 
   const burnDialog = ref(false)
-  const burnHandledRound = ref<number | null>(null)
-  const burnHandled = computed(() => burnHandledRound.value === props.sheet.Round)
+  const burnHandled = ref(false)
+  const lastBurnValue = ref(0)
   const mechController = computed(() => props.sheet.Pilot.ActiveMech?.CombatController)
   const currentBurn = computed(
     () => mechController.value?.StatController.getCurrent(StatKey.BURN) ?? 0
   )
   const hasBurn = computed(() => currentBurn.value > 0)
 
+  // Se a unidade sofrer novo dano de queimadura (ou o valor aumentar),
+  // reseta o estado de resolvido para exigir novo teste
+  watch(currentBurn, (newVal, oldVal) => {
+    if (newVal > 0 && newVal > (oldVal ?? 0)) {
+      burnHandled.value = false
+    }
+  }, { immediate: true })
+
   function markBurnHandled(answer?: { success?: boolean; skip?: boolean; rolled?: number }) {
     if (answer && !answer.skip && typeof answer.success === 'boolean') {
       mechController.value?.ResolveBurn(answer.success, answer.rolled)
     }
-    burnHandledRound.value = props.sheet.Round
+    burnHandled.value = true
   }
   function cleanSvg(svg: string) {
     return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } })
@@ -233,6 +248,7 @@
     return controller.value.HasRemainingActions
   })
   const remainingMovement = computed(() => {
+    if (controller.value.IsBracedTurn) return 0
     return controller.value.StatController.getCurrent(StatKey.SPEED) || 0
   })
 
@@ -250,8 +266,77 @@
             s.expires.RoundEndNumber === props.sheet.Round + 1))
     )
   }
-  async function endRound(isActive) {
+  async function endTurn(isActive) {
     isActive.value = false
-    await props.sheet.EndRound()
+    burnHandled.value = false
+    // Encerra o TURNO da própria ficha. O `EndTurnFlow` cuida de burn, checagens,
+    // ativação e usos de turno; as ações voltam limpas e o movimento ao máximo.
+    await props.sheet.EndTurn()
+
+    // Se a ficha faz parte de um encontro ativo na mesa, atualiza e sincroniza também
+    // o combatente correspondente no encontro compartilhado.
+    try {
+      const encStore = EncounterStore()
+      const enc = encStore.getActiveEncounter(encStore.CurrentActiveID)
+      if (enc) {
+        const p = props.sheet.Pilot
+        const encCombatant = enc.Combatants?.find(
+          (c: any) => c.type === 'pilot' && (c.actor?.ID === p?.ID || c.id === p?.ID)
+        )
+        if (encCombatant?.actor) {
+          const pilotCc = encCombatant.actor.CombatController
+          const mechCc = encCombatant.actor.ActiveMech?.CombatController
+
+          pilotCc?.EndTurn(enc)
+          mechCc?.EndTurn(enc)
+
+          pilotCc?.ResetCombatActions()
+          pilotCc?.ClearBoost()
+          if (pilotCc) {
+            const pSpeed = (pilotCc.Braced && pilotCc.BracedPenaltyActive) ? 0 : pilotCc.StatController.getMax(StatKey.SPEED)
+            pilotCc.StatController.setCurrentStat(StatKey.SPEED, pSpeed, { silent: true })
+            pilotCc.ClearUses(ActivePeriod.Turn)
+            pilotCc.ActionPoolController.ClearReactionUses()
+            pilotCc.CombatLogVersion++
+          }
+
+          mechCc?.ResetCombatActions()
+          mechCc?.ClearBoost()
+          if (mechCc) {
+            const mSpeed = (mechCc.Braced && mechCc.BracedPenaltyActive) ? 0 : mechCc.StatController.getMax(StatKey.SPEED)
+            mechCc.StatController.setCurrentStat(StatKey.SPEED, mSpeed, { silent: true })
+            mechCc.ClearUses(ActivePeriod.Turn)
+            mechCc.ActionPoolController.ClearReactionUses()
+            mechCc.CombatLogVersion++
+          }
+
+          void enc.Save?.()
+        }
+      }
+    } catch (e) {
+      console.warn('[PcEndRound] Erro ao sincronizar turno com o encontro ativo:', e)
+    }
+
+    // Registra a ação no chat da mesa
+    try {
+      const actorName = props.sheet.Pilot?.Callsign || props.sheet.Pilot?.Name || 'Piloto'
+      void useTableActionStore().postAction({
+        senderName: actorName,
+        category: 'full_action',
+        title: `Fim de Turno — ${actorName}`,
+        detail: `Turno encerrado. Ações e movimento renovados para a próxima ativação.`,
+      })
+    } catch {
+      // Ignora se useTableActionStore não estiver disponível
+    }
+
+    // E o pedido sai para as outras janelas só para os tokens DESTA ficha: os badges
+    // do mapa precisam voltar ao cheio mesmo sem o movimento ter sido gasto aqui.
+    await tokenMovementCapture.resetRoundMovements({
+      filter: {
+        sheetId: props.sheet.Pilot?.ID,
+        mechId: props.sheet.Pilot?.ActiveMech?.ID,
+      },
+    })
   }
 </script>

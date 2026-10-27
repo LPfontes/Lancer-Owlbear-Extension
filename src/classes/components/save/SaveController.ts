@@ -33,7 +33,7 @@ class SaveController {
    * o estado final sempre chega ao storage — e `flushPendingSaves()` força a
    * gravação quando a janela da ficha é ocultada ou a página é descarregada.
    */
-  private readonly _throttledSave: (() => void) & { flush: () => void }
+  private readonly _throttledSave: (() => void) & { flush: () => void; cancel: () => void }
 
   /** Argumento repassado no `flush` (true = gravação silenciosa, não marca dirty). */
   private _flushSilent = false
@@ -77,6 +77,10 @@ class SaveController {
     // imediata quando a janela da ficha é ocultada ou a página é descarregada.
     this._flushSilent = silent
     this._throttledSave()
+  }
+
+  public cancel(): void {
+    this._throttledSave.cancel?.()
   }
 
   private async _save(silent = false) {

@@ -38,7 +38,7 @@
               hide-details
               style="width: 80px;"
               class="text-center"
-              prefix="+"
+              :prefix="bonus >= 0 ? '+' : ''"
             />
           </div>
 

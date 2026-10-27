@@ -22,6 +22,11 @@
         :action="action"
         @activate="activate($event)"
       />
+      <mech-improvised-attack-button
+        v-else-if="action?.ID === 'act_improvised_attack_npc'"
+        :action="action"
+        @activate="activate($event)"
+      />
       <targeted-action-button
         v-else-if="action && controller.NeedsTarget(action.ID)"
         :action="action"
@@ -47,6 +52,7 @@
   import TargetedActionButton from './loadouts/action_buttons/targetedActionButton.vue'
   import NpcSkirmishButton from './loadouts/action_buttons/npcSkirmishButton.vue'
   import NpcBarrageButton from './loadouts/action_buttons/npcBarrageButton.vue'
+  import MechImprovisedAttackButton from './loadouts/action_buttons/MechImprovisedAttackButton.vue'
   import { CompendiumStore } from '@/stores'
 
   const { owner } = useEncounterContext()

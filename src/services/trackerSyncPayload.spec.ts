@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildTrackerSnapshot,
+  displayedTrackerRound,
   fitSnapshotToBudget,
+  pickTrackerSnapshot,
+  roomEncounterDiffers,
   sanitizeTrackerSnapshot,
+  shouldPublishTrackerSnapshot,
   trackerSnapshotSignature,
   MAX_SNAPSHOT_CHARS,
   MAX_SYNCED_CARDS,
@@ -98,6 +102,11 @@ describe('buildTrackerSnapshot', () => {
     )
 
     expect(snapshot!.cards.map(c => c.id)).toEqual(['primeiro', 'segundo', 'terceiro'])
+  })
+
+  it('retorna null se a instância estiver inativa (IsActive = false)', () => {
+    const inactive = { ...encounter([combatant()]), IsActive: false }
+    expect(buildTrackerSnapshot(inactive)).toBeNull()
   })
 
   it('marca o combatente em turno apenas se ele estiver visível', () => {
@@ -257,5 +266,134 @@ describe('fitSnapshotToBudget', () => {
 
     expect(fitted.cards.length).toBeLessThan(snapshot.cards.length)
     expect(JSON.stringify(fitted).length).toBeLessThanOrEqual(MAX_SNAPSHOT_CHARS)
+  })
+})
+
+/**
+ * A hidratação do tracker escolhe entre o snapshot do servidor de sincronização
+ * (`INIT_SYNC.activeTracker`) e o metadata da sala do Owlbear. O encontro não é mais
+ * salvo no metadata — ele é só uma ponte legada —, então o servidor manda.
+ */
+describe('pickTrackerSnapshot', () => {
+  it('usa o snapshot do servidor quando a sala não tem metadata', () => {
+    const fromSocket = buildTrackerSnapshot(encounter([combatant()]))!
+
+    expect(pickTrackerSnapshot(fromSocket, null)).toEqual(fromSocket)
+  })
+
+  it('dá prioridade ao servidor mesmo com metadata legado na sala', () => {
+    const fromSocket = buildTrackerSnapshot(encounter([combatant()]))!
+    const legacy = buildTrackerSnapshot(
+      encounter([combatant({ id: 'c-legacy', actor: { ID: 's2', Name: 'Do Metadata' } })])
+    )!
+
+    expect(pickTrackerSnapshot(fromSocket, legacy)!.cards[0].id).toBe('c1')
+  })
+
+  it('cai para o metadata legado quando o servidor não tem nada', () => {
+    const legacy = buildTrackerSnapshot(
+      encounter([combatant({ id: 'c-legacy', actor: { ID: 's2', Name: 'Do Metadata' } })])
+    )!
+
+    expect(pickTrackerSnapshot(null, legacy)!.cards[0].id).toBe('c-legacy')
+  })
+
+  it('devolve null quando nenhuma das fontes tem um snapshot válido', () => {
+    expect(pickTrackerSnapshot(null, null)).toBeNull()
+    expect(pickTrackerSnapshot(undefined, { cards: 'nada' })).toBeNull()
+  })
+})
+
+/**
+ * A troca AUTOMÁTICA do encontro local pelo da sala usa esta decisão. Ela precisa ser
+ * idempotente (o eco da própria publicação não pode virar loop de trocas) e ignorar a
+ * identidade do encontro — duas janelas da mesma mesa guardam o mesmo combate com IDs
+ * próprios, e comparar o ID faria a troca nunca convergir.
+ */
+describe('roomEncounterDiffers', () => {
+  it('é falso quando a iniciativa local já é a publicada', () => {
+    const local = encounter([combatant()])
+    const snapshot = buildTrackerSnapshot(local)!
+
+    expect(roomEncounterDiffers(local, snapshot.inTurnId, snapshot)).toBe(false)
+  })
+
+  it('é verdadeiro quando a sala publicou outro combate', () => {
+    const local = encounter([combatant()])
+    const room = buildTrackerSnapshot(encounter([combatant({ id: 'c-outro' })]))!
+
+    expect(roomEncounterDiffers(local, null, room)).toBe(true)
+  })
+
+  it('ignora identidade e nome do encontro (mesma iniciativa, IDs diferentes)', () => {
+    const local = encounter([combatant()])
+    const room = {
+      ...buildTrackerSnapshot(encounter([combatant()]))!,
+      encounterId: 'outro-id',
+      name: 'Outro Nome',
+    }
+
+    expect(roomEncounterDiffers(local, null, room)).toBe(false)
+  })
+
+  it('é verdadeiro quando esta janela não tem encontro nenhum', () => {
+    expect(roomEncounterDiffers(null, null, buildTrackerSnapshot(encounter([combatant()])))).toBe(
+      true
+    )
+  })
+
+  it('é falso quando a sala não publicou combate', () => {
+    expect(roomEncounterDiffers(encounter([combatant()]), null, null)).toBe(false)
+    expect(roomEncounterDiffers(encounter([combatant()]), null, { cards: [] })).toBe(false)
+  })
+})
+
+/**
+ * Um painel que acabou de abrir publica a partir do encontro local — ainda vazio — antes
+ * de receber o estado da mesa. Esse `TRACKER_SYNC` vazio apagava a iniciativa de todo
+ * mundo ("Encontro Vazio"), então ele não pode sair.
+ */
+describe('shouldPublishTrackerSnapshot', () => {
+  it('publica quando a janela tem combatentes', () => {
+    const local = buildTrackerSnapshot(encounter([combatant()]))!
+    expect(shouldPublishTrackerSnapshot(local, null)).toBe(true)
+  })
+
+  it('não publica uma janela vazia se a sala já tem combate', () => {
+    const local = buildTrackerSnapshot(encounter([])) ?? { cards: [], round: 1 }
+    const room = buildTrackerSnapshot(encounter([combatant()]))!
+
+    expect(shouldPublishTrackerSnapshot(local, room)).toBe(false)
+  })
+
+  it('publica quando a mesa também está vazia (limpar é legítimo)', () => {
+    expect(shouldPublishTrackerSnapshot({ cards: [], round: 1 }, null)).toBe(true)
+    expect(shouldPublishTrackerSnapshot({ cards: [], round: 1 }, { cards: [], round: 1 })).toBe(true)
+  })
+
+  it('não publica snapshot inválido', () => {
+    expect(shouldPublishTrackerSnapshot(null, null)).toBe(false)
+  })
+})
+
+/**
+ * O cabeçalho do tracker mostrava sempre a rodada do encontro local — quando a visão é a
+ * SINCRONIZADA (jogador, ou Mestre sem encontro na janela) quem manda é a rodada que veio
+ * pelo `TableSyncSocket`.
+ */
+describe('displayedTrackerRound', () => {
+  it('usa a rodada da sala na visão sincronizada', () => {
+    expect(displayedTrackerRound(true, 4, 1)).toBe(4)
+  })
+
+  it('usa a rodada local na visão local', () => {
+    expect(displayedTrackerRound(false, 4, 2)).toBe(2)
+  })
+
+  it('cai para a outra fonte quando a preferida está vazia e nunca mostra 0', () => {
+    expect(displayedTrackerRound(true, 0, 3)).toBe(3)
+    expect(displayedTrackerRound(false, 5, undefined)).toBe(5)
+    expect(displayedTrackerRound(true, undefined, null)).toBe(1)
+    expect(displayedTrackerRound(false, 'x', 'y')).toBe(1)
   })
 })

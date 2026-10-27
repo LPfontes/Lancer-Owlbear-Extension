@@ -2,7 +2,7 @@ import { CompendiumStore } from '@/features/compendium/store'
 import * as _ from 'lodash-es'
 import { CompendiumItem, ICompendiumItemData } from '../../../CompendiumItem'
 import { localize } from '@/i18n/localize'
-import { keyPrefixes } from '@/i18n/contentKeys'
+import { keyPrefixes, slug } from '@/i18n/contentKeys'
 import { ContentPack } from '../../../ContentPack'
 import { Damage, IDamageData } from '../../../Damage'
 import { DamageType, ItemType, RangeType, WeaponSize, WeaponType } from '../../../enums'
@@ -98,7 +98,16 @@ class WeaponProfile extends CompendiumItem {
     idx?: number
   ) {
     const data = Object.assign({}, pData) as ICompendiumItemData
-    const lkey = keyPrefixes.get(pData as object)
+    let lkey = keyPrefixes.get(pData as object)
+    const containerKey = (container as any)._lkey || container.ID
+    if (!lkey && containerKey) {
+      if (idx !== undefined) {
+        const profileSlug = pData.name ? slug(pData.name) : `${idx}`
+        lkey = `${containerKey}.profile_${profileSlug}`
+      } else {
+        lkey = containerKey
+      }
+    }
     if (lkey) {
       data.id = lkey // explicit profile: name-slug key from the shared walk
     } else if (idx !== undefined) {
@@ -127,9 +136,14 @@ class WeaponProfile extends CompendiumItem {
       : ''
     const mkEffect = (key: string, raw: string | IActiveEffectData | undefined, name: string) => {
       if (!raw) return undefined
-      const data = typeof raw === 'string' ? { name, detail: raw } : raw
-      keyPrefixes.set(data as object, `${this._lkey ?? this.ID}.${key}`)
-      return new ActiveEffect(data, this, false, name)
+      const baseKey = this._lkey ?? this.ID
+      const effectKey = `${baseKey}.${key}`
+      const effectData =
+        typeof raw === 'string'
+          ? { name, detail: raw, id: effectKey }
+          : { ...raw, id: raw.id || effectKey }
+      keyPrefixes.set(effectData as object, effectKey)
+      return new ActiveEffect(effectData, this, false, name)
     }
     this.OnMiss = mkEffect('on_miss', pData.on_miss, 'On Miss Effect')
     this.OnAttack = mkEffect('on_attack', pData.on_attack, 'On Attack Effect')

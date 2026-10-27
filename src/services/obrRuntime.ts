@@ -25,6 +25,9 @@ export const obrRole = ref<'GM' | 'PLAYER'>('PLAYER')
 /** ID do jogador na sala (vazio até o handshake). */
 export const obrPlayerId = ref('')
 
+/** Nome do jogador na sala (vazio até o handshake). */
+export const obrPlayerName = ref('')
+
 /**
  * Esta janela é o Mestre? Reativo: use dentro de `computed`/`watch` e a UI passa a
  * reagir quando o handshake termina.
@@ -38,4 +41,5 @@ export function resetObrRuntime(): void {
   obrReady.value = false
   obrRole.value = 'PLAYER'
   obrPlayerId.value = ''
+  obrPlayerName.value = ''
 }
