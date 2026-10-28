@@ -504,7 +504,7 @@ class StatusController {
                 name: def?.label || rawId,
                 icon: normNeedle,
                 type: def?.category === 'condition' ? 'Condition' : 'Status',
-                effects: '',
+                effects: [],
               })
             }
           }
@@ -661,7 +661,7 @@ class StatusController {
             name: def?.label || normId,
             icon: normId,
             type: def?.category === 'condition' ? 'Condition' : 'Status',
-            effects: '',
+            effects: [],
           })
         }
         sc.Statuses.push({

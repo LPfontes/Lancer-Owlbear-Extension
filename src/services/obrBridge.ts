@@ -255,19 +255,25 @@ class OBRBridge {
         .catch(e => console.warn('[OBRBridge] Aviso ao criar o item de menu de parada:', e))
 
       // Menu de contexto para Estados e Condições LANCER (nativo no COMP/CON)
+      const statusMenuIconUrl =
+        typeof window !== 'undefined' && window.location?.origin
+          ? `${window.location.origin}/status-icons/lockon.svg`
+          : '/status-icons/lockon.svg'
       void OBR.contextMenu.create({
         id: 'compcon-token-status',
         icons: [
           {
-            icon: '/status-icons/lockon.svg',
+            icon: statusMenuIconUrl,
             label: i18n.global.t('active.tokenStatus.contextMenu'),
             filter: {
               roles: ['GM', 'PLAYER'],
               min: 1,
-              some: [
-                { key: 'layer', value: 'CHARACTER', operator: '==' },
-                { key: 'layer', value: 'MOUNT', operator: '==' },
-                { key: 'layer', value: 'PROP', operator: '==' },
+              every: [
+                {
+                  key: ['metadata', 'com.compcon.status_markers/marker'],
+                  value: undefined,
+                  operator: '==',
+                },
               ],
             },
           },
@@ -278,7 +284,7 @@ class OBRBridge {
             const { windowManager } = await import('./windowManager')
             await windowManager.reopenWindow()
           } catch {}
-          await tokenStatusService.refreshSelectedTokens(context.items)
+          await tokenStatusService.selectContextItems(context.items)
           tokenStatusService.statusDialogOpen.value = true
           window.dispatchEvent(
             new CustomEvent('compcon-token-status-requested', {

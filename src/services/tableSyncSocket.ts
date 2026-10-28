@@ -570,7 +570,7 @@ class TableSyncSocket {
         try {
           const { NpcStore } = await import('@/stores')
           const npcStore = NpcStore()
-          const npc = npcStore.getNpc?.(patch.characterId) ??
+          const npc = (npcStore as any).getNpcByID?.(patch.characterId) ??
             npcStore.Npcs?.find((n: any) => n.ID === patch.characterId)
           if (npc?.CombatController) {
             this.applyCombatPatchToController(

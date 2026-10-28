@@ -1,6 +1,6 @@
 import OBR, { type Item } from '@owlbear-rodeo/sdk'
 import { ref } from 'vue'
-import { COMPCON_METADATA_KEY, type CompconTokenMetadata } from '@/types/compcon-obr'
+import { COMPCON_METADATA_KEY, type TokenSheetBinding as CompconTokenMetadata } from '@/types/compcon-obr'
 import {
   sortStatusMarkers,
   toggleStatus,
@@ -90,9 +90,14 @@ class TokenStatusService {
   public isSelectableTokenItem(item: Item): boolean {
     if (!item) return false
     if (item.id.startsWith('cc_st_') || item.id.startsWith('ls_st_')) return false
-    const validLayers = ['CHARACTER', 'MOUNT', 'PROP', 'ATTACHMENT']
-    if (!validLayers.includes(item.layer)) return false
-    return item.type === 'IMAGE' || Boolean(item.metadata?.[COMPCON_METADATA_KEY])
+    if (
+      item.metadata?.['com.compcon.status_markers/marker'] ||
+      item.metadata?.['com.lancer.status_markers/marker'] ||
+      item.metadata?.['com.compcon.activemode/tracker_slot']
+    ) {
+      return false
+    }
+    return true
   }
 
   /**
@@ -370,6 +375,28 @@ class TokenStatusService {
     }
   }
 
+  public async selectContextItems(items: Item[]): Promise<void> {
+    const validItems = (items || []).filter(i => this.isSelectableTokenItem(i))
+    const infos: SelectedTokenInfo[] = []
+    for (const item of validItems) {
+      const resolved = await this.resolveTokenStatuses(item)
+      const textObj = (item as any).text
+      const plainName = textObj?.plainText?.trim() || item.name || 'Token'
+      infos.push({
+        id: item.id,
+        name: resolved.actorName ? `${plainName} (${resolved.actorName})` : plainName,
+        statuses: resolved.statuses,
+        isBoundToSheet: resolved.isBoundToSheet,
+        sheetType: resolved.sheetType,
+        sheetId: resolved.sheetId,
+        actorName: resolved.actorName,
+      })
+    }
+    if (infos.length > 0) {
+      this.selectedTokens.value = infos
+    }
+  }
+
   public async refreshSelectedTokens(sceneItems?: Item[]): Promise<void> {
     if (!OBR.isAvailable) return
     try {
@@ -379,13 +406,17 @@ class TokenStatusService {
         return
       }
       const selection = await OBR.player.getSelection()
-      if (!selection || selection.length === 0) {
+      let targetIds = selection && selection.length > 0 ? selection : []
+      if (targetIds.length === 0 && this.selectedTokens.value.length > 0) {
+        targetIds = this.selectedTokens.value.map(t => t.id)
+      }
+      if (targetIds.length === 0) {
         this.selectedTokens.value = []
         return
       }
       const items = sceneItems
-        ? sceneItems.filter(i => selection.includes(i.id))
-        : await OBR.scene.items.getItems(selection)
+        ? sceneItems.filter(i => targetIds.includes(i.id))
+        : await OBR.scene.items.getItems(targetIds)
 
       const validItems = items.filter(i => this.isSelectableTokenItem(i))
       const infos: SelectedTokenInfo[] = []

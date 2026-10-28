@@ -240,6 +240,17 @@
         <v-icon :icon="syncStatusIcon" size="20" :class="{ 'sync-pulsing': tableSyncStatus === 'reconnecting' || tableSyncStatus === 'connecting' }" />
       </v-btn>
 
+      <!-- Token Status & Conditions Shortcut Button -->
+      <v-btn
+        icon="mdi-shield-alert-outline"
+        variant="text"
+        :color="tokenStatusService.statusDialogOpen.value ? 'error' : 'grey-lighten-2'"
+        size="small"
+        class="nav-btn rounded-0 mr-1"
+        :title="$t('active.tokenStatus.title')"
+        @click="openTokenStatusDialog"
+      />
+
       <!-- 3D Dice (dddice) Shortcut Button -->
       <v-btn
         icon="mdi-dice-multiple"
@@ -518,6 +529,7 @@ import OBR from '@owlbear-rodeo/sdk'
 import ImportDialog from '@/features/active_mode/_components/ImportDialog.vue'
 import AppOptionsDialog from './AppOptionsDialog.vue'
 import { dddiceService } from '@/services/dddiceService'
+import { tokenStatusService } from '@/services/tokenStatusService'
 import { useTableActionStore } from '@/stores/tableActionStore'
 import { tableSyncSocket, tableSyncStatus } from '@/services/tableSyncSocket'
 import { reloadExtensionWindow } from '@/services/windowReload'
@@ -531,6 +543,11 @@ const route = useRoute()
 const router = useRouter()
 const { mdAndDown: mobile } = useDisplay()
 const tableActionStore = useTableActionStore()
+
+async function openTokenStatusDialog() {
+  await tokenStatusService.refreshSelectedTokens()
+  tokenStatusService.statusDialogOpen.value = !tokenStatusService.statusDialogOpen.value
+}
 
 function handleToggleChat() {
   if (windowManager.isMinimized.value) {
