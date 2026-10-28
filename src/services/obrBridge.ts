@@ -353,28 +353,6 @@ class OBRBridge {
       }).catch((e) => {
         console.warn('[OBRBridge] Aviso ao criar menu de contexto open-sheet:', e)
       })
-
-      // Menu de contexto para gerenciar Estados e Condições diretamente no token (estilo Ativar Movimento)
-      void OBR.contextMenu.create({
-        id: 'compcon-token-status',
-        icons: [
-          {
-            icon: COMPCON_STATUS_ICON_DATA_URI,
-            label: 'Estados e Condições',
-            filter: {
-              roles: ['GM', 'PLAYER'],
-              min: 1,
-              max: 1,
-            },
-          },
-        ],
-        embed: {
-          url: '/index.html#/token-status-embed',
-          height: 380,
-        },
-      }).catch((e) => {
-        console.warn('[OBRBridge] Aviso ao criar menu de contexto token-status:', e)
-      })
     } catch (e) {
       console.warn('[OBRBridge] Erro ao registrar menus de contexto:', e)
     }
