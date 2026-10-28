@@ -1,5 +1,6 @@
 services:
   sync-server:
+    image: lpfonts/ow-server:latest
     build: .
     container_name: lancer-owlbear-sync
     restart: unless-stopped
