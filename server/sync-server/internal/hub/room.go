@@ -319,23 +319,28 @@ func (r *RoomHub) handleIncomingEnvelope(env *models.SyncEnvelope) {
 
 	case models.TypePing:
 		r.mu.Unlock()
-		// Responde pong apenas para o remetente
-		r.sendDirect(env.SenderID, &models.SyncEnvelope{
+		pong := &models.SyncEnvelope{
 			Type:      models.TypePong,
 			RoomID:    r.RoomID,
 			SenderID:  "server",
 			Timestamp: time.Now().UnixMilli(),
-		})
+		}
+		// Responde pong apenas para a conexão remetente (ou por ID se não houver conexão associada)
+		if origin, ok := env.OriginConn.(*Client); ok && origin != nil {
+			origin.SendEnvelope(pong)
+		} else {
+			r.sendDirect(env.SenderID, pong)
+		}
 		return
 	}
 
 	r.mu.Unlock()
 
-	// Broadcast para todos os clientes da sala, ignorando o remetente original (filtro de eco)
+	// Broadcast para todos os clientes da sala, ignorando a conexão original (ou o SenderID se sem conexão)
 	r.broadcastEnvelope(env, env.SenderID)
 }
 
-// broadcastEnvelope entrega a mensagem a todos os clientes conectados, exceto exceptSenderID.
+// broadcastEnvelope entrega a mensagem a todos os clientes conectados, exceto a conexão de origem (ou exceptSenderID quando OriginConn é nil).
 func (r *RoomHub) broadcastEnvelope(env *models.SyncEnvelope, exceptSenderID string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -346,9 +351,15 @@ func (r *RoomHub) broadcastEnvelope(env *models.SyncEnvelope, exceptSenderID str
 		return
 	}
 
+	originClient, hasOriginConn := env.OriginConn.(*Client)
+
 	for client := range r.Clients {
-		if client.ID == exceptSenderID {
-			continue // Evita eco para quem originou a ação
+		if hasOriginConn && originClient != nil {
+			if client == originClient {
+				continue // Evita eco apenas para a conexão exata que originou a ação
+			}
+		} else if exceptSenderID != "" && client.ID == exceptSenderID {
+			continue // Fallback quando o envelope não veio de um *Client específico
 		}
 		select {
 		case client.Send <- data:

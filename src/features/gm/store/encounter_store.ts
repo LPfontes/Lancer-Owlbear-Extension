@@ -257,30 +257,57 @@ export const EncounterStore = defineStore('encounter', {
     async reconcilePilotCombatant(pilotId: string, pilotData: any): Promise<CombatantData> {
       const enc = await this.ensureContinuousEncounter()
       const existing = findCombatant(enc.Combatants, pilotId, 'pilot')
-      
+
       const { Pilot } = await import('@/classes/pilot/Pilot')
+      const { applySerializedCurrentStats } = await import('@/services/sheetSyncPaths')
       const pc = Pilot.Deserialize(pilotData)
+      if (pc && !pc.ActiveMech && pc.Mechs?.length) {
+        pc.ActiveMech = pc.Mechs[0]
+      }
       pc.SetStats()
+      pc.ActiveMech?.SetStats?.()
       pc.FeatureController.BonusController.applyToStats(
         pc.CombatController.StatController,
         enc
       )
 
+      const hasIncomingPilotStats = Boolean(pilotData?.stats?.current)
+      const hasIncomingMechStats = Boolean(
+        Array.isArray(pilotData?.mechs) && pilotData.mechs.some((m: any) => m?.stats?.current)
+      )
+      applySerializedCurrentStats(pc, pilotData)
+
       if (existing) {
-        // Se já existia (ex: adicionado previamente pelo Mestre pelo tracker),
-        // atualizamos o ator com a ficha mais recente vinda do jogador,
-        // preservando o vínculo com o estado atual do painel do jogador.
-        pc.CombatController.StatController.resetCurrentStats()
-        // Transfere estado vivo de dano/calor (se houver e for válido) do ator anterior
-        if (existing.actor?.CombatController?.StatController) {
-          const { StatKey } = await import('@/classes/components/combat/stats/Stats')
-          const oldStats = existing.actor.CombatController.StatController
-          const newStats = pc.CombatController.StatController
-          newStats.setCurrentStat(StatKey.HP, oldStats.getCurrent(StatKey.HP))
-          newStats.setCurrentStat(StatKey.HEATCAP, oldStats.getCurrent(StatKey.HEATCAP))
-          newStats.setCurrentStat(StatKey.STRUCTURE, oldStats.getCurrent(StatKey.STRUCTURE))
-          newStats.setCurrentStat(StatKey.STRESS, oldStats.getCurrent(StatKey.STRESS))
-          newStats.setCurrentStat(StatKey.OVERSHIELD, oldStats.getCurrent(StatKey.OVERSHIELD))
+        // Se já existia e o payload recebido não trouxe stats correntes serializados,
+        // preserva o estado vivo anterior do piloto e do mecha ativo.
+        const { StatKey } = await import('@/classes/components/combat/stats/Stats')
+        const copyStats = (fromSc: any, toSc: any) => {
+          if (!fromSc || !toSc) return
+          for (const key of [
+            StatKey.HP,
+            StatKey.HEATCAP,
+            StatKey.STRUCTURE,
+            StatKey.STRESS,
+            StatKey.OVERSHIELD,
+            StatKey.BURN,
+          ]) {
+            const val = fromSc.getCurrent?.(key)
+            if (typeof val === 'number' && Number.isFinite(val)) {
+              toSc.setCurrentStat?.(key, val, { silent: true })
+            }
+          }
+        }
+        if (!hasIncomingPilotStats) {
+          copyStats(
+            existing.actor?.CombatController?.StatController,
+            pc.CombatController?.StatController
+          )
+        }
+        if (!hasIncomingMechStats && pc.ActiveMech) {
+          copyStats(
+            existing.actor?.ActiveMech?.CombatController?.StatController,
+            pc.ActiveMech.CombatController?.StatController
+          )
         }
         existing.actor = pc
         existing.side = 'ally'
@@ -289,7 +316,19 @@ export const EncounterStore = defineStore('encounter', {
         return existing
       }
 
-      pc.CombatController.ResetForEncounter()
+      const hasIncomingStatuses = Boolean(
+        (Array.isArray(pilotData?.statuses) && pilotData.statuses.length > 0) ||
+          (Array.isArray(pilotData?.customStatuses) && pilotData.customStatuses.length > 0) ||
+          (Array.isArray(pilotData?.mechs) &&
+            pilotData.mechs.some(
+              (m: any) =>
+                (Array.isArray(m?.statuses) && m.statuses.length > 0) ||
+                (Array.isArray(m?.customStatuses) && m.customStatuses.length > 0)
+            ))
+      )
+      if (!hasIncomingStatuses) {
+        pc.CombatController.ResetForEncounter()
+      }
 
       const combatant = makeCombatant(pc, 'pilot', {
         id: pc.ID,
@@ -556,7 +595,6 @@ export const EncounterStore = defineStore('encounter', {
         await SetValue('current_active_encounter_id', '')
         try {
           const { tableSyncSocket } = await import('@/services/tableSyncSocket')
-          tableSyncSocket.sendTrackerClear()
           tableSyncSocket.sendEndEncounter({ encounterId: payload.ID, reason: result })
         } catch (e) {
           logger.warn('Failed to sendEndEncounter on archive active encounter: ' + String(e), this)

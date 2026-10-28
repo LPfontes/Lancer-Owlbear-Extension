@@ -2017,7 +2017,6 @@ class OBRBridge {
    * depois receberia o combate antigo pelo `INIT_SYNC`.
    */
   public async sendTrackerSyncClear(payload?: { encounterId?: string; reason?: string }): Promise<void> {
-    tableSyncSocket.sendTrackerClear()
     tableSyncSocket.sendEndEncounter(payload)
   }
 

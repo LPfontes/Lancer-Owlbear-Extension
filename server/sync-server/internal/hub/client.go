@@ -68,6 +68,7 @@ func (c *Client) ReadPump() {
 		// Garante integridade do remetente e timestamp
 		envelope.SenderID = c.ID
 		envelope.RoomID = c.RoomID
+		envelope.OriginConn = c
 		if envelope.Timestamp == 0 {
 			envelope.Timestamp = time.Now().UnixMilli()
 		}

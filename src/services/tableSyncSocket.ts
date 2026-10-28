@@ -64,6 +64,20 @@ class TableSyncSocket {
     return this.status === 'connected' && this.ws !== null && this.ws.readyState === WebSocket.OPEN
   }
 
+  private resolveFallbackPlayerId(): string {
+    const key = 'compcon_fallback_player_id'
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem(key)
+        if (stored) return stored
+        const generated = 'client_' + Math.random().toString(36).slice(2, 10)
+        localStorage.setItem(key, generated)
+        return generated
+      }
+    } catch {}
+    return 'client_' + Math.random().toString(36).slice(2, 10)
+  }
+
   /**
    * Conecta ao servidor WebSocket da mesa. Sem `wsUrl`, usa `VITE_SYNC_SERVER_URL` ou o
    * padrão `ws://localhost:8080/ws`.
@@ -74,16 +88,18 @@ class TableSyncSocket {
     try {
       if (OBR.isAvailable) {
         this.activeRoomId = OBR.room.id || 'default_room'
-        this.activePlayerId = obrPlayerId.value || (await OBR.player.getId().catch(() => 'client_' + Math.random().toString(36).slice(2, 8)))
+        this.activePlayerId =
+          obrPlayerId.value ||
+          (await OBR.player.getId().catch(() => this.resolveFallbackPlayerId()))
         this.activeRole = (obrRole.value as 'GM' | 'PLAYER') || 'PLAYER'
       } else {
         this.activeRoomId = 'local_room'
-        this.activePlayerId = 'client_' + Math.random().toString(36).slice(2, 8)
+        this.activePlayerId = this.resolveFallbackPlayerId()
         this.activeRole = 'PLAYER'
       }
     } catch {
       this.activeRoomId = 'default_room'
-      this.activePlayerId = 'client_' + Math.random().toString(36).slice(2, 8)
+      this.activePlayerId = this.resolveFallbackPlayerId()
       this.activeRole = 'PLAYER'
     }
 
@@ -535,6 +551,22 @@ class TableSyncSocket {
   }
 
   /**
+   * Resolve o mecha alvo de um piloto a partir de um caminho `mechs.<index>.*`,
+   * caindo para `ActiveMech` quando o índice não estiver explícito ou fora de alcance.
+   */
+  private resolvePilotMechForField(pilot: any, field: string): any {
+    if (!pilot) return null
+    const path = String(field ?? '')
+    if (path.startsWith('mechs.')) {
+      const idx = Number(path.split('.')[1])
+      if (Number.isFinite(idx) && idx >= 0 && pilot.Mechs?.[idx]) {
+        return pilot.Mechs[idx]
+      }
+    }
+    return pilot.ActiveMech ?? pilot.Mechs?.[0] ?? null
+  }
+
+  /**
    * Aplica um PATCH_FIELD recebido diretamente no StatController/CombatController do combatente
    */
   private async applyReceivedPatch(patch: PatchFieldPayload): Promise<void> {
@@ -548,6 +580,9 @@ class TableSyncSocket {
       return
     }
 
+    const isMechPath = String(patch.field).startsWith('mechs.')
+    const isPilotRootStatPath = String(patch.field).startsWith('stats.')
+
     try {
       if (patch.characterType === 'pilot') {
         const { PilotStore } = await import('@/features/pilot_management/store')
@@ -555,8 +590,11 @@ class TableSyncSocket {
         if (pilot) {
           // O caminho diz de quem é o stat: `mechs.<i>.…` é o mecha; `stats.current.…` é a
           // ficha do PRÓPRIO piloto (desmontado) — ela não herda nada do mecha.
-          const isMechPath = String(patch.field).startsWith('mechs.')
-          const statTarget: any = isMechPath ? pilot.ActiveMech : pilot
+          const statTarget: any = isMechPath
+            ? this.resolvePilotMechForField(pilot, patch.field)
+            : isPilotRootStatPath
+              ? pilot
+              : (this.resolvePilotMechForField(pilot, patch.field) ?? pilot)
           if (statTarget?.CombatController) {
             this.applyCombatPatchToController(
               statTarget.CombatController,
@@ -591,7 +629,9 @@ class TableSyncSocket {
       if (activeEnc) {
         const combatant = activeEnc.Combatants.find(c => c.id === patch.characterId || c.actor?.ID === patch.characterId)
         if (combatant?.actor) {
-          const targetMech = combatant.actor.ActiveMech
+          const targetMech = isPilotRootStatPath
+            ? null
+            : this.resolvePilotMechForField(combatant.actor, patch.field)
           if (targetMech?.CombatController) {
             this.applyCombatPatchToController(
               targetMech.CombatController,
@@ -618,7 +658,9 @@ class TableSyncSocket {
         const sheetStore = PilotSheetStore()
         const activeSheet = sheetStore.GetActiveSheet()
         if (activeSheet && (activeSheet.Pilot?.ID === patch.characterId || activeSheet.ID === patch.characterId)) {
-          const sheetMech = activeSheet.Pilot?.ActiveMech
+          const sheetMech = isPilotRootStatPath
+            ? null
+            : this.resolvePilotMechForField(activeSheet.Pilot, patch.field)
           const targetCc = sheetMech?.CombatController ?? activeSheet.Pilot?.CombatController
           if (targetCc) {
             this.applyCombatPatchToController(
@@ -1054,6 +1096,15 @@ class TableSyncSocket {
       if (!pilotId) return
       if (!data.id) data.id = pilotId
       if (!data.ID) data.ID = pilotId
+
+      // Se esta janela está jogando ativamente esta ficha, a cópia local é a fonte da
+      // verdade (origem dos deltas e autosave): não sobrescreve IndexedDB nem PilotStore.
+      if (await this.isOwnActiveSheet(pilotId)) {
+        console.log(
+          `[TableSyncSocket] Ignorando sobrescrita no PilotStore/IndexedDB da própria ficha ativa "${pilotId}".`
+        )
+        return
+      }
 
       try {
         const { SetItem } = await import('@/io/Storage')

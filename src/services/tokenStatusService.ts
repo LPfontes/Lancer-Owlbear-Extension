@@ -12,6 +12,7 @@ import {
 } from './statusIcons'
 import { statusMarkerService } from './statusMarkerService'
 import { isSheetReadOnlySession } from './sheetReadOnlySession'
+import { obrPlayerId } from './obrRuntime'
 import { tableSyncSocket, roomSyncedSheets } from './tableSyncSocket'
 import {
   activeMechIndex,
@@ -749,12 +750,14 @@ class TokenStatusService {
 
       if (toUpdateIds.length > 0) {
         const now = Date.now()
+        const playerId = obrPlayerId.value || (await OBR.player.getId().catch(() => undefined))
         await OBR.scene.items.updateItems(toUpdateIds, draftItems => {
           for (const draft of draftItems) {
             draft.metadata[TOKEN_STATUS_METADATA_KEY] = {
               v: 1,
               statuses: cleanStatuses,
               updatedAt: now,
+              updatedBy: playerId,
             }
           }
         })
@@ -781,14 +784,28 @@ class TokenStatusService {
 
       if (metaStatuses !== null) {
         const sig = metaStatuses.join('|')
-        const boundsKey = `${Math.round(item.position.x)},${Math.round(item.position.y)},${item.scale.x.toFixed(2)},${item.scale.y.toFixed(2)}`
+        const scaleKey = `${item.scale.x.toFixed(2)},${item.scale.y.toFixed(2)}`
         const prevSig = this.lastSyncedSignatures.get(item.id)
         const prevBounds = this.lastSyncedBounds.get(item.id)
 
-        if (prevSig !== sig || prevBounds !== boundsKey) {
+        if (prevSig !== sig || prevBounds !== scaleKey) {
+          const scaleChanged = prevBounds !== undefined && prevBounds !== scaleKey
           this.lastSyncedSignatures.set(item.id, sig)
-          this.lastSyncedBounds.set(item.id, boundsKey)
-          void statusMarkerService.syncTokenStatusMarkers(item.id, metaStatuses)
+          this.lastSyncedBounds.set(item.id, scaleKey)
+
+          const nativeMeta = item?.metadata?.[TOKEN_STATUS_METADATA_KEY] as
+            | TokenStatusItemMetadata
+            | undefined
+          const localPlayerId = obrPlayerId.value
+          const updatedByOtherClient = Boolean(
+            nativeMeta?.updatedBy && localPlayerId && nativeMeta.updatedBy !== localPlayerId
+          )
+
+          // Só recria/atualiza os itens visuais na cena se a escala mudou ou se a
+          // alteração não acabou de ser escrita por outro cliente (evita corrida entre clientes).
+          if (scaleChanged || !updatedByOtherClient) {
+            void statusMarkerService.syncTokenStatusMarkers(item.id, metaStatuses)
+          }
 
           // Se a mudança veio de outro cliente no metadado de um token vinculado a uma ficha local:
           if (prevSig !== sig && ccMeta?.sheetId) {

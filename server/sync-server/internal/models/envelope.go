@@ -28,11 +28,12 @@ type EndEncounterPayload struct {
 
 // SyncEnvelope representa o envelope padrão trafegado no WebSocket.
 type SyncEnvelope struct {
-	Type      MessageType     `json:"type"`
-	RoomID    string          `json:"roomId"`
-	SenderID  string          `json:"senderId"`
-	Timestamp int64           `json:"timestamp"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
+	Type       MessageType     `json:"type"`
+	RoomID     string          `json:"roomId"`
+	SenderID   string          `json:"senderId"`
+	Timestamp  int64           `json:"timestamp"`
+	Payload    json.RawMessage `json:"payload,omitempty"`
+	OriginConn interface{}     `json:"-"`
 }
 
 // PilotJoinCombatPayload carrega a ficha completa no momento de entrar em combate.
