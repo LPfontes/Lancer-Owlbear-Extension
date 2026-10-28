@@ -2550,7 +2550,10 @@
       "restoreDefaultTooltip": "Restore default icon",
       "customUrlPlaceholder": "https://example.com/icon.png (empty = default)",
       "openQuickDialog": "Open Quick Menu",
-      "close": "Close"
+      "close": "Close",
+      "placementCenter": "Center (Overlay)",
+      "overlayScale": "Centered Overlay Scale",
+      "centerOnTokenTooltip": "Center this status over the token (Overlay)"
     }
   },
   "mainMenu": {

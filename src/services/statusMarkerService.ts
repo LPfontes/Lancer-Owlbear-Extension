@@ -9,7 +9,7 @@ import {
   parseBurnMarkerId,
   sortStatusMarkers,
 } from './statusIcons'
-import { currentIconsConfig } from './statusIconConfig'
+import { currentIconsConfig, isStatusCentered } from './statusIconConfig'
 import { isSheetReadOnlySession } from './sheetReadOnlySession'
 
 export const STATUS_MARKER_METADATA_KEY = 'com.compcon.status_marker'
@@ -19,6 +19,114 @@ export const STATUS_MARKER_LABEL_KEY = 'com.compcon.status_label'
 
 export const LEGACY_STATUS_MARKER_METADATA_KEY = 'com.lancer.status_markers/is_marker'
 export const LEGACY_STATUS_MARKER_ID_KEY = 'com.lancer.status_markers/status_id'
+
+export interface ImageDimensions {
+  width: number
+  height: number
+  mime: string
+}
+
+const imageDimensionsCache = new Map<string, ImageDimensions>()
+
+export function inferImageMime(url: string): string {
+  const clean = url.split('?')[0].split('#')[0].toLowerCase()
+  if (clean.endsWith('.png')) return 'image/png'
+  if (clean.endsWith('.webp')) return 'image/webp'
+  if (clean.endsWith('.jpg') || clean.endsWith('.jpeg')) return 'image/jpeg'
+  if (clean.endsWith('.gif')) return 'image/gif'
+  return 'image/svg+xml'
+}
+
+export async function resolveImageDimensions(url: string): Promise<ImageDimensions> {
+  const cached = imageDimensionsCache.get(url)
+  if (cached) return cached
+
+  const mime = inferImageMime(url)
+  if (url.includes('/status-icons/') && mime === 'image/svg+xml') {
+    const def = { width: 100, height: 100, mime }
+    imageDimensionsCache.set(url, def)
+    return def
+  }
+
+  if (typeof Image === 'undefined') {
+    return { width: 100, height: 100, mime }
+  }
+
+  return new Promise<ImageDimensions>(resolve => {
+    const img = new Image()
+    let settled = false
+    const finish = (dims: ImageDimensions) => {
+      if (settled) return
+      settled = true
+      imageDimensionsCache.set(url, dims)
+      resolve(dims)
+    }
+    const timer = setTimeout(() => {
+      finish({ width: 100, height: 100, mime })
+    }, 2500)
+
+    img.onload = () => {
+      clearTimeout(timer)
+      const w = img.naturalWidth || img.width || 100
+      const h = img.naturalHeight || img.height || 100
+      finish({ width: w, height: h, mime })
+    }
+    img.onerror = () => {
+      clearTimeout(timer)
+      finish({ width: 100, height: 100, mime })
+    }
+    img.src = url
+  })
+}
+
+export function getTokenOwnBounds(
+  token: any,
+  sceneDpi: number,
+  fallbackBounds: { min: { x: number; y: number }; max: { x: number; y: number }; width: number; height: number }
+) {
+  const img = token?.image
+  const grid = token?.grid
+  const pos = token?.position
+  const scale = token?.scale ?? { x: 1, y: 1 }
+
+  if (
+    img &&
+    typeof img.width === 'number' &&
+    img.width > 0 &&
+    typeof img.height === 'number' &&
+    img.height > 0 &&
+    grid &&
+    typeof grid.dpi === 'number' &&
+    grid.dpi > 0 &&
+    pos &&
+    typeof pos.x === 'number' &&
+    typeof pos.y === 'number'
+  ) {
+    const ratioX = (sceneDpi / grid.dpi) * Math.abs(scale.x ?? 1)
+    const ratioY = (sceneDpi / grid.dpi) * Math.abs(scale.y ?? 1)
+    const width = img.width * ratioX
+    const height = img.height * ratioY
+    const offsetX = typeof grid.offset?.x === 'number' ? grid.offset.x : img.width / 2
+    const offsetY = typeof grid.offset?.y === 'number' ? grid.offset.y : img.height / 2
+    const minX = pos.x - offsetX * ratioX
+    const minY = pos.y - offsetY * ratioY
+    return {
+      min: { x: minX, y: minY },
+      max: { x: minX + width, y: minY + height },
+      width,
+      height,
+      center: { x: minX + width / 2, y: minY + height / 2 },
+    }
+  }
+
+  return {
+    ...fallbackBounds,
+    center: {
+      x: (fallbackBounds.min.x + fallbackBounds.max.x) / 2,
+      y: (fallbackBounds.min.y + fallbackBounds.max.y) / 2,
+    },
+  }
+}
 
 export class StatusMarkerService {
   /**
@@ -62,14 +170,15 @@ export class StatusMarkerService {
     if (!OBR.isAvailable) return
 
     try {
-      // 1. Busca os dados do token e seus limites visuais
+      // 1. Busca os dados do token e seus limites visuais próprios (sem anexos)
       const tokens = await OBR.scene.items.getItems([tokenId])
       if (!tokens.length) return
 
-      const bounds = await OBR.scene.items.getItemBounds([tokenId])
-      if (!bounds || bounds.width <= 0) return
+      const rawBounds = await OBR.scene.items.getItemBounds([tokenId])
+      if (!rawBounds || rawBounds.width <= 0) return
 
       const dpi = (await OBR.scene.grid.getDpi().catch(() => 150)) || 150
+      const bounds = getTokenOwnBounds(tokens[0], dpi, rawBounds)
 
       // 2. Filtra e normaliza a lista de status desejada.
       // - Os status PERSONALIZADOS (prefixo `custom:`) passam intactos.
@@ -89,6 +198,22 @@ export class StatusMarkerService {
         )
       )
 
+      // Pré-carrega dimensões reais das imagens para calcular o offset central e a escala exata
+      const dimsByStatusId = new Map<string, ImageDimensions>()
+      await Promise.all(
+        normalizedStatusIds.map(async statusId => {
+          const url = parseCustomStatusMarkerId(statusId)
+            ? getCustomStatusBadgeUrl()
+            : parseBurnMarkerId(statusId)
+              ? getStatusBadgeUrl('burn')
+              : getStatusBadgeUrl(statusId)
+          if (url) {
+            const dims = await resolveImageDimensions(url)
+            dimsByStatusId.set(statusId, dims)
+          }
+        })
+      )
+
       // 3. Obtém anexos existentes vinculados ao token (incluindo legados do lancer-token-status)
       const attachments = await OBR.scene.items.getItemAttachments([tokenId])
       const existingMarkers = attachments.filter(
@@ -104,10 +229,12 @@ export class StatusMarkerService {
 
       const scaleMult = currentIconsConfig.value.badgeScale ?? 0.28
       const targetSize = Math.max(20, Math.min(64, bounds.width * scaleMult))
-      const scaleFactor = targetSize / 100
+
+      const overlayMult = currentIconsConfig.value.overlayScale ?? 1.15
+      const overlayTargetSize = Math.max(bounds.width, bounds.height) * overlayMult
 
       // 4. Remove marcadores que não estão mais ativos, que possuem URL legada/diferente da config,
-      // escala diferente ou que estão DUPLICADOS.
+      // dimensão/offset/escala diferente ou que estão DUPLICADOS.
       const seenStatusIds = new Set<string>()
       const markersToRemove = existingMarkers.filter(item => {
         const markerStatusId =
@@ -140,8 +267,34 @@ export class StatusMarkerService {
           if (expectedUrl && urlStr && urlStr !== expectedUrl) {
             return true
           }
+
+          const dims = dimsByStatusId.get(markerStatusId) ?? {
+            width: 100,
+            height: 100,
+            mime: 'image/svg+xml',
+          }
+          const currentImgW = img?.width
+          const currentImgH = img?.height
+          const currentOffsetX = (item as any).grid?.offset?.x
+          const currentOffsetY = (item as any).grid?.offset?.y
+          if (
+            currentImgW !== dims.width ||
+            currentImgH !== dims.height ||
+            Math.abs((currentOffsetX ?? 0) - dims.width / 2) > 0.5 ||
+            Math.abs((currentOffsetY ?? 0) - dims.height / 2) > 0.5
+          ) {
+            return true
+          }
+
+          const centeredKey = parseCustomStatusMarkerId(markerStatusId)
+            ? 'customstatus'
+            : parseBurnMarkerId(markerStatusId)
+              ? 'burn'
+              : markerStatusId
+          const desiredWorldSize = isStatusCentered(centeredKey) ? overlayTargetSize : targetSize
+          const expectedScale = desiredWorldSize / Math.max(dims.width, dims.height)
           const itemScaleX = (item as any).scale?.x
-          if (typeof itemScaleX === 'number' && Math.abs(itemScaleX - scaleFactor) > 0.015) {
+          if (typeof itemScaleX === 'number' && Math.abs(itemScaleX - expectedScale) > 0.015) {
             return true
           }
         }
@@ -167,36 +320,57 @@ export class StatusMarkerService {
       const count = normalizedStatusIds.length
       const maxPerColumn = 6
       const placement = currentIconsConfig.value.placement || 'right'
+      const centerX = bounds.center.x
+      const centerY = bounds.center.y
 
       const itemsToAdd: Item[] = []
       const itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[] = []
 
+      let sideIndex = 0
+
       for (let i = 0; i < count; i++) {
         const statusId = normalizedStatusIds[i]
+        const customName = parseCustomStatusMarkerId(statusId)
+        const burnInfo = parseBurnMarkerId(statusId)
+        const centeredKey = customName ? 'customstatus' : burnInfo ? 'burn' : statusId
+        const centered = isStatusCentered(centeredKey)
 
-        const columnIndex = Math.floor(i / maxPerColumn)
-        const rowIndex = i % maxPerColumn
+        const dims = dimsByStatusId.get(statusId) ?? {
+          width: 100,
+          height: 100,
+          mime: 'image/svg+xml',
+        }
+        const baseMaxDim = Math.max(dims.width, dims.height)
 
-        let posX = 0
-        let posY = 0
+        let posX = centerX
+        let posY = centerY
+        let itemTargetSize = overlayTargetSize
+        let itemScaleFactor = overlayTargetSize / baseMaxDim
 
-        if (placement === 'left') {
-          posX = bounds.min.x + 12 - targetSize / 2 - columnIndex * (targetSize + spacing)
-          posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
-        } else if (placement === 'bottom') {
-          posX = bounds.min.x + targetSize / 2 + rowIndex * (targetSize + spacing)
-          posY = bounds.max.y - 12 + targetSize / 2 + columnIndex * (targetSize + spacing)
-        } else if (placement === 'top') {
-          posX = bounds.min.x + targetSize / 2 + rowIndex * (targetSize + spacing)
-          posY = bounds.min.y + 12 - targetSize / 2 - columnIndex * (targetSize + spacing)
-        } else {
-          // 'right' (padrão)
-          posX = bounds.max.x - 40 + targetSize / 2 + columnIndex * (targetSize + spacing)
-          posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+        if (!centered) {
+          itemTargetSize = targetSize
+          itemScaleFactor = targetSize / baseMaxDim
+          const columnIndex = Math.floor(sideIndex / maxPerColumn)
+          const rowIndex = sideIndex % maxPerColumn
+          sideIndex++
+
+          if (placement === 'left') {
+            posX = bounds.min.x + 12 - targetSize / 2 - columnIndex * (targetSize + spacing)
+            posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+          } else if (placement === 'bottom') {
+            posX = bounds.min.x + targetSize / 2 + rowIndex * (targetSize + spacing)
+            posY = bounds.max.y - 12 + targetSize / 2 + columnIndex * (targetSize + spacing)
+          } else if (placement === 'top') {
+            posX = bounds.min.x + targetSize / 2 + rowIndex * (targetSize + spacing)
+            posY = bounds.min.y + 12 - targetSize / 2 - columnIndex * (targetSize + spacing)
+          } else {
+            // 'right' (padrão)
+            posX = bounds.max.x - 40 + targetSize / 2 + columnIndex * (targetSize + spacing)
+            posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+          }
         }
 
         // Status personalizado (nome livre): badge próprio + rótulo de texto ao lado
-        const customName = parseCustomStatusMarkerId(statusId)
         if (customName) {
           itemsToAdd.push(
             ...this.ensureCustomStatusMarker({
@@ -204,8 +378,9 @@ export class StatusMarkerService {
               name: customName,
               posX,
               posY,
-              targetSize,
-              scaleFactor,
+              targetSize: itemTargetSize,
+              scaleFactor: itemScaleFactor,
+              dims,
               dpi,
               existingMarkers,
               itemsToUpdatePositions,
@@ -215,7 +390,6 @@ export class StatusMarkerService {
         }
 
         // Status de Queimadura (QMD com quantidade): badge 'burn.svg' + número ao lado
-        const burnInfo = parseBurnMarkerId(statusId)
         if (burnInfo) {
           itemsToAdd.push(
             ...this.ensureBurnStatusMarker({
@@ -224,8 +398,9 @@ export class StatusMarkerService {
               statusId,
               posX,
               posY,
-              targetSize,
-              scaleFactor,
+              targetSize: itemTargetSize,
+              scaleFactor: itemScaleFactor,
+              dims,
               dpi,
               existingMarkers,
               itemsToUpdatePositions,
@@ -252,20 +427,20 @@ export class StatusMarkerService {
           const badgeUrl = getStatusBadgeUrl(statusId)
           const newMarker = buildImage(
             {
-              width: 100,
-              height: 100,
-              mime: 'image/svg+xml',
+              width: dims.width,
+              height: dims.height,
+              mime: dims.mime,
               url: badgeUrl,
             },
             {
-              offset: { x: 50, y: 50 },
+              offset: { x: dims.width / 2, y: dims.height / 2 },
               dpi: dpi,
             }
           )
             .id(`cc_st_${tokenId.substring(0, 6)}_${statusId}_${Date.now()}`)
             .name(`[Estado] ${def.label}`)
             .position({ x: posX, y: posY })
-            .scale({ x: scaleFactor, y: scaleFactor })
+            .scale({ x: itemScaleFactor, y: itemScaleFactor })
             .layer('ATTACHMENT')
             .attachedTo(tokenId)
             .locked(true)
@@ -310,11 +485,23 @@ export class StatusMarkerService {
     posY: number
     targetSize: number
     scaleFactor: number
+    dims: ImageDimensions
     dpi: number
     existingMarkers: Item[]
     itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[]
   }): Item[] {
-    const { tokenId, name, posX, posY, targetSize, scaleFactor, dpi, existingMarkers, itemsToUpdatePositions } = ctx
+    const {
+      tokenId,
+      name,
+      posX,
+      posY,
+      targetSize,
+      scaleFactor,
+      dims,
+      dpi,
+      existingMarkers,
+      itemsToUpdatePositions,
+    } = ctx
 
     const markerId = customStatusMarkerId(name)
     const suffix = name
@@ -373,8 +560,13 @@ export class StatusMarkerService {
 
     if (!existingBadge) {
       const badge = buildImage(
-        { width: 100, height: 100, mime: 'image/svg+xml', url: getCustomStatusBadgeUrl() },
-        { offset: { x: 50, y: 50 }, dpi }
+        {
+          width: dims.width,
+          height: dims.height,
+          mime: dims.mime,
+          url: getCustomStatusBadgeUrl(),
+        },
+        { offset: { x: dims.width / 2, y: dims.height / 2 }, dpi }
       )
         .id(badgeItemId)
         .name(`[Estado] ${name}`)
@@ -434,6 +626,7 @@ export class StatusMarkerService {
     posY: number
     targetSize: number
     scaleFactor: number
+    dims: ImageDimensions
     dpi: number
     existingMarkers: Item[]
     itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[]
@@ -446,6 +639,7 @@ export class StatusMarkerService {
       posY,
       targetSize,
       scaleFactor,
+      dims,
       dpi,
       existingMarkers,
       itemsToUpdatePositions,
@@ -504,8 +698,13 @@ export class StatusMarkerService {
     if (!existingBadge) {
       const badgeUrl = getStatusBadgeUrl('burn')
       const badge = buildImage(
-        { width: 100, height: 100, mime: 'image/svg+xml', url: badgeUrl },
-        { offset: { x: 50, y: 50 }, dpi }
+        {
+          width: dims.width,
+          height: dims.height,
+          mime: dims.mime,
+          url: badgeUrl,
+        },
+        { offset: { x: dims.width / 2, y: dims.height / 2 }, dpi }
       )
         .id(badgeItemId)
         .name(`[Estado] Queimadura (${amount})`)

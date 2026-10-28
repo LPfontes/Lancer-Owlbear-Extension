@@ -1440,7 +1440,10 @@
       "restoreDefaultTooltip": "Restore default icon",
       "customUrlPlaceholder": "https://example.com/icon.png (empty = default)",
       "openQuickDialog": "Open Quick Menu",
-      "close": "Close"
+      "close": "Close",
+      "placementCenter": "Centre (Overlay)",
+      "overlayScale": "Échelle Centrée (Overlay)",
+      "centerOnTokenTooltip": "Centrer ce statut sur le jeton (Overlay)"
     }
   },
   "mainMenu": {

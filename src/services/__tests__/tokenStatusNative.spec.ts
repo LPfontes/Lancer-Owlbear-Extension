@@ -18,9 +18,11 @@ import {
   currentIconsConfig,
   sanitizeStatusIconsConfig,
   applyStatusIconsConfigFromMetadata,
+  isStatusCentered,
   ROOM_STATUS_ICONS_KEY,
   LEGACY_ROOM_STATUS_ICONS_KEY,
 } from '../statusIconConfig'
+import { getTokenOwnBounds, inferImageMime } from '../statusMarkerService'
 import { patchFieldTarget } from '../sheetSyncPaths'
 
 describe('Native LANCER Token Status & Sync Integration', () => {
@@ -31,6 +33,8 @@ describe('Native LANCER Token Status & Sync Integration', () => {
       customUrls: {},
       badgeScale: 0.28,
       placement: 'right',
+      centeredStatuses: {},
+      overlayScale: 1.15,
     }
   })
 
@@ -120,6 +124,61 @@ describe('Native LANCER Token Status & Sync Integration', () => {
       expect(sanitized.customUrls).toEqual({ slow: 'https://valid.example.com/slow.png' })
       expect(sanitized.badgeScale).toBe(0.45)
       expect(sanitized.placement).toBe('right')
+    })
+
+    it('supports centeredStatuses and global center placement for token overlays (e.g. Lock-On reticle)', () => {
+      applyStatusIconsConfigFromMetadata({
+        [ROOM_STATUS_ICONS_KEY]: {
+          v: 1,
+          customUrls: {
+            lockon: 'https://cdn.example.com/lockon-reticle.png',
+          },
+          badgeScale: 0.28,
+          placement: 'right',
+          centeredStatuses: {
+            lockon: true,
+          },
+          overlayScale: 1.35,
+        },
+      })
+
+      expect(isStatusCentered('lockon')).toBe(true)
+      expect(isStatusCentered('impaired')).toBe(false)
+      expect(currentIconsConfig.value.overlayScale).toBe(1.35)
+
+      applyStatusIconsConfigFromMetadata({
+        [ROOM_STATUS_ICONS_KEY]: {
+          v: 1,
+          customUrls: {},
+          placement: 'center',
+        },
+      })
+
+      expect(isStatusCentered('impaired')).toBe(true)
+    })
+
+    it('calculates exact token center and bounds from token image/grid ignoring attachment bounds', () => {
+      const token = {
+        position: { x: 500, y: 400 },
+        scale: { x: 1, y: 1 },
+        image: { width: 300, height: 300 },
+        grid: { dpi: 150, offset: { x: 150, y: 150 } },
+      }
+      // Fallback bounds polluted by attachments below and to the right
+      const pollutedFallback = {
+        min: { x: 350, y: 250 },
+        max: { x: 950, y: 850 },
+        width: 600,
+        height: 600,
+      }
+
+      const own = getTokenOwnBounds(token, 150, pollutedFallback)
+      expect(own.center).toEqual({ x: 500, y: 400 })
+      expect(own.width).toBe(300)
+      expect(own.height).toBe(300)
+      expect(own.min).toEqual({ x: 350, y: 250 })
+      expect(own.max).toEqual({ x: 650, y: 550 })
+      expect(inferImageMime('https://cdn.example.com/lockon.png?v=1')).toBe('image/png')
     })
   })
 

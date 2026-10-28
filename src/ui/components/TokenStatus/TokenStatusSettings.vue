@@ -51,6 +51,13 @@
             >
               {{ t('active.tokenStatus.placementTop') }}
             </button>
+            <button
+              class="seg-btn"
+              :class="{ active: currentPlacement === 'center' }"
+              @click="updateLayout({ placement: 'center' })"
+            >
+              {{ t('active.tokenStatus.placementCenter') }}
+            </button>
           </div>
         </div>
 
@@ -80,6 +87,33 @@
             </button>
           </div>
         </div>
+
+        <div class="config-row">
+          <span class="config-label">{{ t('active.tokenStatus.overlayScale') }}</span>
+          <div class="segmented-group">
+            <button
+              class="seg-btn"
+              :class="{ active: currentOverlayScale <= 1.05 }"
+              @click="updateLayout({ overlayScale: 1.0 })"
+            >
+              100%
+            </button>
+            <button
+              class="seg-btn"
+              :class="{ active: currentOverlayScale > 1.05 && currentOverlayScale < 1.25 }"
+              @click="updateLayout({ overlayScale: 1.15 })"
+            >
+              115%
+            </button>
+            <button
+              class="seg-btn"
+              :class="{ active: currentOverlayScale >= 1.25 }"
+              @click="updateLayout({ overlayScale: 1.35 })"
+            >
+              135%
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="icons-list">
@@ -99,6 +133,14 @@
                 @input="onInput(st.id, ($event.target as HTMLInputElement).value)"
                 @change="handleSaveUrl(st.id)"
               />
+              <button
+                class="btn-center-url"
+                :class="{ active: isCentered(st.id) }"
+                :title="t('active.tokenStatus.centerOnTokenTooltip')"
+                @click="handleToggleCentered(st.id)"
+              >
+                🎯
+              </button>
               <button
                 v-if="draftUrls[st.id]"
                 class="btn-clear-url"
@@ -122,6 +164,7 @@ import { STATUS_DEFINITIONS, getStatusImageUrl } from '@/services/statusIcons'
 import {
   currentIconsConfig,
   setCustomStatusUrl,
+  setStatusCentered,
   resetCustomStatusUrl,
   resetAllCustomUrls,
   saveRoomIconsConfig,
@@ -144,19 +187,38 @@ watch(
 )
 
 const hasCustomUrls = computed(() => {
-  return Object.keys(currentIconsConfig.value.customUrls || {}).length > 0
+  return (
+    Object.keys(currentIconsConfig.value.customUrls || {}).length > 0 ||
+    Object.keys(currentIconsConfig.value.centeredStatuses || {}).length > 0
+  )
 })
 
 const currentPlacement = computed<BadgePlacement>(
   () => currentIconsConfig.value.placement || 'right'
 )
 const currentScale = computed(() => currentIconsConfig.value.badgeScale || 0.28)
+const currentOverlayScale = computed(() => currentIconsConfig.value.overlayScale || 1.15)
 
-async function updateLayout(partial: { placement?: BadgePlacement; badgeScale?: number }) {
+function isCentered(statusId: string): boolean {
+  if (currentIconsConfig.value.placement === 'center') return true
+  return Boolean(currentIconsConfig.value.centeredStatuses?.[statusId])
+}
+
+async function updateLayout(partial: {
+  placement?: BadgePlacement
+  badgeScale?: number
+  overlayScale?: number
+}) {
   await saveRoomIconsConfig({
     ...currentIconsConfig.value,
     ...partial,
   })
+  await tokenStatusService.reconcileAllSceneTokens()
+}
+
+async function handleToggleCentered(statusId: string) {
+  const current = Boolean(currentIconsConfig.value.centeredStatuses?.[statusId])
+  await setStatusCentered(statusId, !current)
   await tokenStatusService.reconcileAllSceneTokens()
 }
 
@@ -362,6 +424,30 @@ async function handleResetAll() {
   border-color: #ff5252;
 }
 
+.btn-center-url {
+  background: #0f1218;
+  border: 1px solid #2b3242;
+  color: #9aa5b8;
+  border-radius: 4px;
+  padding: 0 7px;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.55;
+  transition: all 0.15s;
+}
+
+.btn-center-url:hover {
+  opacity: 0.9;
+  border-color: #f2cc60;
+}
+
+.btn-center-url.active {
+  opacity: 1;
+  background: rgba(242, 204, 96, 0.18);
+  border-color: #f2cc60;
+  box-shadow: 0 0 6px rgba(242, 204, 96, 0.35);
+}
+
 .btn-clear-url {
   background: #252b3b;
   border: 1px solid #384157;
@@ -372,4 +458,3 @@ async function handleResetAll() {
   font-size: 13px;
 }
 </style>
-

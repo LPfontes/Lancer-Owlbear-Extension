@@ -3353,7 +3353,10 @@
       "restoreDefaultTooltip": "Restaurar ícone padrão",
       "customUrlPlaceholder": "https://exemplo.com/icone.png (vazio = padrão)",
       "openQuickDialog": "Abrir Menu Rápido",
-      "close": "Fechar"
+      "close": "Fechar",
+      "placementCenter": "Centro (Overlay)",
+      "overlayScale": "Escala Centralizada (Overlay)",
+      "centerOnTokenTooltip": "Centralizar este status sobre o token (Overlay)"
     }
   },
   "mainMenu": {
