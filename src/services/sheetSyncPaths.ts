@@ -47,6 +47,21 @@ export function mechStatusesPath(mechIndex: number): string {
   return `mechs.${mechIndex}.statuses`
 }
 
+/** Status personalizados do mech — `mechs.0.customStatuses`. */
+export function mechCustomStatusesPath(mechIndex: number): string {
+  return `mechs.${mechIndex}.customStatuses`
+}
+
+/** Cobertura do mech — `mechs.0.cover`. */
+export function mechCoverPath(mechIndex: number): string {
+  return `mechs.${mechIndex}.cover`
+}
+
+/** Estado Suportar (Braced) do mech — `mechs.0.braced`. */
+export function mechBracedPath(mechIndex: number): string {
+  return `mechs.${mechIndex}.braced`
+}
+
 /**
  * Índice do mech ativo dentro de `pilot.Mechs`.
  *
@@ -61,7 +76,13 @@ export function activeMechIndex(pilot: any): number {
   return mechs.findIndex((m: any) => m === active || (m?.ID && m.ID === active?.ID))
 }
 
-export type SheetPatchTarget = 'combatActions' | 'statuses' | 'stat'
+export type SheetPatchTarget =
+  | 'combatActions'
+  | 'statuses'
+  | 'customStatuses'
+  | 'cover'
+  | 'braced'
+  | 'stat'
 
 /** Último segmento do caminho: o nome do campo no JSON (`mechs.0.stats.current.hp` → `hp`). */
 export function patchFieldKey(field: string): string {
@@ -77,6 +98,9 @@ export function patchFieldTarget(field: string): SheetPatchTarget {
   const key = patchFieldKey(field)
   if (key === 'combatActions') return 'combatActions'
   if (key === 'statuses') return 'statuses'
+  if (key === 'customStatuses') return 'customStatuses'
+  if (key === 'cover') return 'cover'
+  if (key === 'braced') return 'braced'
   return 'stat'
 }
 

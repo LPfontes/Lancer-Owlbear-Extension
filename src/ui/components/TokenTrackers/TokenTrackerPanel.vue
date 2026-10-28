@@ -1,18 +1,62 @@
 <template>
   <div class="token-trackers-panel d-flex flex-column ga-3 pa-3">
-    <div v-if="!isGm" class="text-caption text-grey-lighten-1">
-      {{ t('active.tokenTrackers.playerHint') }}
+    <!-- Sub-navegação entre Trackers de Atributos, Estados & Condições e Ícones de Status -->
+    <div class="d-flex align-center ga-1 panel-subtabs">
+      <v-btn
+        size="small"
+        :variant="activeSection === 'statuses' ? 'flat' : 'tonal'"
+        :color="activeSection === 'statuses' ? 'error' : 'grey-darken-3'"
+        prepend-icon="mdi-shield-alert-outline"
+        class="flex-1-1 text-caption font-weight-bold"
+        @click="activeSection = 'statuses'"
+      >
+        {{ t('active.tokenStatus.sectionStatuses') }}
+      </v-btn>
+      <v-btn
+        size="small"
+        :variant="activeSection === 'trackers' ? 'flat' : 'tonal'"
+        :color="activeSection === 'trackers' ? 'primary' : 'grey-darken-3'"
+        prepend-icon="mdi-radar"
+        class="flex-1-1 text-caption font-weight-bold"
+        @click="activeSection = 'trackers'"
+      >
+        {{ t('active.tokenStatus.sectionTrackers') }}
+      </v-btn>
+      <v-btn
+        size="small"
+        :variant="activeSection === 'icons' ? 'flat' : 'tonal'"
+        :color="activeSection === 'icons' ? 'deep-purple-accent-2' : 'grey-darken-3'"
+        prepend-icon="mdi-palette-outline"
+        class="flex-1-1 text-caption font-weight-bold"
+        @click="activeSection = 'icons'"
+      >
+        {{ t('active.tokenStatus.sectionIcons') }}
+      </v-btn>
     </div>
 
-    <TokenTrackerSettings v-if="isGm" :config="config" :disabled="saving" @update="saveConfig" />
+    <template v-if="activeSection === 'statuses'">
+      <TokenStatusMenu />
+    </template>
 
-    <TokenTrackerList
-      :tokens="tokens"
-      :is-gm="isGm"
-      :hidden-combatant-ids="config.playerVisibility.hiddenCombatantIds"
-      @toggle-token="toggleToken"
-      @toggle-hidden="toggleHidden"
-    />
+    <template v-else-if="activeSection === 'icons'">
+      <TokenStatusSettings />
+    </template>
+
+    <template v-else>
+      <div v-if="!isGm" class="text-caption text-grey-lighten-1">
+        {{ t('active.tokenTrackers.playerHint') }}
+      </div>
+
+      <TokenTrackerSettings v-if="isGm" :config="config" :disabled="saving" @update="saveConfig" />
+
+      <TokenTrackerList
+        :tokens="tokens"
+        :is-gm="isGm"
+        :hidden-combatant-ids="config.playerVisibility.hiddenCombatantIds"
+        @toggle-token="toggleToken"
+        @toggle-hidden="toggleHidden"
+      />
+    </template>
   </div>
 </template>
 
@@ -21,6 +65,8 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TokenTrackerSettings from './TokenTrackerSettings.vue'
 import TokenTrackerList from './TokenTrackerList.vue'
+import TokenStatusMenu from '@/ui/components/TokenStatus/TokenStatusMenu.vue'
+import TokenStatusSettings from '@/ui/components/TokenStatus/TokenStatusSettings.vue'
 import { obrBridge } from '@/services/obrBridge'
 import { tokenTrackerService, type TokenTrackerTokenDescription } from '@/services/tokenTrackerService'
 import { addToWatchlist, removeFromWatchlist } from '@/services/tokenTrackerWatchlist'
@@ -28,15 +74,12 @@ import { DEFAULT_TOKEN_TRACKER_CONFIG, type TokenTrackerConfig } from '@/types/t
 import { isGmClient, obrReady } from '@/services/obrRuntime'
 
 /**
- * Painel de gestão dos token trackers (plano §7.3/§7.4/§7.5).
- *
- * Duas responsabilidades:
- * - GM: ajustar o que é desenhado e o que os jogadores podem ver (config da SALA);
- * - qualquer um: escolher quais tokens acompanhar nesta janela (watchlist LOCAL).
+ * Painel de gestão dos token trackers e Estados/Condições LANCER nativo.
  */
 
 const { t } = useI18n()
 
+const activeSection = ref<'trackers' | 'statuses' | 'icons'>('statuses')
 const isGm = computed(() => isGmClient())
 const config = ref<TokenTrackerConfig>({ ...DEFAULT_TOKEN_TRACKER_CONFIG })
 const tokens = ref<TokenTrackerTokenDescription[]>([])
@@ -55,8 +98,6 @@ async function saveConfig(next: TokenTrackerConfig): Promise<void> {
   saving.value = true
   try {
     await obrBridge.saveRoomTokenTrackerConfig(next)
-    // O serviço relê a config pelo `onMetadataChange`; forçamos um refresh aqui
-    // para o efeito ser imediato nesta janela.
     await tokenTrackerService.refreshAll()
     await loadTokens()
   } finally {
@@ -93,7 +134,6 @@ async function toggleHidden(tokenId: string): Promise<void> {
   })
 }
 
-// O serviço avisa quando algum estado mudou (refresh concluído, preferências).
 const stopVersion = watch(
   () => tokenTrackerService.version.value,
   () => {

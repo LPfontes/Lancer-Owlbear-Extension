@@ -1,6 +1,13 @@
 import { markRaw } from 'vue'
 import { Status } from '@/classes/Status'
-import { customStatusMarkerId, burnStatusMarkerId, parseBurnMarkerId } from '@/services/statusIcons'
+import {
+  customStatusMarkerId,
+  parseCustomStatusMarkerId,
+  burnStatusMarkerId,
+  parseBurnMarkerId,
+  normalizeStatusId,
+  getStatusDefinition,
+} from '@/services/statusIcons'
 import { StatKey } from './stats/Stats'
 import { ruleFor, customRuleFor, kindsFor } from './StatusRules'
 import type { IStatusRule } from './StatusRules'
@@ -435,40 +442,237 @@ class StatusController {
     this.Resistances = []
   }
 
-  public Serialize(target: any): void {
-    target.statuses = this.Statuses.map(s => ({
-      status: s.status.ID,
-      expires: expiration.Serialize(s.expires),
-      selfInflicted: s.selfInflicted,
-    }))
-    target.customStatuses = this.CustomStatuses.map(s => ({
+  public SerializeStatuses(): { status: string; expires: any; selfInflicted?: boolean }[] {
+    return this.Statuses.map((s: any) => ({
+      status:
+        s?.status?.ID ||
+        s?.status?.id ||
+        (typeof s?.status === 'string' ? s.status : '') ||
+        (typeof s === 'string' ? s : ''),
+      expires: expiration.Serialize(s?.expires),
+      selfInflicted: s?.selfInflicted,
+    })).filter(s => !!s.status)
+  }
+
+  public SerializeCustomStatuses(): { status: any; expires: any }[] {
+    return this.CustomStatuses.map(s => ({
       status: EffectSpecial.Serialize(s.status),
       expires: s.expires?.Raw,
     }))
+  }
+
+  public Serialize(target: any): void {
+    target.statuses = this.SerializeStatuses()
+    target.customStatuses = this.SerializeCustomStatuses()
     target.resistances = this.Resistances.map(r => ({ ...r }))
   }
 
   public Deserialize(data: any): void {
-    this.Resistances = data?.resistances || []
-    const allStatuses = CompendiumStore().Statuses || []
-    this.Statuses = (data?.statuses || [])
-      .map((s: any) => {
-        const rawId = s?.status?.ID || s?.status?.id || (typeof s?.status === 'string' ? s.status : null) || (typeof s === 'string' ? s : null)
-        if (!rawId) return null
-        const needle = String(rawId).toLowerCase()
-        const found = allStatuses.find(st => st.ID.toLowerCase() === needle)
-        if (!found) return null
-        return {
-          status: found,
-          expires: markRaw(expiration.Deserialize(s?.expires)),
-          selfInflicted: s?.selfInflicted ?? false,
+    if (!data || 'resistances' in data) {
+      this.Resistances = data?.resistances || []
+    }
+    let allStatuses: Status[] = []
+    try {
+      allStatuses = CompendiumStore().Statuses || []
+    } catch {}
+    if (!data || 'statuses' in data) {
+      this.Statuses = (data?.statuses || [])
+        .map((s: any) => {
+          const rawId =
+            s?.status?.ID ||
+            s?.status?.id ||
+            (typeof s?.status === 'string' ? s.status : null) ||
+            (typeof s === 'string' ? s : null)
+          if (!rawId) return null
+          const needle = String(rawId).toLowerCase()
+          const normNeedle = normalizeStatusId(needle) || needle
+          let found = allStatuses.find(
+            st =>
+              st.ID.toLowerCase() === needle ||
+              st.ID.toLowerCase() === normNeedle ||
+              normalizeStatusId(st.ID) === normNeedle
+          )
+          if (!found) {
+            if (s?.status instanceof Status) {
+              found = s.status
+            } else if (typeof s?.status === 'object' && s?.status) {
+              found = Status.Deserialize(s.status)
+            } else {
+              const def = getStatusDefinition(normNeedle)
+              found = new Status({
+                id: normNeedle,
+                name: def?.label || rawId,
+                icon: normNeedle,
+                type: def?.category === 'condition' ? 'Condition' : 'Status',
+                effects: '',
+              })
+            }
+          }
+          return {
+            status: found,
+            expires: markRaw(expiration.Deserialize(s?.expires)),
+            selfInflicted: s?.selfInflicted ?? false,
+          }
+        })
+        .filter((s: any) => s != null)
+    }
+    if (!data || 'customStatuses' in data) {
+      this.CustomStatuses = (data?.customStatuses || []).map((s: any) => ({
+        status:
+          s?.status instanceof EffectSpecial
+            ? s.status
+            : EffectSpecial.Deserialize(
+                typeof s?.status === 'string' ? { attribute: s.status } : s?.status
+              ),
+        expires: markRaw(expiration.Deserialize(s?.expires)),
+      }))
+    }
+  }
+
+  /**
+   * Sincroniza o estado completo de Statuses, CustomStatuses, Cover, Braced e Burn
+   * a partir de uma lista de IDs de marcadores de token (`MarkerStatusIds`).
+   * Garante reconciliação sem conflitos quando o token é editado pelo menu rápido do mapa.
+   */
+  public ApplyMarkerStatusIds(markerIds: string[]): void {
+    const controller = this._active
+    const currentSignature = this.MarkerStatusIds(controller).slice().sort().join('|')
+    const desiredSignature = markerIds.slice().sort().join('|')
+    if (currentSignature === desiredSignature) return
+
+    let desiredCover: 'none' | 'soft' | 'hard' = 'none'
+    let wantsBraced = false
+    let desiredBurn: number | null = null
+    const desiredCustomNames: string[] = []
+    const desiredStandardIds = new Set<string>()
+
+    for (const raw of markerIds) {
+      if (!raw) continue
+      const trimmed = raw.trim()
+      const customName = parseCustomStatusMarkerId(trimmed)
+      if (customName) {
+        if (!desiredCustomNames.includes(customName)) {
+          desiredCustomNames.push(customName)
         }
+        continue
+      }
+      const burnInfo = parseBurnMarkerId(trimmed)
+      if (burnInfo !== null) {
+        desiredBurn = Math.max(0, burnInfo.amount)
+        continue
+      }
+      const norm = normalizeStatusId(trimmed)
+      if (!norm) continue
+      if (norm === 'hardcover') {
+        desiredCover = 'hard'
+      } else if (norm === 'softcover' && desiredCover !== 'hard') {
+        desiredCover = 'soft'
+      } else if (norm === 'braced') {
+        wantsBraced = true
+      } else if (norm === 'burn') {
+        if (desiredBurn === null) {
+          const currentBurn = Number(controller.StatController?.getCurrent?.(StatKey.BURN)) || 0
+          desiredBurn = currentBurn > 0 ? currentBurn : 1
+        }
+      } else {
+        desiredStandardIds.add(norm)
+      }
+    }
+
+    // 1. Cobertura
+    if ((controller.Cover as string) !== desiredCover) {
+      controller.Cover = desiredCover as any
+    }
+
+    // 2. Suportar (Braced)
+    if (Boolean(controller.Braced) !== wantsBraced) {
+      if (typeof (controller as any).SetBraced === 'function') {
+        ;(controller as any).SetBraced(wantsBraced, true)
+      } else {
+        controller.Braced = wantsBraced
+      }
+    }
+
+    // 3. Queimadura (StatKey.BURN)
+    const currentBurn = Number(controller.StatController?.getCurrent?.(StatKey.BURN)) || 0
+    const nextBurn = desiredBurn !== null ? desiredBurn : 0
+    if (currentBurn !== nextBurn && controller.StatController?.setCurrentStat) {
+      controller.StatController.setCurrentStat(StatKey.BURN, nextBurn, { silent: true })
+    }
+
+    // 4. Status Personalizados
+    const sc = controller.StatusController
+    for (let i = sc.CustomStatuses.length - 1; i >= 0; i--) {
+      const attr = sc.CustomStatuses[i]?.status?.Attribute?.trim()
+      if (!attr || !desiredCustomNames.includes(attr)) {
+        sc.CustomStatuses.splice(i, 1)
+      }
+    }
+    for (const customName of desiredCustomNames) {
+      const exists = sc.CustomStatuses.some(s => s?.status?.Attribute?.trim() === customName)
+      if (!exists) {
+        sc.CustomStatuses.push({
+          status: new EffectSpecial({ attribute: customName, detail: '' }),
+          expires: sc.ResolveExpiration(undefined, controller),
+        })
+      }
+    }
+
+    // 5. Status e Condições padrão do compêndio
+    let allStatuses: Status[] = []
+    try {
+      allStatuses = CompendiumStore().Statuses || []
+    } catch {}
+    for (let i = sc.Statuses.length - 1; i >= 0; i--) {
+      const entry = sc.Statuses[i]
+      const rawId =
+        entry?.status?.ID ||
+        (entry?.status as any)?.id ||
+        (typeof entry?.status === 'string' ? entry.status : '')
+      const norm = normalizeStatusId(String(rawId)) || String(rawId).toLowerCase()
+      if (!desiredStandardIds.has(norm)) {
+        sc.Statuses.splice(i, 1)
+      }
+    }
+
+    for (const normId of desiredStandardIds) {
+      // Se já está em Zona de Perigo derivada por calor, não duplica em Statuses
+      if (normId === 'dangerzone' && controller.IsInDangerZone) {
+        continue
+      }
+      const alreadyHas = sc.Statuses.some((entry: any) => {
+        const rawId =
+          entry?.status?.ID ||
+          entry?.status?.id ||
+          (typeof entry?.status === 'string' ? entry.status : '')
+        const entryNorm = normalizeStatusId(String(rawId)) || String(rawId).toLowerCase()
+        return entryNorm === normId
       })
-      .filter((s: any) => s != null)
-    this.CustomStatuses = (data?.customStatuses || []).map((s: any) => ({
-      status: EffectSpecial.Deserialize(s.status),
-      expires: markRaw(expiration.Deserialize(s.expires)),
-    }))
+      if (!alreadyHas) {
+        let found = allStatuses.find(
+          st =>
+            st.ID.toLowerCase() === normId ||
+            normalizeStatusId(st.ID) === normId
+        )
+        if (!found) {
+          const def = getStatusDefinition(normId)
+          found = new Status({
+            id: normId,
+            name: def?.label || normId,
+            icon: normId,
+            type: def?.category === 'condition' ? 'Condition' : 'Status',
+            effects: '',
+          })
+        }
+        sc.Statuses.push({
+          status: found,
+          expires: sc.ResolveExpiration(undefined, controller),
+        })
+      }
+    }
+
+    controller.CombatLogVersion++
+    sc.NotifyStatusChange()
   }
 }
 

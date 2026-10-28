@@ -9,6 +9,11 @@ import { toRaw } from 'vue'
 import { dddiceService } from './dddiceService'
 import { tableSyncSocket, roomSyncedSheets } from './tableSyncSocket'
 import { statusMarkerService } from './statusMarkerService'
+import { tokenStatusService } from './tokenStatusService'
+import {
+  applyStatusIconsConfigFromMetadata,
+  loadRoomIconsConfig,
+} from './statusIconConfig'
 import { isSheetReadOnlySession } from './sheetReadOnlySession'
 import { tokenTrackerService, TOKEN_TRACKER_ROOM_CONFIG_KEY } from './tokenTrackerService'
 import { tokenMovementCapture } from './tokenMovementCapture'
@@ -125,8 +130,13 @@ class OBRBridge {
       // Solicita sincronização cross-scene com todos os jogadores na sala
       await this.requestSyncFromRoom().catch(() => { })
 
+      // Carrega configuração visual de ícones de status da sala e inicia serviço de status de token
+      await loadRoomIconsConfig().catch(() => {})
+      tokenStatusService.init()
+
       // Limpa marcadores legados de status com URLs inválidas que possam ter ficado gravados na cena
       void statusMarkerService.cleanupLegacyMarkers().catch(() => { })
+      void tokenStatusService.reconcileAllSceneTokens().catch(() => { })
 
       // Inicializa serviço de dados 3D compartilhados (dddice) e WebSocket
       dddiceService.init()
@@ -244,6 +254,42 @@ class OBRBridge {
         })
         .catch(e => console.warn('[OBRBridge] Aviso ao criar o item de menu de parada:', e))
 
+      // Menu de contexto para Estados e Condições LANCER (nativo no COMP/CON)
+      void OBR.contextMenu.create({
+        id: 'compcon-token-status',
+        icons: [
+          {
+            icon: '/status-icons/lockon.svg',
+            label: i18n.global.t('active.tokenStatus.contextMenu'),
+            filter: {
+              roles: ['GM', 'PLAYER'],
+              min: 1,
+              some: [
+                { key: 'layer', value: 'CHARACTER', operator: '==' },
+                { key: 'layer', value: 'MOUNT', operator: '==' },
+                { key: 'layer', value: 'PROP', operator: '==' },
+              ],
+            },
+          },
+        ],
+        onClick: async (context) => {
+          const selectedIds = context.items.map((item: Item) => item.id)
+          try {
+            const { windowManager } = await import('./windowManager')
+            await windowManager.reopenWindow()
+          } catch {}
+          await tokenStatusService.refreshSelectedTokens(context.items)
+          tokenStatusService.statusDialogOpen.value = true
+          window.dispatchEvent(
+            new CustomEvent('compcon-token-status-requested', {
+              detail: { tokenIds: selectedIds, items: context.items },
+            })
+          )
+        },
+      }).catch((e) => {
+        console.warn('[OBRBridge] Aviso ao criar menu de contexto token-status:', e)
+      })
+
       // Menu de contexto para vincular token à ficha
       void OBR.contextMenu.create({
         id: 'compcon-bind-token',
@@ -319,6 +365,10 @@ class OBRBridge {
    */
   private setupRoomMetadataListener() {
     OBR.room.onMetadataChange(async (metadata) => {
+      if (applyStatusIconsConfigFromMetadata(metadata)) {
+        void tokenStatusService.reconcileAllSceneTokens()
+      }
+
       if (COMPCON_TABLE_ACTIONS_KEY in metadata) {
         const raw = metadata[COMPCON_TABLE_ACTIONS_KEY]
         if (Array.isArray(raw)) {
@@ -343,6 +393,7 @@ class OBRBridge {
       if (ready) {
         console.log('[OBRBridge] Nova cena ativada no Owlbear Rodeo.')
         void statusMarkerService.cleanupLegacyMarkers().catch(() => { })
+        void tokenStatusService.reconcileAllSceneTokens().catch(() => { })
       }
     })
   }

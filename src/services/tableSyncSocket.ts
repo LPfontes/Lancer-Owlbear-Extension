@@ -494,8 +494,48 @@ class TableSyncSocket {
     }
   }
 
+  private applyCombatPatchToController(
+    cc: any,
+    fieldTarget: ReturnType<typeof patchFieldTarget>,
+    field: string,
+    value: any
+  ): void {
+    if (!cc) return
+    if (fieldTarget === 'combatActions' && value) {
+      cc.CombatActions = { ...value }
+      cc.CombatLogVersion++
+    } else if (fieldTarget === 'statuses' && Array.isArray(value)) {
+      if (cc.StatusController?.Deserialize) {
+        cc.StatusController.Deserialize({ statuses: value })
+        cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange?.()
+      } else {
+        cc.Statuses = [...value]
+        cc.CombatLogVersion++
+      }
+    } else if (fieldTarget === 'customStatuses' && Array.isArray(value)) {
+      if (cc.StatusController?.Deserialize) {
+        cc.StatusController.Deserialize({ customStatuses: value })
+        cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange?.()
+      }
+    } else if (fieldTarget === 'cover') {
+      cc.Cover = value || 'none'
+      cc.CombatLogVersion++
+      cc.StatusController?.NotifyStatusChange?.()
+    } else if (fieldTarget === 'braced') {
+      cc.Braced = Boolean(value)
+      cc.CombatLogVersion++
+      cc.StatusController?.NotifyStatusChange?.()
+    } else if (cc.StatController) {
+      this.applyStatDelta(cc.StatController, field, value)
+      cc.CombatLogVersion++
+      cc.NotifyDerivedMarkers?.()
+    }
+  }
+
   /**
-   * Aplica um PATCH_FIELD recebido diretamente no StatController do combatente
+   * Aplica um PATCH_FIELD recebido diretamente no StatController/CombatController do combatente
    */
   private async applyReceivedPatch(patch: PatchFieldPayload): Promise<void> {
     // O caminho pode vir absoluto ("mechs.0.statuses") ou relativo ("statuses").
@@ -517,20 +557,31 @@ class TableSyncSocket {
           // ficha do PRÓPRIO piloto (desmontado) — ela não herda nada do mecha.
           const isMechPath = String(patch.field).startsWith('mechs.')
           const statTarget: any = isMechPath ? pilot.ActiveMech : pilot
-          const statController = statTarget?.CombatController?.StatController
-          if (statController) {
-            if (fieldTarget === 'combatActions' && patch.value) {
-              statTarget.CombatController.CombatActions = { ...patch.value }
-              statTarget.CombatController.CombatLogVersion++
-            } else if (fieldTarget === 'statuses' && Array.isArray(patch.value)) {
-              console.log(`[StatusInvestigation][SyncRoom -> LocalStore] Aplicando "statuses" em PilotStore para "${pilot.Callsign || pilot.Name}" (${patch.characterId}):`, patch.value)
-              statTarget.CombatController.Statuses = [...patch.value]
-              statTarget.CombatController.CombatLogVersion++
-            } else {
-              this.applyStatDelta(statController, patch.field, patch.value)
-            }
+          if (statTarget?.CombatController) {
+            this.applyCombatPatchToController(
+              statTarget.CombatController,
+              fieldTarget,
+              patch.field,
+              patch.value
+            )
           }
         }
+      } else if (patch.characterType === 'npc') {
+        try {
+          const { NpcStore } = await import('@/stores')
+          const npcStore = NpcStore()
+          const npc = npcStore.getNpc?.(patch.characterId) ??
+            npcStore.Npcs?.find((n: any) => n.ID === patch.characterId)
+          if (npc?.CombatController) {
+            this.applyCombatPatchToController(
+              npc.CombatController,
+              fieldTarget,
+              patch.field,
+              patch.value
+            )
+            void npc.Save?.()
+          }
+        } catch {}
       }
 
       // Se for no encontro ativo do GM ou no Runner do encontro:
@@ -541,33 +592,21 @@ class TableSyncSocket {
         const combatant = activeEnc.Combatants.find(c => c.id === patch.characterId || c.actor?.ID === patch.characterId)
         if (combatant?.actor) {
           const targetMech = combatant.actor.ActiveMech
-          const targetSc = targetMech?.StatController ?? combatant.actor.CombatController?.StatController
-          if (fieldTarget === 'combatActions' && patch.value) {
-            if (targetMech?.CombatController) {
-              targetMech.CombatController.CombatActions = { ...patch.value }
-              targetMech.CombatController.CombatLogVersion++
-            }
-            if (combatant.actor.CombatController) {
-              combatant.actor.CombatController.CombatActions = { ...patch.value }
-              combatant.actor.CombatController.CombatLogVersion++
-            }
-          } else if (fieldTarget === 'statuses' && Array.isArray(patch.value)) {
-            console.log(`[StatusInvestigation][SyncRoom -> LocalEncounter] Aplicando "statuses" no combatente do encontro ativo "${combatant.actor.Name || combatant.actor.Callsign || combatant.id}":`, patch.value)
-            if (targetMech?.CombatController) {
-              targetMech.CombatController.Statuses = [ ...patch.value ]
-              targetMech.CombatController.CombatLogVersion++
-            }
-            if (combatant.actor.CombatController) {
-              combatant.actor.CombatController.Statuses = [ ...patch.value ]
-              combatant.actor.CombatController.CombatLogVersion++
-            }
-          } else if (targetSc) {
-            this.applyStatDelta(targetSc, patch.field, patch.value)
-            if (targetMech?.CombatController) {
-              targetMech.CombatController.CombatLogVersion++
-            } else if (combatant.actor.CombatController) {
-              combatant.actor.CombatController.CombatLogVersion++
-            }
+          if (targetMech?.CombatController) {
+            this.applyCombatPatchToController(
+              targetMech.CombatController,
+              fieldTarget,
+              patch.field,
+              patch.value
+            )
+          }
+          if (combatant.actor.CombatController && (!targetMech || fieldTarget !== 'stat')) {
+            this.applyCombatPatchToController(
+              combatant.actor.CombatController,
+              fieldTarget,
+              patch.field,
+              patch.value
+            )
           }
           void activeEnc.Save?.()
         }
@@ -580,16 +619,14 @@ class TableSyncSocket {
         const activeSheet = sheetStore.GetActiveSheet()
         if (activeSheet && (activeSheet.Pilot?.ID === patch.characterId || activeSheet.ID === patch.characterId)) {
           const sheetMech = activeSheet.Pilot?.ActiveMech
-          const sheetSc = sheetMech?.StatController ?? activeSheet.Pilot?.CombatController?.StatController
-          if (fieldTarget === 'combatActions' && patch.value && sheetMech?.CombatController) {
-            sheetMech.CombatController.CombatActions = { ...patch.value }
-            sheetMech.CombatController.CombatLogVersion++
-          } else if (fieldTarget === 'statuses' && Array.isArray(patch.value) && sheetMech?.CombatController) {
-            sheetMech.CombatController.Statuses = [ ...patch.value ]
-            sheetMech.CombatController.CombatLogVersion++
-          } else if (sheetSc) {
-            this.applyStatDelta(sheetSc, patch.field, patch.value)
-            if (sheetMech?.CombatController) sheetMech.CombatController.CombatLogVersion++
+          const targetCc = sheetMech?.CombatController ?? activeSheet.Pilot?.CombatController
+          if (targetCc) {
+            this.applyCombatPatchToController(
+              targetCc,
+              fieldTarget,
+              patch.field,
+              patch.value
+            )
           }
           activeSheet.Save()
         }

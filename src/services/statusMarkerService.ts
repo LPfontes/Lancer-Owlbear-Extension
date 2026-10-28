@@ -7,13 +7,18 @@ import {
   normalizeStatusId,
   parseCustomStatusMarkerId,
   parseBurnMarkerId,
+  sortStatusMarkers,
 } from './statusIcons'
+import { currentIconsConfig } from './statusIconConfig'
 import { isSheetReadOnlySession } from './sheetReadOnlySession'
 
 export const STATUS_MARKER_METADATA_KEY = 'com.compcon.status_marker'
 export const STATUS_MARKER_ID_KEY = 'com.compcon.status_id'
 export const STATUS_MARKER_PARENT_KEY = 'com.compcon.parent_token'
 export const STATUS_MARKER_LABEL_KEY = 'com.compcon.status_label'
+
+export const LEGACY_STATUS_MARKER_METADATA_KEY = 'com.lancer.status_markers/is_marker'
+export const LEGACY_STATUS_MARKER_ID_KEY = 'com.lancer.status_markers/status_id'
 
 export class StatusMarkerService {
   /**
@@ -70,47 +75,77 @@ export class StatusMarkerService {
       // - Os status PERSONALIZADOS (prefixo `custom:`) passam intactos.
       // - Os status de QUEIMADURA com quantidade (prefixo `burn:`) passam intactos.
       // - Os demais são normalizados pelo catálogo.
-      const normalizedStatusIds = Array.from(
-        new Set(
-          rawStatusIds
-            .map(id => {
-              if (parseCustomStatusMarkerId(id)) return id.trim()
-              if (parseBurnMarkerId(id)) return id.trim()
-              return normalizeStatusId(id)
-            })
-            .filter((id): id is string => id !== null)
+      const normalizedStatusIds = sortStatusMarkers(
+        Array.from(
+          new Set(
+            rawStatusIds
+              .map(id => {
+                if (parseCustomStatusMarkerId(id)) return id.trim()
+                if (parseBurnMarkerId(id)) return id.trim()
+                return normalizeStatusId(id)
+              })
+              .filter((id): id is string => id !== null)
+          )
         )
       )
 
-      console.log(`[StatusInvestigation][TokenMarkers] applyTokenStatusMarkers para tokenId="${tokenId}": rawStatusIds=[${rawStatusIds.join(', ')}] -> normalizados=[${normalizedStatusIds.join(', ')}]`)
-
-      // 3. Obtém anexos existentes vinculados ao token
+      // 3. Obtém anexos existentes vinculados ao token (incluindo legados do lancer-token-status)
       const attachments = await OBR.scene.items.getItemAttachments([tokenId])
       const existingMarkers = attachments.filter(
         item =>
           item.id.startsWith('cc_st_') ||
+          item.id.startsWith('ls_st_') ||
           (item.metadata &&
             (item.metadata[STATUS_MARKER_METADATA_KEY] === true ||
-             item.metadata[STATUS_MARKER_ID_KEY] !== undefined))
+              item.metadata[STATUS_MARKER_ID_KEY] !== undefined ||
+              item.metadata[LEGACY_STATUS_MARKER_METADATA_KEY] === true ||
+              item.metadata[LEGACY_STATUS_MARKER_ID_KEY] !== undefined))
       )
 
-      console.log(`[StatusInvestigation][TokenMarkers] Token "${tokenId}" possui ${existingMarkers.length} marcadores anexados atualmente:`, existingMarkers.map(m => ({ id: m.id, statusId: m.metadata?.[STATUS_MARKER_ID_KEY] })))
+      const scaleMult = currentIconsConfig.value.badgeScale ?? 0.28
+      const targetSize = Math.max(20, Math.min(64, bounds.width * scaleMult))
+      const scaleFactor = targetSize / 100
 
-      // 4. Remove marcadores que não estão mais ativos, que possuem URL legada
-      // (data: URL ou não HTTP) ou que estão DUPLICADOS. Itens do tipo TEXT
-      // (como os rótulos de status custom e de queimadura) não possuem imagem e
-      // são deduplicados separadamente pelo sufixo `_label`.
+      // 4. Remove marcadores que não estão mais ativos, que possuem URL legada/diferente da config,
+      // escala diferente ou que estão DUPLICADOS.
       const seenStatusIds = new Set<string>()
       const markersToRemove = existingMarkers.filter(item => {
-        const markerStatusId = item.metadata?.[STATUS_MARKER_ID_KEY] as string
+        const markerStatusId =
+          (item.metadata?.[STATUS_MARKER_ID_KEY] as string) ||
+          (item.metadata?.[LEGACY_STATUS_MARKER_ID_KEY] as string)
+        const isLegacyItem =
+          item.id.startsWith('ls_st_') ||
+          item.metadata?.[LEGACY_STATUS_MARKER_METADATA_KEY] === true
         const isLabel = item.metadata?.[STATUS_MARKER_LABEL_KEY] === true
         const isText = (item as any).type === 'TEXT' || isLabel
         const img = (item as any).image
         const urlStr = img?.url ? String(img.url) : ''
         const isLegacyOrDataUrl = !isText && (!urlStr.startsWith('http') || urlStr.startsWith('data:'))
-        if (!markerStatusId || !normalizedStatusIds.includes(markerStatusId) || isLegacyOrDataUrl) {
+
+        if (
+          isLegacyItem ||
+          !markerStatusId ||
+          !normalizedStatusIds.includes(markerStatusId) ||
+          isLegacyOrDataUrl
+        ) {
           return true
         }
+
+        if (!isText) {
+          const expectedUrl = parseCustomStatusMarkerId(markerStatusId)
+            ? getCustomStatusBadgeUrl()
+            : parseBurnMarkerId(markerStatusId)
+              ? getStatusBadgeUrl('burn')
+              : getStatusBadgeUrl(markerStatusId)
+          if (expectedUrl && urlStr && urlStr !== expectedUrl) {
+            return true
+          }
+          const itemScaleX = (item as any).scale?.x
+          if (typeof itemScaleX === 'number' && Math.abs(itemScaleX - scaleFactor) > 0.015) {
+            return true
+          }
+        }
+
         const seenKey = isLabel ? `${markerStatusId}_label` : markerStatusId
         if (seenStatusIds.has(seenKey)) return true
         seenStatusIds.add(seenKey)
@@ -119,10 +154,7 @@ export class StatusMarkerService {
 
       if (markersToRemove.length > 0) {
         const removedIds = new Set(markersToRemove.map(m => m.id))
-        console.log(`[StatusMarkerService] Removendo ${markersToRemove.length} marcador(es) obsoleto(s)/duplicado(s)`)
         await OBR.scene.items.deleteItems([...removedIds])
-        // A lista de anexos veio antes das remoções: descarta o que já foi apagado
-        // para o passo 6 não reaproveitar um item que não existe mais.
         for (let i = existingMarkers.length - 1; i >= 0; i--) {
           if (removedIds.has(existingMarkers[i].id)) existingMarkers.splice(i, 1)
         }
@@ -130,32 +162,38 @@ export class StatusMarkerService {
 
       if (normalizedStatusIds.length === 0) return
 
-      // 5. Calcula layout dos badges na lateral direita do token
-      // O tamanho do badge é proporcional à largura do token (entre 26 e 44 unidades de cena)
-      const targetSize = Math.max(26, Math.min(44, bounds.width * 0.28))
+      // 5. Calcula layout dos badges conforme a posição configurada na sala
       const spacing = 10
       const count = normalizedStatusIds.length
-
-      // Máximo de badges por coluna antes de quebrar para a próxima coluna à direita
       const maxPerColumn = 6
+      const placement = currentIconsConfig.value.placement || 'right'
 
       const itemsToAdd: Item[] = []
       const itemsToUpdatePositions: { id: string; position: { x: number; y: number } }[] = []
 
-      // Escala para a imagem SVG de 100x100 px
-      const scaleFactor = targetSize / 100
-
       for (let i = 0; i < count; i++) {
         const statusId = normalizedStatusIds[i]
 
-        // Empilha até 6 status por coluna; a partir do 7º abre uma nova coluna à direita
         const columnIndex = Math.floor(i / maxPerColumn)
         const rowIndex = i % maxPerColumn
 
-        const posX = bounds.max.x - 40 + targetSize / 2 + columnIndex * (targetSize + spacing)
+        let posX = 0
+        let posY = 0
 
-        // O primeiro badge fica colado na borda superior do token e os demais descem
-        const posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+        if (placement === 'left') {
+          posX = bounds.min.x + 12 - targetSize / 2 - columnIndex * (targetSize + spacing)
+          posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+        } else if (placement === 'bottom') {
+          posX = bounds.min.x + targetSize / 2 + rowIndex * (targetSize + spacing)
+          posY = bounds.max.y - 12 + targetSize / 2 + columnIndex * (targetSize + spacing)
+        } else if (placement === 'top') {
+          posX = bounds.min.x + targetSize / 2 + rowIndex * (targetSize + spacing)
+          posY = bounds.min.y + 12 - targetSize / 2 - columnIndex * (targetSize + spacing)
+        } else {
+          // 'right' (padrão)
+          posX = bounds.max.x - 40 + targetSize / 2 + columnIndex * (targetSize + spacing)
+          posY = bounds.min.y + targetSize / 2 + rowIndex * (targetSize + spacing)
+        }
 
         // Status personalizado (nome livre): badge próprio + rótulo de texto ao lado
         const customName = parseCustomStatusMarkerId(statusId)
@@ -204,7 +242,6 @@ export class StatusMarkerService {
         )
 
         if (existing) {
-          // Atualiza posição se mudou
           if (
             Math.abs(existing.position.x - posX) > 1 ||
             Math.abs(existing.position.y - posY) > 1
@@ -212,7 +249,6 @@ export class StatusMarkerService {
             itemsToUpdatePositions.push({ id: existing.id, position: { x: posX, y: posY } })
           }
         } else {
-          // Cria novo marcador anexo com URL HTTP estática válida
           const badgeUrl = getStatusBadgeUrl(statusId)
           const newMarker = buildImage(
             {
@@ -234,7 +270,7 @@ export class StatusMarkerService {
             .attachedTo(tokenId)
             .locked(true)
             .disableHit(true)
-            .disableAttachmentBehavior(['ROTATION']) // Mantém o ícone ereto mesmo se o token girar
+            .disableAttachmentBehavior(['ROTATION'])
             .metadata({
               [STATUS_MARKER_METADATA_KEY]: true,
               [STATUS_MARKER_ID_KEY]: statusId,
@@ -246,7 +282,6 @@ export class StatusMarkerService {
         }
       }
 
-      // Executa adições e atualizações no Owlbear Rodeo
       if (itemsToAdd.length > 0) {
         await OBR.scene.items.addItems(itemsToAdd)
       }
@@ -268,19 +303,6 @@ export class StatusMarkerService {
     }
   }
 
-  /**
-   * Garante os itens visuais de um Status PERSONALIZADO no token.
-   *
-   * Diferente dos status de catálogo, o nome é livre — então o identificador do
-   * marcador é `custom:<nome>` e o rótulo é um item de TEXTO próprio ao lado do
-   * badge, porque a URL do SVG é fixa e não dá para parametrizar o nome numa
-   * imagem (o loader do Owlbear não renderiza `data:` URL nem texto externo).
-   *
-   * Cria o badge (estrela em círculo) e o rótulo na primeira vez, e só reposiciona
-   * nas vezes seguintes. Quando cria, registra os itens recém-criados em
-   * `existingMarkers` para que outro status personalizado da mesma passada não
-   * crie um par duplicado.
-   */
   private ensureCustomStatusMarker(ctx: {
     tokenId: string
     name: string
@@ -316,8 +338,6 @@ export class StatusMarkerService {
       [STATUS_MARKER_LABEL_KEY]: true,
     }
 
-    // O rótulo é uma caixa de largura fixa centrada no item: para o texto começar
-    // logo à direita do badge, o centro fica em badge + margem + metade da caixa.
     const labelWidth = 120
     const labelX = posX + targetSize / 2
 
@@ -391,7 +411,7 @@ export class StatusMarkerService {
         .strokeWidth(2)
         .lineHeight(1)
         .padding(0)
-        .position({ x: labelX, y: posY - 10})
+        .position({ x: labelX, y: posY - 10 })
         .layer('ATTACHMENT')
         .attachedTo(tokenId)
         .locked(true)
@@ -406,12 +426,6 @@ export class StatusMarkerService {
     return created
   }
 
-  /**
-   * Garante os itens visuais do Status de Queimadura (QMD) com quantidade no token.
-   *
-   * Desenha o badge circular oficial com o ícone `cc:burn` e, imediatamente ao lado,
-   * um rótulo de texto com o número da Queimadura atual (ex: 3).
-   */
   private ensureBurnStatusMarker(ctx: {
     tokenId: string
     amount: number
@@ -453,8 +467,6 @@ export class StatusMarkerService {
       [STATUS_MARKER_LABEL_KEY]: true,
     }
 
-    // Posição do texto com o número da queimadura:
-    // Logo à direita do badge circular, alinhado verticalmente com o centro
     const labelX = posX + targetSize / 2 + 3
     const labelY = posY - Math.round(fontSize * 0.55)
 
@@ -555,29 +567,27 @@ export class StatusMarkerService {
       const isReady = await OBR.scene.isReady().catch(() => false)
       if (!isReady) return
 
-      const items = await OBR.scene.items.getItems((item) => {
+      const items = await OBR.scene.items.getItems(item => {
         const img = (item as any).image
         if (!img || !img.url) return false
         const urlStr = String(img.url)
 
-        // 1. Qualquer URL do tipo data: (data:image/svg...) causa "Invalid URL" no loader do Owlbear Rodeo!
         if (urlStr.startsWith('data:')) return true
-
-        // 2. Qualquer URL de imagem contendo ";utf8"
         if (urlStr.includes(';utf8')) return true
 
-        // 3. Detecta marcadores de status do COMP/CON com formato legado ou sem URL HTTP válida
         const isMarker =
           item.id.startsWith('cc_st_') ||
+          item.id.startsWith('ls_st_') ||
           (item.metadata &&
             (item.metadata[STATUS_MARKER_METADATA_KEY] === true ||
-             item.metadata[STATUS_MARKER_ID_KEY] !== undefined))
+              item.metadata[STATUS_MARKER_ID_KEY] !== undefined ||
+              item.metadata[LEGACY_STATUS_MARKER_METADATA_KEY] === true ||
+              item.metadata[LEGACY_STATUS_MARKER_ID_KEY] !== undefined))
 
         if (isMarker && !urlStr.startsWith('http')) {
           return true
         }
 
-        // 4. Testa se new URL() aceita a URL
         try {
           new URL(urlStr)
         } catch {
@@ -588,7 +598,6 @@ export class StatusMarkerService {
       })
 
       if (items.length > 0) {
-        console.log(`[StatusMarkerService] Removendo ${items.length} itens/marcadores com URL inválida da cena`)
         await OBR.scene.items.deleteItems(items.map(i => i.id))
       }
     } catch (err) {
@@ -601,12 +610,16 @@ export class StatusMarkerService {
    */
   public async clearTokenStatusMarkers(tokenId: string): Promise<void> {
     if (!OBR.isAvailable) return
-    // Ficha em modo leitura: não mexe nos marcadores do token.
     if (isSheetReadOnlySession()) return
     try {
       const attachments = await OBR.scene.items.getItemAttachments([tokenId])
       const markers = attachments.filter(
-        item => item.metadata && item.metadata[STATUS_MARKER_METADATA_KEY] === true
+        item =>
+          item.id.startsWith('cc_st_') ||
+          item.id.startsWith('ls_st_') ||
+          (item.metadata &&
+            (item.metadata[STATUS_MARKER_METADATA_KEY] === true ||
+              item.metadata[LEGACY_STATUS_MARKER_METADATA_KEY] === true))
       )
       if (markers.length > 0) {
         await OBR.scene.items.deleteItems(markers.map(m => m.id))

@@ -3,6 +3,7 @@
     <cc-notify />
     <AppNavbar />
     <TokenLinkDialog />
+    <TokenStatusDialog />
     <PlayerJoinWaitDialog />
     <GmJoinAuthorizationDialog />
     <v-main id="main-content" v-show="!windowManager.isMinimized.value" class="main-content-layout">
@@ -40,6 +41,7 @@ import { GetValue } from '@/io/Storage'
 import CcNotify from '@/ui/notification/CCNotify.vue'
 import AppNavbar from '@/ui/components/AppNavbar.vue'
 import TokenLinkDialog from '@/ui/components/Owlbear/TokenLinkDialog.vue'
+import TokenStatusDialog from '@/ui/components/TokenStatus/TokenStatusDialog.vue'
 import PlayerJoinWaitDialog from '@/ui/components/Owlbear/PlayerJoinWaitDialog.vue'
 import GmJoinAuthorizationDialog from '@/ui/components/Owlbear/GmJoinAuthorizationDialog.vue'
 import { windowManager } from '@/services/windowManager'

@@ -122,7 +122,7 @@
 
         <v-footer
           app
-          height="36"
+          height="80"
           class="bg-panel"
           style="position: fixed !important; bottom: 0px !important; left: 0px !important; right: 0px !important; width: 100% !important; z-index: 1000 !important; border-top: 1px solid rgba(255, 255, 255, 0.1);"
         >
@@ -206,7 +206,10 @@
   import { createCoalescedDispatcher } from '@/services/coalescedDispatcher'
   import {
     activeMechIndex,
+    mechBracedPath,
     mechCombatActionsPath,
+    mechCoverPath,
+    mechCustomStatusesPath,
     mechStatsPath,
     mechStatusesPath,
     patchFieldKey,
@@ -739,14 +742,43 @@ const panelMap: Record<string, any> = {
   let lastDispatchedStress: number | undefined
   let lastDispatchedOvershield: number | undefined
   let lastDispatchedSpeed: number | undefined
+  let lastDispatchedBurn: number | undefined
   let lastDispatchedActions: string | undefined
   let lastDispatchedStatuses: string | undefined
+  let lastDispatchedCustomStatuses: string | undefined
+  let lastDispatchedCover: string | undefined
+  let lastDispatchedBraced: boolean | undefined
   let lastDispatchedCorePower: boolean | undefined
   let lastDispatchedCoreActive: boolean | undefined
   /** Flag `destroyed` já enviado, por `caminho#ID do item`. */
   const lastDispatchedDestroyed = new Map<string, boolean>()
   let patchVersion = 1
   let isInitialized = false
+
+  function nextPatchVersion(pilotId: string): number {
+    const roomVer = Number(roomSyncedSheets.value?.[pilotId]?.version ?? 0)
+    if (Number.isFinite(roomVer) && roomVer > patchVersion) {
+      patchVersion = roomVer
+    }
+    patchVersion++
+    return patchVersion
+  }
+
+  function serializeControllerStatuses(cc: any): any[] | undefined {
+    if (!cc) return undefined
+    if (typeof cc.StatusController?.SerializeStatuses === 'function') {
+      return cc.StatusController.SerializeStatuses()
+    }
+    return cc.Statuses
+  }
+
+  function serializeControllerCustomStatuses(cc: any): any[] | undefined {
+    if (!cc) return undefined
+    if (typeof cc.StatusController?.SerializeCustomStatuses === 'function') {
+      return cc.StatusController.SerializeCustomStatuses()
+    }
+    return cc.CustomStatuses
+  }
 
   function hydrateCombatStateFromRoom(roomData: any): void {
     const currentSheet = sheet.value
@@ -771,6 +803,7 @@ const panelMap: Record<string, any> = {
       if (currentStats.stress !== undefined) sc.setCurrentStat('stress', Number(currentStats.stress), { silent: true })
       if (currentStats.overshield !== undefined) sc.setCurrentStat('overshield', Number(currentStats.overshield), { silent: true })
       if (currentStats.speed !== undefined) sc.setCurrentStat('speed', Number(currentStats.speed), { silent: true })
+      if (currentStats.burn !== undefined) sc.setCurrentStat('burn', Number(currentStats.burn), { silent: true })
     }
 
     const cc = p.ActiveMech?.CombatController ?? p.CombatController
@@ -782,8 +815,20 @@ const panelMap: Record<string, any> = {
       if (Array.isArray(roomMech.statuses)) {
         cc.StatusController.Deserialize({ statuses: roomMech.statuses })
         cc.CombatLogVersion++
-        cc.StatusController.NotifyStatusChange()
       }
+      if (Array.isArray(roomMech.customStatuses)) {
+        cc.StatusController.Deserialize({ customStatuses: roomMech.customStatuses })
+        cc.CombatLogVersion++
+      }
+      if (roomMech.cover !== undefined) {
+        cc.Cover = roomMech.cover || 'none'
+        cc.CombatLogVersion++
+      }
+      if (roomMech.braced !== undefined) {
+        cc.Braced = Boolean(roomMech.braced)
+        cc.CombatLogVersion++
+      }
+      cc.StatusController.NotifyStatusChange()
     }
 
     // Sincroniza também a cópia da ficha local (se diferente da cópia do encontro)
@@ -801,6 +846,7 @@ const panelMap: Record<string, any> = {
         if (currentStats.stress !== undefined) localSc.setCurrentStat('stress', Number(currentStats.stress), { silent: true })
         if (currentStats.overshield !== undefined) localSc.setCurrentStat('overshield', Number(currentStats.overshield), { silent: true })
         if (currentStats.speed !== undefined) localSc.setCurrentStat('speed', Number(currentStats.speed), { silent: true })
+        if (currentStats.burn !== undefined) localSc.setCurrentStat('burn', Number(currentStats.burn), { silent: true })
       }
       const localCc = localPilot.ActiveMech?.CombatController
       if (localCc) {
@@ -811,8 +857,20 @@ const panelMap: Record<string, any> = {
         if (Array.isArray(roomMech.statuses)) {
           localCc.StatusController.Deserialize({ statuses: roomMech.statuses })
           localCc.CombatLogVersion++
-          localCc.StatusController.NotifyStatusChange()
         }
+        if (Array.isArray(roomMech.customStatuses)) {
+          localCc.StatusController.Deserialize({ customStatuses: roomMech.customStatuses })
+          localCc.CombatLogVersion++
+        }
+        if (roomMech.cover !== undefined) {
+          localCc.Cover = roomMech.cover || 'none'
+          localCc.CombatLogVersion++
+        }
+        if (roomMech.braced !== undefined) {
+          localCc.Braced = Boolean(roomMech.braced)
+          localCc.CombatLogVersion++
+        }
+        localCc.StatusController.NotifyStatusChange()
       }
     }
 
@@ -824,8 +882,14 @@ const panelMap: Record<string, any> = {
     lastDispatchedStress = finalStats?.stress !== undefined ? finalStats.stress : sc?.getCurrent('stress')
     lastDispatchedOvershield = finalStats?.overshield !== undefined ? finalStats.overshield : sc?.getCurrent('overshield')
     lastDispatchedSpeed = finalStats?.speed !== undefined ? finalStats.speed : sc?.getCurrent('speed')
+    lastDispatchedBurn = finalStats?.burn !== undefined ? finalStats.burn : sc?.getCurrent('burn')
     lastDispatchedActions = cc?.CombatActions ? JSON.stringify(cc.CombatActions) : undefined
-    lastDispatchedStatuses = cc?.Statuses ? JSON.stringify(cc.Statuses) : undefined
+    const initStatuses = serializeControllerStatuses(cc)
+    lastDispatchedStatuses = initStatuses ? JSON.stringify(initStatuses) : undefined
+    const initCustomStatuses = serializeControllerCustomStatuses(cc)
+    lastDispatchedCustomStatuses = initCustomStatuses ? JSON.stringify(initCustomStatuses) : undefined
+    lastDispatchedCover = cc?.Cover
+    lastDispatchedBraced = cc?.Braced
     lastDispatchedCorePower = cc?.CorePower
     lastDispatchedCoreActive = cc?.CoreActive
 
@@ -871,12 +935,19 @@ const panelMap: Record<string, any> = {
     const currentStress = stats?.stress !== undefined ? stats.stress : statsController?.getCurrent('stress')
     const currentOvershield = stats?.overshield !== undefined ? stats.overshield : statsController?.getCurrent('overshield')
     const currentSpeed = stats?.speed !== undefined ? stats.speed : statsController?.getCurrent('speed')
+    const currentBurn = stats?.burn !== undefined ? stats.burn : statsController?.getCurrent('burn')
 
-    const combatActionsObj = mech?.CombatController?.CombatActions ?? p.CombatController?.CombatActions
+    const mechCc = mech?.CombatController ?? p.CombatController
+    const combatActionsObj = mechCc?.CombatActions
     const currentActions = combatActionsObj ? JSON.stringify(combatActionsObj) : undefined
 
-    const statusesList = mech?.CombatController?.Statuses ?? p.CombatController?.Statuses
+    const statusesList = serializeControllerStatuses(mechCc)
     const currentStatuses = statusesList ? JSON.stringify(statusesList) : undefined
+
+    const customStatusesList = serializeControllerCustomStatuses(mechCc)
+    const currentCustomStatuses = customStatusesList ? JSON.stringify(customStatusesList) : undefined
+    const currentCover = mechCc?.Cover
+    const currentBraced = mechCc?.Braced
 
     // Na primeira execução (montagem do componente), captura o estado existente como base.
     // Nenhum PATCH_FIELD é despachado: abrir/recarregar a ficha não deve sobrescrever a sala com valores padrão.
@@ -888,10 +959,13 @@ const panelMap: Record<string, any> = {
       lastDispatchedStress = currentStress
       lastDispatchedOvershield = currentOvershield
       lastDispatchedSpeed = currentSpeed
+      lastDispatchedBurn = currentBurn
       lastDispatchedActions = currentActions
       lastDispatchedStatuses = currentStatuses
+      lastDispatchedCustomStatuses = currentCustomStatuses
+      lastDispatchedCover = currentCover
+      lastDispatchedBraced = currentBraced
 
-      const mechCc = mech?.CombatController ?? p.CombatController
       lastDispatchedCorePower = mechCc?.CorePower
       lastDispatchedCoreActive = mechCc?.CoreActive
 
@@ -921,14 +995,28 @@ const panelMap: Record<string, any> = {
         if (currentStress !== undefined) localMechSc.setCurrentStat('stress', currentStress, { silent: true })
         if (currentOvershield !== undefined) localMechSc.setCurrentStat('overshield', currentOvershield, { silent: true })
         if (currentSpeed !== undefined) localMechSc.setCurrentStat('speed', currentSpeed, { silent: true })
+        if (currentBurn !== undefined) localMechSc.setCurrentStat('burn', currentBurn, { silent: true })
       }
-      if (combatActionsObj && localPilot.ActiveMech?.CombatController) {
-        localPilot.ActiveMech.CombatController.CombatActions = { ...combatActionsObj }
-        localPilot.ActiveMech.CombatController.CombatLogVersion++
-      }
-      if (statusesList && localPilot.ActiveMech?.CombatController) {
-        localPilot.ActiveMech.CombatController.Statuses = [ ...statusesList ]
-        localPilot.ActiveMech.CombatController.CombatLogVersion++
+      const localCc = localPilot.ActiveMech?.CombatController
+      if (localCc) {
+        if (combatActionsObj) {
+          localCc.CombatActions = { ...combatActionsObj }
+          localCc.CombatLogVersion++
+        }
+        if (mechCc?.Statuses) {
+          localCc.Statuses = [...mechCc.Statuses]
+          localCc.CombatLogVersion++
+        }
+        if (mechCc?.CustomStatuses) {
+          localCc.CustomStatuses = [...mechCc.CustomStatuses]
+          localCc.CombatLogVersion++
+        }
+        if (currentCover !== undefined) {
+          localCc.Cover = currentCover as any
+        }
+        if (currentBraced !== undefined) {
+          localCc.Braced = Boolean(currentBraced)
+        }
       }
       sheet.value?.Save()
     }
@@ -943,81 +1031,107 @@ const panelMap: Record<string, any> = {
       mechIndex >= 0 ? mechStatsPath(mechIndex, stat) : `stats.current.${stat}`
 
     if (currentHp !== undefined && currentHp !== lastDispatchedHp) {
-      console.log(`[PilotSync] HP alterado: ${lastDispatchedHp} ➔ ${currentHp} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] HP alterado: ${lastDispatchedHp} ➔ ${currentHp} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedHp = currentHp
-      patchVersion++
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('hp'), currentHp, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('hp'), currentHp, ver)
       changesCount++
     }
     if (currentHeat !== undefined && currentHeat !== lastDispatchedHeat) {
-      console.log(`[PilotSync] Calor alterado: ${lastDispatchedHeat} ➔ ${currentHeat} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] Calor alterado: ${lastDispatchedHeat} ➔ ${currentHeat} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedHeat = currentHeat
-      patchVersion++
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('heat'), currentHeat, patchVersion)
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('heatcap'), currentHeat, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('heat'), currentHeat, ver)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('heatcap'), currentHeat, ver)
       changesCount++
     }
     if (currentStructure !== undefined && currentStructure !== lastDispatchedStructure) {
-      console.log(`[PilotSync] Estrutura alterada: ${lastDispatchedStructure} ➔ ${currentStructure} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] Estrutura alterada: ${lastDispatchedStructure} ➔ ${currentStructure} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedStructure = currentStructure
-      patchVersion++
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('structure'), currentStructure, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('structure'), currentStructure, ver)
       changesCount++
     }
     if (currentStress !== undefined && currentStress !== lastDispatchedStress) {
-      console.log(`[PilotSync] Estresse alterado: ${lastDispatchedStress} ➔ ${currentStress} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] Estresse alterado: ${lastDispatchedStress} ➔ ${currentStress} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedStress = currentStress
-      patchVersion++
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('stress'), currentStress, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('stress'), currentStress, ver)
       changesCount++
     }
     if (currentOvershield !== undefined && currentOvershield !== lastDispatchedOvershield) {
-      console.log(`[PilotSync] Sobreescudo alterado: ${lastDispatchedOvershield} ➔ ${currentOvershield} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] Sobreescudo alterado: ${lastDispatchedOvershield} ➔ ${currentOvershield} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedOvershield = currentOvershield
-      patchVersion++
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('overshield'), currentOvershield, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('overshield'), currentOvershield, ver)
       changesCount++
     }
     if (currentSpeed !== undefined && currentSpeed !== lastDispatchedSpeed) {
-      console.log(`[PilotSync] Movimento alterado: ${lastDispatchedSpeed} ➔ ${currentSpeed} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] Movimento alterado: ${lastDispatchedSpeed} ➔ ${currentSpeed} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedSpeed = currentSpeed
-      patchVersion++
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('speed'), currentSpeed, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('speed'), currentSpeed, ver)
+      changesCount++
+    }
+    if (currentBurn !== undefined && currentBurn !== lastDispatchedBurn) {
+      const ver = nextPatchVersion(p.ID)
+      lastDispatchedBurn = currentBurn
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statPath('burn'), currentBurn, ver)
       changesCount++
     }
     if (currentActions !== undefined && currentActions !== lastDispatchedActions) {
-      console.log(`[PilotSync] Ações de combate alteradas (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+      const ver = nextPatchVersion(p.ID)
+      console.log(`[PilotSync] Ações de combate alteradas (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
       lastDispatchedActions = currentActions
-      patchVersion++
       const actionsField = mechIndex >= 0 ? mechCombatActionsPath(mechIndex) : 'combatActions'
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', actionsField, combatActionsObj, patchVersion)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', actionsField, combatActionsObj, ver)
       changesCount++
     }
     if (currentStatuses !== undefined && currentStatuses !== lastDispatchedStatuses) {
       lastDispatchedStatuses = currentStatuses
-      patchVersion++
+      const ver = nextPatchVersion(p.ID)
       const statusesField = mechIndex >= 0 ? mechStatusesPath(mechIndex) : 'statuses'
-      console.log(`[StatusInvestigation][SyncRoom][Envio] Status alterados na ficha do piloto "${pilotName}" (${p.ID}). Enviando PATCH_FIELD (v${patchVersion}): field="${statusesField}", value=`, statusesList)
-      tableSyncSocket.sendPatchField(p.ID, 'pilot', statusesField, statusesList, patchVersion)
+      console.log(`[StatusInvestigation][SyncRoom][Envio] Status alterados na ficha do piloto "${pilotName}" (${p.ID}). Enviando PATCH_FIELD (v${ver}): field="${statusesField}", value=`, statusesList)
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', statusesField, statusesList, ver)
+      changesCount++
+    }
+    if (currentCustomStatuses !== undefined && currentCustomStatuses !== lastDispatchedCustomStatuses) {
+      lastDispatchedCustomStatuses = currentCustomStatuses
+      const ver = nextPatchVersion(p.ID)
+      const customField = mechIndex >= 0 ? mechCustomStatusesPath(mechIndex) : 'customStatuses'
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', customField, customStatusesList, ver)
+      changesCount++
+    }
+    if (currentCover !== undefined && currentCover !== lastDispatchedCover) {
+      lastDispatchedCover = currentCover
+      const ver = nextPatchVersion(p.ID)
+      const coverField = mechIndex >= 0 ? mechCoverPath(mechIndex) : 'cover'
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', coverField, currentCover, ver)
+      changesCount++
+    }
+    if (currentBraced !== undefined && currentBraced !== lastDispatchedBraced) {
+      lastDispatchedBraced = currentBraced
+      const ver = nextPatchVersion(p.ID)
+      const bracedField = mechIndex >= 0 ? mechBracedPath(mechIndex) : 'braced'
+      tableSyncSocket.sendPatchField(p.ID, 'pilot', bracedField, currentBraced, ver)
       changesCount++
     }
 
     // Poder de núcleo e equipamento destruído não passam pelo StatController: sem um
     // delta explícito, gastar o núcleo ou perder uma arma/sistema num teste de estrutura
     // não chegava à mesa (nem ao autosave) até alguma outra coisa mudar.
-    const mechCc = mech?.CombatController ?? p.CombatController
     if (mechIndex >= 0 && mechCc) {
       if (mechCc.CorePower !== lastDispatchedCorePower) {
-        console.log(`[PilotSync] Poder de núcleo ${mechCc.CorePower ? 'disponível' : 'GASTO'} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
+        const ver = nextPatchVersion(p.ID)
+        console.log(`[PilotSync] Poder de núcleo ${mechCc.CorePower ? 'disponível' : 'GASTO'} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
         lastDispatchedCorePower = mechCc.CorePower
-        patchVersion++
-        tableSyncSocket.sendPatchField(p.ID, 'pilot', corePowerPath(mechIndex), mechCc.CorePower, patchVersion)
+        tableSyncSocket.sendPatchField(p.ID, 'pilot', corePowerPath(mechIndex), mechCc.CorePower, ver)
         changesCount++
       }
       if (mechCc.CoreActive !== lastDispatchedCoreActive) {
+        const ver = nextPatchVersion(p.ID)
         lastDispatchedCoreActive = mechCc.CoreActive
-        patchVersion++
-        tableSyncSocket.sendPatchField(p.ID, 'pilot', coreActivePath(mechIndex), mechCc.CoreActive, patchVersion)
+        tableSyncSocket.sendPatchField(p.ID, 'pilot', coreActivePath(mechIndex), mechCc.CoreActive, ver)
         changesCount++
       }
 
@@ -1028,9 +1142,9 @@ const panelMap: Record<string, any> = {
         if (lastDispatchedDestroyed.get(key) === destroyed) continue
 
         lastDispatchedDestroyed.set(key, destroyed)
-        console.log(`[PilotSync] ${ref.kind === 'weapon' ? 'Arma' : 'Sistema'} "${ref.item.Name ?? ref.item.ID}" ${destroyed ? 'destruído' : 'reparado'} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${patchVersion + 1})...`)
-        patchVersion++
-        tableSyncSocket.sendPatchField(p.ID, 'pilot', ref.path, destroyed, patchVersion)
+        const ver = nextPatchVersion(p.ID)
+        console.log(`[PilotSync] ${ref.kind === 'weapon' ? 'Arma' : 'Sistema'} "${ref.item.Name ?? ref.item.ID}" ${destroyed ? 'destruído' : 'reparado'} (Piloto: "${pilotName}"). Enviando PATCH_FIELD (v${ver})...`)
+        tableSyncSocket.sendPatchField(p.ID, 'pilot', ref.path, destroyed, ver)
         changesCount++
       }
     }
@@ -1074,19 +1188,44 @@ const panelMap: Record<string, any> = {
       patchVersion = v
     }
     const key = patchFieldKey(patch.field)
+    const targetType = patchFieldTarget(patch.field)
+    const cc = p.ActiveMech?.CombatController ?? p.CombatController
     if (key === 'hp') lastDispatchedHp = Number(patch.value)
     else if (key === 'heat' || key === 'heatcap') lastDispatchedHeat = Number(patch.value)
     else if (key === 'structure') lastDispatchedStructure = Number(patch.value)
     else if (key === 'stress') lastDispatchedStress = Number(patch.value)
     else if (key === 'overshield') lastDispatchedOvershield = Number(patch.value)
     else if (key === 'speed') lastDispatchedSpeed = Number(patch.value)
-    else if (patchFieldTarget(patch.field) === 'combatActions') lastDispatchedActions = JSON.stringify(patch.value)
-    else if (patchFieldTarget(patch.field) === 'statuses') {
+    else if (key === 'burn') lastDispatchedBurn = Number(patch.value)
+    else if (targetType === 'combatActions') lastDispatchedActions = JSON.stringify(patch.value)
+    else if (targetType === 'statuses') {
       console.log(`[StatusInvestigation][SyncRoom][Recebido] onRemotePatch recebeu "statuses" para piloto "${p.ID}":`, patch.value)
-      lastDispatchedStatuses = JSON.stringify(patch.value)
-      const cc = p.ActiveMech?.CombatController ?? p.CombatController
       if (cc && Array.isArray(patch.value)) {
         cc.StatusController.Deserialize({ statuses: patch.value })
+        cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange()
+      }
+      const serialized = serializeControllerStatuses(cc)
+      lastDispatchedStatuses = JSON.stringify(serialized ?? patch.value)
+    } else if (targetType === 'customStatuses') {
+      if (cc && Array.isArray(patch.value)) {
+        cc.StatusController.Deserialize({ customStatuses: patch.value })
+        cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange()
+      }
+      const serialized = serializeControllerCustomStatuses(cc)
+      lastDispatchedCustomStatuses = JSON.stringify(serialized ?? patch.value)
+    } else if (targetType === 'cover') {
+      lastDispatchedCover = patch.value || 'none'
+      if (cc) {
+        cc.Cover = (patch.value || 'none') as any
+        cc.CombatLogVersion++
+        cc.StatusController.NotifyStatusChange()
+      }
+    } else if (targetType === 'braced') {
+      lastDispatchedBraced = Boolean(patch.value)
+      if (cc) {
+        cc.Braced = Boolean(patch.value)
         cc.CombatLogVersion++
         cc.StatusController.NotifyStatusChange()
       }
