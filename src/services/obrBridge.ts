@@ -353,6 +353,28 @@ class OBRBridge {
       }).catch((e) => {
         console.warn('[OBRBridge] Aviso ao criar menu de contexto open-sheet:', e)
       })
+
+      // Menu de contexto para gerenciar Estados e Condições diretamente no token (estilo Ativar Movimento)
+      void OBR.contextMenu.create({
+        id: 'compcon-token-status',
+        icons: [
+          {
+            icon: COMPCON_STATUS_ICON_DATA_URI,
+            label: 'Estados e Condições',
+            filter: {
+              roles: ['GM', 'PLAYER'],
+              min: 1,
+              max: 1,
+            },
+          },
+        ],
+        embed: {
+          url: '/index.html#/token-status-embed',
+          height: 380,
+        },
+      }).catch((e) => {
+        console.warn('[OBRBridge] Aviso ao criar menu de contexto token-status:', e)
+      })
     } catch (e) {
       console.warn('[OBRBridge] Erro ao registrar menus de contexto:', e)
     }
@@ -1469,9 +1491,8 @@ class OBRBridge {
   /**
    * Aplica os marcadores visuais de status nos tokens vinculados a um mecha.
    *
-   * O estado de combate (HP/heat/estrutura/stress) NÃO é copiado para o token:
-   * ele é lido da ficha. Aqui só sincronizamos os ícones de status, que são
-   * itens próprios da cena, e apenas para o token que pediu a atualização.
+   * REGRA DE PRIORIDADE:
+   * O efeito aplicado diretamente no token tem prioridade sobre os dados da ficha.
    */
   public async updateTokenVisuals(tokenId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return
@@ -1484,8 +1505,8 @@ class OBRBridge {
   /**
    * Sincroniza os marcadores de status de todos os tokens vinculados à ficha.
    *
-   * O vínculo é resolvido pelos IDs no metadata do token (`sheetId`/`mechId`);
-   * nada de estado de combate é persistido no token.
+   * REGRA DE PRIORIDADE:
+   * O efeito aplicado diretamente no token tem prioridade sobre os dados da ficha.
    */
   public async updateTokensForCombatant(sheetId: string, state: MechCombatState) {
     if (!this.isReady || !OBR.isAvailable) return

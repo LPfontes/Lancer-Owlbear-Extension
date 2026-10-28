@@ -1238,6 +1238,25 @@
       "statusNotTracked": "Not tracked",
       "statusDisabled": "Off"
     },
+    "tokenStatus": {
+      "menuTitle": "Statuses & Conditions",
+      "noSelection": "Select a token on the map to manage its statuses.",
+      "tokenPriorityActive": "Token Priority Active",
+      "mirroringSheet": "Mirroring Sheet",
+      "independentToken": "Independent Token",
+      "conditions": "Conditions",
+      "states": "States",
+      "cover": "Cover",
+      "coverNone": "No Cover",
+      "coverSoft": "Soft (+1 Diff)",
+      "coverHard": "Hard (+2 Diff)",
+      "customStatuses": "Custom Statuses",
+      "customPlaceholder": "Status name...",
+      "addCustom": "Add",
+      "clearOverrides": "Clear Token Statuses",
+      "clearOverridesHint": "Removes manual statuses on this token and restores sheet sync (if linked).",
+      "copyFromSheet": "Copy from Sheet"
+    },
     "encounter": {
       "saveSuccessfulText": "Saved Encounter: {name} at Round {round}",
       "saveFailedText": "Failed to save Encounter: {name}",

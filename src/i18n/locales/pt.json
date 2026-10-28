@@ -2120,6 +2120,25 @@
       "statusNotTracked": "Fora da lista",
       "statusDisabled": "Desligado"
     },
+    "tokenStatus": {
+      "menuTitle": "Estados e Condições",
+      "noSelection": "Selecione um token no mapa para gerenciar seus estados.",
+      "tokenPriorityActive": "Prioridade do Token Ativa",
+      "mirroringSheet": "Espelhando Ficha",
+      "independentToken": "Token Independente",
+      "conditions": "Condições",
+      "states": "Estados",
+      "cover": "Cobertura",
+      "coverNone": "Sem Cobertura",
+      "coverSoft": "Leve (+1 Dif)",
+      "coverHard": "Pesada (+2 Dif)",
+      "customStatuses": "Personalizados",
+      "customPlaceholder": "Nome do status...",
+      "addCustom": "Adicionar",
+      "clearOverrides": "Limpar Status do Token",
+      "clearOverridesHint": "Remove os status manuais deste token e restaura a sincronização com a ficha (se houver).",
+      "copyFromSheet": "Copiar da Ficha"
+    },
     "encounter": {
       "saveSuccessfulText": "Encontro Salvo: {name} na Rodada {round}",
       "saveFailedText": "Falha ao salvar o Encontro: {name}",
